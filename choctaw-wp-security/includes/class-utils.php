@@ -24,9 +24,10 @@ class Choctaw_Wp_Security_Utils {
 	 */
 	public static function default_options() {
 		return array(
-			'xmlrpc_blocking_enabled'   => true,
-			'login_rate_limit_enabled'  => true,
-			'allowed_failed_attempts'   => 5,
+			'xmlrpc_blocking_enabled'    => true,
+			'login_rate_limit_enabled'   => true,
+			'uploads_php_lockdown_enabled' => true,
+			'allowed_failed_attempts'    => 5,
 			'failure_window_minutes'    => 15,
 			'lockout_duration_minutes'  => 30,
 		);

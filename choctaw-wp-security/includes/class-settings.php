@@ -71,6 +71,19 @@ class Choctaw_Wp_Security_Settings {
 			)
 		);
 
+		add_settings_field(
+			'uploads_php_lockdown_enabled',
+			__( 'Uploads PHP Lockdown', 'choctaw-wp-security' ),
+			array( $this, 'render_uploads_lockdown_field' ),
+			'choctaw-wp-security',
+			'choctaw_wp_security_features',
+			array(
+				'label_for' => 'uploads_php_lockdown_enabled',
+				'option'    => 'uploads_php_lockdown_enabled',
+				'label'     => __( 'Disable PHP execution in uploads', 'choctaw-wp-security' ),
+			)
+		);
+
 		add_settings_section(
 			'choctaw_wp_security_policy',
 			__( 'Login Rate Limit Policy', 'choctaw-wp-security' ),
@@ -150,9 +163,10 @@ class Choctaw_Wp_Security_Settings {
 		$input    = is_array( $input ) ? $input : array();
 
 		$sanitized = array(
-			'xmlrpc_blocking_enabled'  => ! empty( $input['xmlrpc_blocking_enabled'] ),
-			'login_rate_limit_enabled' => ! empty( $input['login_rate_limit_enabled'] ),
-			'allowed_failed_attempts'  => $this->clamp_int( $input, 'allowed_failed_attempts', 1, 100, $defaults['allowed_failed_attempts'] ),
+			'xmlrpc_blocking_enabled'      => ! empty( $input['xmlrpc_blocking_enabled'] ),
+			'login_rate_limit_enabled'     => ! empty( $input['login_rate_limit_enabled'] ),
+			'uploads_php_lockdown_enabled' => ! empty( $input['uploads_php_lockdown_enabled'] ),
+			'allowed_failed_attempts'        => $this->clamp_int( $input, 'allowed_failed_attempts', 1, 100, $defaults['allowed_failed_attempts'] ),
 			'failure_window_minutes'   => $this->clamp_int( $input, 'failure_window_minutes', 1, 1440, $defaults['failure_window_minutes'] ),
 			'lockout_duration_minutes' => $this->clamp_int( $input, 'lockout_duration_minutes', 1, 1440, $defaults['lockout_duration_minutes'] ),
 		);
@@ -198,8 +212,12 @@ class Choctaw_Wp_Security_Settings {
 			return;
 		}
 
-		$options = Choctaw_Wp_Security_Utils::get_options();
-		$events  = Choctaw_Wp_Security_Utils::get_lockout_log();
+		$options            = Choctaw_Wp_Security_Utils::get_options();
+		$events             = Choctaw_Wp_Security_Utils::get_lockout_log();
+		$core_file_changes  = $this->get_core_file_changes();
+		$content_php_files  = $this->get_content_php_files();
+		$uploads_lockdown   = new Choctaw_Wp_Security_Uploads_Php_Lockdown();
+		$uploads_status     = $uploads_lockdown->get_status();
 		?>
 		<div class="wrap">
 			<h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
@@ -230,6 +248,15 @@ class Choctaw_Wp_Security_Settings {
 						<td><?php echo esc_html( $this->status_label( ! empty( $options['login_rate_limit_enabled'] ) ) ); ?></td>
 					</tr>
 					<tr>
+						<th scope="row"><?php esc_html_e( 'Uploads PHP Lockdown', 'choctaw-wp-security' ); ?></th>
+						<td>
+							<?php echo esc_html( $uploads_status['label'] ); ?>
+							<?php if ( ! empty( $uploads_status['note'] ) ) : ?>
+								<p class="description"><?php echo esc_html( $uploads_status['note'] ); ?></p>
+							<?php endif; ?>
+						</td>
+					</tr>
+					<tr>
 						<th scope="row"><?php esc_html_e( 'Current Policy', 'choctaw-wp-security' ); ?></th>
 						<td>
 							<?php
@@ -247,6 +274,56 @@ class Choctaw_Wp_Security_Settings {
 					</tr>
 				</tbody>
 			</table>
+
+			<?php if ( Choctaw_Wp_Security_Uploads_Php_Lockdown::STATUS_NGINX_MANUAL === $uploads_status['key'] ) : ?>
+				<h2><?php esc_html_e( 'Nginx Uploads PHP Lockdown', 'choctaw-wp-security' ); ?></h2>
+				<p><?php esc_html_e( 'Add this snippet to your site server block, then reload Nginx. The plugin cannot apply this rule automatically on Nginx.', 'choctaw-wp-security' ); ?></p>
+				<textarea readonly rows="5" class="large-text code" style="max-width: 960px;"><?php echo esc_textarea( $uploads_lockdown->get_nginx_snippet() ); ?></textarea>
+			<?php endif; ?>
+
+			<h2><?php esc_html_e( 'Recent File Changes', 'choctaw-wp-security' ); ?></h2>
+			<p><?php esc_html_e( 'These stable WordPress files should usually only change during core updates or deliberate server configuration changes.', 'choctaw-wp-security' ); ?></p>
+			<table class="widefat striped" style="max-width: 960px;">
+				<thead>
+					<tr>
+						<th scope="col"><?php esc_html_e( 'File', 'choctaw-wp-security' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Last Modified', 'choctaw-wp-security' ); ?></th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ( $core_file_changes as $file_change ) : ?>
+						<tr>
+							<td><?php echo esc_html( $file_change['label'] ); ?></td>
+							<td><?php echo esc_html( $file_change['modified'] ); ?></td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+
+			<h2><?php esc_html_e( 'PHP Files in Uploads and Must-Use Plugins', 'choctaw-wp-security' ); ?></h2>
+			<p><?php esc_html_e( 'PHP files in uploads are suspicious. Must-use plugins may be legitimate, but are worth reviewing because they load automatically.', 'choctaw-wp-security' ); ?></p>
+			<?php if ( ! empty( $content_php_files ) ) : ?>
+				<table class="widefat striped" style="max-width: 960px;">
+					<thead>
+						<tr>
+							<th scope="col"><?php esc_html_e( 'Location', 'choctaw-wp-security' ); ?></th>
+							<th scope="col"><?php esc_html_e( 'File', 'choctaw-wp-security' ); ?></th>
+							<th scope="col"><?php esc_html_e( 'Last Modified', 'choctaw-wp-security' ); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ( $content_php_files as $php_file ) : ?>
+							<tr>
+								<td><?php echo esc_html( $php_file['location'] ); ?></td>
+								<td><?php echo esc_html( $php_file['path'] ); ?></td>
+								<td><?php echo esc_html( $php_file['modified'] ); ?></td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+			<?php else : ?>
+				<p><?php esc_html_e( 'No PHP files were found in the uploads or must-use plugins folders.', 'choctaw-wp-security' ); ?></p>
+			<?php endif; ?>
 
 			<?php if ( ! empty( $events ) ) : ?>
 				<h2><?php esc_html_e( 'Recent Lockouts', 'choctaw-wp-security' ); ?></h2>
@@ -332,6 +409,28 @@ class Choctaw_Wp_Security_Settings {
 	}
 
 	/**
+	 * Render the uploads PHP lockdown checkbox with server-aware guidance.
+	 *
+	 * @param array<string, string> $args Field arguments.
+	 * @return void
+	 */
+	public function render_uploads_lockdown_field( $args ) {
+		$this->render_checkbox_field( $args );
+
+		$lockdown = new Choctaw_Wp_Security_Uploads_Php_Lockdown();
+		$server   = $lockdown->get_server_type();
+
+		if ( Choctaw_Wp_Security_Uploads_Php_Lockdown::SERVER_NGINX === $server ) {
+			echo '<p class="description">' . esc_html__( 'This setting stays enabled to reflect your security policy. On Nginx, enforcement requires manual server configuration shown in the Status section below.', 'choctaw-wp-security' ) . '</p>';
+			return;
+		}
+
+		if ( Choctaw_Wp_Security_Uploads_Php_Lockdown::SERVER_UNKNOWN === $server ) {
+			echo '<p class="description">' . esc_html__( 'When enabled, the plugin will attempt to install a managed .htaccess block in wp-content/uploads, but server support cannot be guaranteed.', 'choctaw-wp-security' ) . '</p>';
+		}
+	}
+
+	/**
 	 * Render a numeric settings field.
 	 *
 	 * @param array<string, int|string> $args Field arguments.
@@ -364,6 +463,171 @@ class Choctaw_Wp_Security_Settings {
 		return $enabled
 			? __( 'Enabled', 'choctaw-wp-security' )
 			: __( 'Disabled', 'choctaw-wp-security' );
+	}
+
+	/**
+	 * Retrieve modification details for stable WordPress files commonly targeted by attackers.
+	 *
+	 * @return array<int, array{label: string, modified: string}>
+	 */
+	private function get_core_file_changes() {
+		$files = array(
+			'wp-config.php'               => $this->get_wp_config_path(),
+			'.htaccess'                   => ABSPATH . '.htaccess',
+			'index.php'                   => ABSPATH . 'index.php',
+			'wp-settings.php'             => ABSPATH . 'wp-settings.php',
+			'wp-load.php'                 => ABSPATH . 'wp-load.php',
+			'wp-blog-header.php'          => ABSPATH . 'wp-blog-header.php',
+			'wp-login.php'                => ABSPATH . 'wp-login.php',
+			'xmlrpc.php'                  => ABSPATH . 'xmlrpc.php',
+			'wp-cron.php'                 => ABSPATH . 'wp-cron.php',
+			'wp-includes/functions.php'   => ABSPATH . WPINC . '/functions.php',
+			'wp-includes/plugin.php'      => ABSPATH . WPINC . '/plugin.php',
+			'wp-admin/admin.php'          => ABSPATH . 'wp-admin/admin.php',
+			'wp-admin/includes/file.php'  => ABSPATH . 'wp-admin/includes/file.php',
+		);
+
+		$changes = array();
+
+		foreach ( $files as $label => $path ) {
+			$changes[] = array(
+				'label'    => $label,
+				'modified' => $this->format_file_modified_time( $path ),
+			);
+		}
+
+		return $changes;
+	}
+
+	/**
+	 * Locate wp-config.php, including the supported parent-directory location.
+	 *
+	 * @return string
+	 */
+	private function get_wp_config_path() {
+		$root_config   = ABSPATH . 'wp-config.php';
+		$parent_config = dirname( ABSPATH ) . '/wp-config.php';
+
+		if ( file_exists( $root_config ) ) {
+			return $root_config;
+		}
+
+		return $parent_config;
+	}
+
+	/**
+	 * Retrieve PHP files found in uploads and must-use plugins directories.
+	 *
+	 * @return array<int, array{location: string, path: string, modified: string}>
+	 */
+	private function get_content_php_files() {
+		$uploads = wp_get_upload_dir();
+		$folders = array(
+			__( 'Uploads', 'choctaw-wp-security' ) => isset( $uploads['basedir'] ) ? $uploads['basedir'] : '',
+			__( 'Must-Use Plugins', 'choctaw-wp-security' ) => defined( 'WPMU_PLUGIN_DIR' ) ? WPMU_PLUGIN_DIR : WP_CONTENT_DIR . '/mu-plugins',
+		);
+
+		$files = array();
+
+		foreach ( $folders as $location => $folder ) {
+			foreach ( $this->find_php_files( $folder ) as $path ) {
+				$files[] = array(
+					'location' => $location,
+					'path'     => $this->format_display_path( $path ),
+					'modified' => $this->format_file_modified_time( $path ),
+				);
+			}
+		}
+
+		usort(
+			$files,
+			function ( $a, $b ) {
+				return strcmp( $a['path'], $b['path'] );
+			}
+		);
+
+		return $files;
+	}
+
+	/**
+	 * Find PHP-like files in a directory.
+	 *
+	 * @param string $folder Directory path.
+	 * @return array<int, string>
+	 */
+	private function find_php_files( $folder ) {
+		$folder = (string) $folder;
+
+		if ( '' === $folder || ! is_dir( $folder ) || ! is_readable( $folder ) ) {
+			return array();
+		}
+
+		$matches    = array();
+		$extensions = array( 'php', 'phtml', 'phar', 'php3', 'php4', 'php5', 'php7' );
+		$limit      = 200;
+
+		try {
+			$iterator = new RecursiveIteratorIterator(
+				new RecursiveDirectoryIterator( $folder, FilesystemIterator::SKIP_DOTS )
+			);
+
+			foreach ( $iterator as $file ) {
+				if ( count( $matches ) >= $limit ) {
+					break;
+				}
+
+				if ( ! $file->isFile() ) {
+					continue;
+				}
+
+				$extension = strtolower( $file->getExtension() );
+
+				if ( in_array( $extension, $extensions, true ) ) {
+					$matches[] = $file->getPathname();
+				}
+			}
+		} catch ( Exception $exception ) {
+			return $matches;
+		}
+
+		return $matches;
+	}
+
+	/**
+	 * Format a file modification timestamp for display.
+	 *
+	 * @param string $path File path.
+	 * @return string
+	 */
+	private function format_file_modified_time( $path ) {
+		if ( '' === $path || ! file_exists( $path ) ) {
+			return __( 'File not found', 'choctaw-wp-security' );
+		}
+
+		$modified = filemtime( $path );
+
+		if ( false === $modified ) {
+			return __( 'Unavailable', 'choctaw-wp-security' );
+		}
+
+		return $this->format_timestamp( $modified );
+	}
+
+	/**
+	 * Format a path relative to the WordPress root when possible.
+	 *
+	 * @param string $path File path.
+	 * @return string
+	 */
+	private function format_display_path( $path ) {
+		$normalized_path = wp_normalize_path( $path );
+		$root            = trailingslashit( wp_normalize_path( ABSPATH ) );
+
+		if ( 0 === strpos( $normalized_path, $root ) ) {
+			return ltrim( substr( $normalized_path, strlen( $root ) ), '/' );
+		}
+
+		return $normalized_path;
 	}
 
 	/**

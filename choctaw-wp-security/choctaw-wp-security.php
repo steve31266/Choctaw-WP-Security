@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       Choctaw WP Security
  * Plugin URI:        https://github.com/steve31266/Choctaw-WP-Security
- * Description:       XML-RPC protection and configurable login rate limiting for WordPress.
- * Version:           1.0.2
+ * Description:       XML-RPC protection, configurable login rate limiting, and uploads PHP lockdown.
+ * Version:           1.1.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Choctaw
@@ -16,7 +16,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'CHOCTAW_WP_SECURITY_VERSION', '1.0.0' );
+define( 'CHOCTAW_WP_SECURITY_VERSION', '1.1.0' );
 define( 'CHOCTAW_WP_SECURITY_FILE', __FILE__ );
 define( 'CHOCTAW_WP_SECURITY_PATH', plugin_dir_path( __FILE__ ) );
 define( 'CHOCTAW_WP_SECURITY_URL', plugin_dir_url( __FILE__ ) );
@@ -26,6 +26,7 @@ require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-plugin.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-settings.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-xml-rpc-protection.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-login-rate-limiter.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-uploads-php-lockdown.php';
 
 // Block xmlrpc.php as early as possible, matching legacy plugin behavior.
 Choctaw_Wp_Security_Xml_Rpc_Protection::block_xmlrpc_request_if_needed();
@@ -51,5 +52,8 @@ function choctaw_wp_security_activate() {
 	if ( ! is_array( $existing ) ) {
 		add_option( Choctaw_Wp_Security_Utils::OPTION_KEY, Choctaw_Wp_Security_Utils::default_options() );
 	}
+
+	$lockdown = new Choctaw_Wp_Security_Uploads_Php_Lockdown();
+	$lockdown->apply_policy();
 }
 register_activation_hook( __FILE__, 'choctaw_wp_security_activate' );

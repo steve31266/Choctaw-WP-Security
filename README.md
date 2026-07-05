@@ -1,9 +1,10 @@
 # Choctaw WP Security
 
-A lightweight WordPress security plugin that hardens two common attack paths:
+A lightweight WordPress security plugin that hardens common attack paths:
 
 1. **XML-RPC abuse** — blocks unauthorized XML-RPC access
 2. **Login brute force** — rate-limits failed `wp-login.php` attempts
+3. **Uploads PHP execution** — blocks PHP in `wp-content/uploads` where the server allows it
 
 Built for standard WordPress installs. No Composer, build tools, or external dependencies.
 
@@ -163,6 +164,14 @@ choctaw-wp-security/
 ```
 
 ## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for full release history.
+
+### 1.1.0
+
+- Added uploads PHP lockdown with server-aware `.htaccess` management and Nginx guidance
+- Added admin panels for recent core file changes and PHP files in uploads/mu-plugins
+- Updated plugin description
 
 ### 1.0.1
 
