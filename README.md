@@ -5,7 +5,7 @@ A lightweight WordPress security plugin that hardens two common attack paths:
 1. **XML-RPC abuse** — blocks unauthorized XML-RPC access
 2. **Login brute force** — rate-limits failed `wp-login.php` attempts
 
-Built for simple deployment on shared hosting (e.g. DreamHost/DreamPress). No Composer, build tools, or external dependencies.
+Built for standard WordPress installs. No Composer, build tools, or external dependencies.
 
 ## Features
 
@@ -41,11 +41,13 @@ Built for simple deployment on shared hosting (e.g. DreamHost/DreamPress). No Co
 
 ## Installation
 
-1. Copy the plugin folder to your WordPress site:
+1. Copy the `choctaw-wp-security` folder from this repository into your WordPress plugins directory:
 
    ```
    wp-content/plugins/choctaw-wp-security/
    ```
+
+   Or clone this repository and copy the `choctaw-wp-security` folder to that location.
 
 2. In WordPress admin, go to **Plugins** and activate **Choctaw WP Security**.
 
@@ -138,9 +140,9 @@ After install or update, verify:
 
 ## Repository Layout
 
-This repository contains the plugin source only. It is not a full WordPress installation.
+This repository contains a standalone WordPress plugin. It is not a full WordPress installation.
 
-Deploy by copying this folder into your site:
+The plugin source lives in the `choctaw-wp-security/` folder at the repository root. Copy that folder into your site:
 
 ```
 wp-content/plugins/choctaw-wp-security/
@@ -149,7 +151,7 @@ wp-content/plugins/choctaw-wp-security/
 ## Project Structure
 
 ```
-wp-content/plugins/choctaw-wp-security/
+choctaw-wp-security/
 ├── choctaw-wp-security.php          # Bootstrap, constants, activation hook
 ├── assets/css/login-lockout.css     # Login lockout styling
 └── includes/
