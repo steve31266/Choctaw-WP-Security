@@ -173,7 +173,7 @@ wp-content/plugins/choctaw-wp-security/
 
 ## License
 
-GPL-2.0-or-later
+GPL-3.0-or-later
 
 ## Author
 
