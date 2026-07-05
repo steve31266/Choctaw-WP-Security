@@ -1,9 +1,9 @@
 <?php
 /**
  * Plugin Name:       Choctaw WP Security
- * Plugin URI:        https://github.com/choctaw/wp-security
+ * Plugin URI:        https://github.com/steve31266/Choctaw-WP-Security
  * Description:       XML-RPC protection and configurable login rate limiting for WordPress.
- * Version:           1.0.1
+ * Version:           1.0.2
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Choctaw
