@@ -1,0 +1,37 @@
+.cws-core-checksum-results {
+	border-left: 4px solid #ccd0d4;
+	margin-top: 16px;
+	max-width: 960px;
+	padding: 12px 16px;
+}
+
+.cws-core-checksum-results.is-success {
+	background: #f0fff4;
+	border-left-color: #00a32a;
+	color: #1e4620;
+}
+
+.cws-core-checksum-results.is-error {
+	background: #fff5f5;
+	border-left-color: #d63638;
+	color: #3c1515;
+}
+
+.cws-core-checksum-results.is-error .cws-core-checksum-table th,
+.cws-core-checksum-results.is-error .cws-core-checksum-table td {
+	color: #8a1f1f;
+}
+
+.cws-core-checksum-summary {
+	font-weight: 600;
+	margin-top: 0;
+}
+
+.cws-core-checksum-list {
+	list-style: disc;
+	margin-left: 20px;
+}
+
+.cws-core-checksum-table {
+	margin-top: 8px;
+}

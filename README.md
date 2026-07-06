@@ -35,6 +35,14 @@ Built for standard WordPress installs. No Composer, build tools, or external dep
 - Recent lockout log in admin (last 20 events)
 - Does **not** permanently ban IPs or log passwords
 
+### WP Core Verify-Checksums
+
+- Manual **Scan Now** action on the settings page (does not run automatically)
+- Uses WordPress's `get_core_checksums()` API for the installed version and locale
+- Reports modified core files, missing core files, and unknown files in core-owned directories
+- Detection-only: does not repair, delete, quarantine, or modify files
+- Does **not** scan plugins, themes, uploads, mu-plugins, or `wp-config.php`
+
 ## Requirements
 
 - WordPress **5.8+**
@@ -79,6 +87,7 @@ The settings page under **Settings → Choctaw WP Security** includes:
 - Feature toggles for XML-RPC blocking and login rate limiting
 - Rate limit policy fields (attempts, window, lockout duration)
 - Read-only status section showing feature state, current policy, and plugin version
+- **WP Core Verify-Checksums** — manual scan that compares installed WordPress core files against official WordPress.org checksums for the current version and locale
 - Recent lockout log with timestamp, IP address, attempted username, scope, and lockout duration
 
 ## How It Works
@@ -154,11 +163,14 @@ wp-content/plugins/choctaw-wp-security/
 ```
 choctaw-wp-security/
 ├── choctaw-wp-security.php          # Bootstrap, constants, activation hook
-├── assets/css/login-lockout.css     # Login lockout styling
+├── assets/css/
+│   ├── login-lockout.css            # Login lockout styling
+│   └── admin-core-checksum.css      # Core checksum scan results styling
 └── includes/
     ├── class-plugin.php             # Module coordinator
     ├── class-utils.php              # Options, IP helper, transient keys
     ├── class-settings.php           # Admin settings page
+    ├── class-core-checksum-scanner.php # WordPress core checksum scanner
     ├── class-xml-rpc-protection.php # XML-RPC blocking
     └── class-login-rate-limiter.php # Login rate limiting
 ```
@@ -166,6 +178,10 @@ choctaw-wp-security/
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
+
+### 1.2.0
+
+- Added WP Core Verify-Checksums admin scan for modified, missing, and unknown WordPress core files
 
 ### 1.1.0
 

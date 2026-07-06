@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-07-05
+
+### Added
+
+- **WP Core Verify-Checksums** admin scan on the settings page.
+  - Compares installed WordPress core files against official WordPress.org checksums for the current version and locale using `get_core_checksums()`.
+  - Reports modified files, missing files, and unknown files in core-owned areas (`ABSPATH` root core files, `wp-admin/`, and `wp-includes/`).
+  - Excludes site-specific paths such as `wp-config.php`, `wp-content/`, `.htaccess`, and common local root files from false-positive reporting.
+  - Caps displayed unknown files at 50 and notes when additional unknown files were found.
+  - Detection-only: does not repair, delete, quarantine, or modify files.
+  - Includes timeout protection and grouped result output on manual **Scan Now** action.
+
 ## [1.1.0] - 2026-07-05
 
 ### Added
@@ -35,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: XML-RPC protection and dual-scope login rate limiting.
 - Admin settings page with feature toggles, rate limit policy, and recent lockout log.
 
+[1.2.0]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/steve31266/Choctaw-WP-Security/releases/tag/v1.0.0

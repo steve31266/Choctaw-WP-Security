@@ -20,6 +20,8 @@ class Choctaw_Wp_Security_Settings {
 	public function register_hooks() {
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
+		add_action( 'load-settings_page_choctaw-wp-security', array( $this, 'handle_core_checksum_scan' ) );
+		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 	}
 
 	/**
@@ -275,6 +277,8 @@ class Choctaw_Wp_Security_Settings {
 				</tbody>
 			</table>
 
+			<?php $this->render_core_checksum_section(); ?>
+
 			<?php if ( Choctaw_Wp_Security_Uploads_Php_Lockdown::STATUS_NGINX_MANUAL === $uploads_status['key'] ) : ?>
 				<h2><?php esc_html_e( 'Nginx Uploads PHP Lockdown', 'choctaw-wp-security' ); ?></h2>
 				<p><?php esc_html_e( 'Add this snippet to your site server block, then reload Nginx. The plugin cannot apply this rule automatically on Nginx.', 'choctaw-wp-security' ); ?></p>
@@ -361,6 +365,225 @@ class Choctaw_Wp_Security_Settings {
 						<?php endforeach; ?>
 					</tbody>
 				</table>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Handle a manual core checksum scan request.
+	 *
+	 * @return void
+	 */
+	public function handle_core_checksum_scan() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+
+		if ( empty( $_POST['choctaw_wp_security_core_checksum_scan'] ) ) {
+			return;
+		}
+
+		check_admin_referer( 'choctaw_wp_security_core_checksum_scan' );
+
+		$scanner = new Choctaw_Wp_Security_Core_Checksum_Scanner();
+		$result  = $scanner->scan();
+
+		set_transient( $this->get_core_checksum_result_transient_key(), $result, MINUTE_IN_SECONDS );
+
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'page'              => 'choctaw-wp-security',
+					'core_checksum_run' => '1',
+				),
+				admin_url( 'options-general.php' )
+			)
+		);
+		exit;
+	}
+
+	/**
+	 * Enqueue admin assets for the settings page.
+	 *
+	 * @param string $hook_suffix Current admin page hook suffix.
+	 * @return void
+	 */
+	public function enqueue_admin_assets( $hook_suffix ) {
+		if ( 'settings_page_choctaw-wp-security' !== $hook_suffix ) {
+			return;
+		}
+
+		wp_enqueue_style(
+			'choctaw-wp-security-admin',
+			CHOCTAW_WP_SECURITY_URL . 'assets/css/admin-core-checksum.css',
+			array(),
+			CHOCTAW_WP_SECURITY_VERSION
+		);
+	}
+
+	/**
+	 * Build the transient key used to store the latest scan result.
+	 *
+	 * @return string
+	 */
+	private function get_core_checksum_result_transient_key() {
+		return 'cws_core_checksum_' . get_current_user_id();
+	}
+
+	/**
+	 * Render the core checksum scan section.
+	 *
+	 * @return void
+	 */
+	private function render_core_checksum_section() {
+		$result = false;
+
+		if ( isset( $_GET['core_checksum_run'] ) ) {
+			$result = get_transient( $this->get_core_checksum_result_transient_key() );
+		}
+		?>
+		<h2><?php esc_html_e( 'WP Core Verify-Checksums', 'choctaw-wp-security' ); ?></h2>
+		<p>
+			<?php esc_html_e( 'WP Core Verify-Checksums compares your installed WordPress core files against official WordPress.org checksums for your current WordPress version and locale. It does not scan plugins, themes, uploads, mu-plugins, or wp-config.php.', 'choctaw-wp-security' ); ?>
+		</p>
+
+		<form method="post">
+			<?php wp_nonce_field( 'choctaw_wp_security_core_checksum_scan' ); ?>
+			<input type="hidden" name="choctaw_wp_security_core_checksum_scan" value="1" />
+			<?php submit_button( __( 'Scan Now', 'choctaw-wp-security' ), 'secondary', 'submit', false ); ?>
+		</form>
+
+		<?php if ( is_array( $result ) ) : ?>
+			<?php $this->render_core_checksum_results( $result ); ?>
+		<?php endif; ?>
+		<?php
+	}
+
+	/**
+	 * Render core checksum scan results.
+	 *
+	 * @param array<string, mixed> $result Scan result payload.
+	 * @return void
+	 */
+	private function render_core_checksum_results( $result ) {
+		$has_problems = empty( $result['success'] );
+		$panel_class  = $has_problems ? 'cws-core-checksum-results is-error' : 'cws-core-checksum-results is-success';
+		?>
+		<div class="<?php echo esc_attr( $panel_class ); ?>">
+			<?php if ( ! $has_problems ) : ?>
+				<p class="cws-core-checksum-summary">
+					<?php
+					echo esc_html(
+						sprintf(
+							/* translators: 1: WordPress version, 2: locale, 3: number of files checked */
+							__( 'All checked WordPress core files match official checksums for version %1$s (%2$s). %3$d files verified.', 'choctaw-wp-security' ),
+							isset( $result['version'] ) ? (string) $result['version'] : '',
+							isset( $result['locale'] ) ? (string) $result['locale'] : '',
+							isset( $result['checked'] ) ? (int) $result['checked'] : 0
+						)
+					);
+					?>
+				</p>
+			<?php else : ?>
+				<p class="cws-core-checksum-summary">
+					<?php
+					echo esc_html(
+						sprintf(
+							/* translators: 1: WordPress version, 2: locale, 3: number of files checked */
+							__( 'Problems were found while comparing WordPress %1$s (%2$s). %3$d core files were checked.', 'choctaw-wp-security' ),
+							isset( $result['version'] ) ? (string) $result['version'] : '',
+							isset( $result['locale'] ) ? (string) $result['locale'] : '',
+							isset( $result['checked'] ) ? (int) $result['checked'] : 0
+						)
+					);
+					?>
+				</p>
+
+				<?php if ( ! empty( $result['errors'] ) ) : ?>
+					<h3><?php esc_html_e( 'Errors', 'choctaw-wp-security' ); ?></h3>
+					<ul class="cws-core-checksum-list">
+						<?php foreach ( $result['errors'] as $error_message ) : ?>
+							<li><?php echo esc_html( (string) $error_message ); ?></li>
+						<?php endforeach; ?>
+					</ul>
+				<?php endif; ?>
+
+				<?php if ( ! empty( $result['modified'] ) ) : ?>
+					<h3><?php esc_html_e( 'Modified Files', 'choctaw-wp-security' ); ?></h3>
+					<table class="widefat striped cws-core-checksum-table">
+						<thead>
+							<tr>
+								<th scope="col"><?php esc_html_e( 'File', 'choctaw-wp-security' ); ?></th>
+								<th scope="col"><?php esc_html_e( 'Problem', 'choctaw-wp-security' ); ?></th>
+							</tr>
+						</thead>
+						<tbody>
+							<?php foreach ( $result['modified'] as $file_path ) : ?>
+								<tr>
+									<td><?php echo esc_html( (string) $file_path ); ?></td>
+									<td><?php esc_html_e( 'Checksum mismatch', 'choctaw-wp-security' ); ?></td>
+								</tr>
+							<?php endforeach; ?>
+						</tbody>
+					</table>
+				<?php endif; ?>
+
+				<?php if ( ! empty( $result['missing'] ) ) : ?>
+					<h3><?php esc_html_e( 'Missing Files', 'choctaw-wp-security' ); ?></h3>
+					<table class="widefat striped cws-core-checksum-table">
+						<thead>
+							<tr>
+								<th scope="col"><?php esc_html_e( 'File', 'choctaw-wp-security' ); ?></th>
+								<th scope="col"><?php esc_html_e( 'Problem', 'choctaw-wp-security' ); ?></th>
+							</tr>
+						</thead>
+						<tbody>
+							<?php foreach ( $result['missing'] as $file_path ) : ?>
+								<tr>
+									<td><?php echo esc_html( (string) $file_path ); ?></td>
+									<td><?php esc_html_e( 'File not found', 'choctaw-wp-security' ); ?></td>
+								</tr>
+							<?php endforeach; ?>
+						</tbody>
+					</table>
+				<?php endif; ?>
+
+				<?php if ( ! empty( $result['unknown'] ) ) : ?>
+					<h3><?php esc_html_e( 'Unknown Files', 'choctaw-wp-security' ); ?></h3>
+					<p class="description">
+						<?php esc_html_e( 'Some hosts and local development tools place extra files in the WordPress root or core directories. Review these files carefully rather than assuming every unknown file is malware.', 'choctaw-wp-security' ); ?>
+					</p>
+					<table class="widefat striped cws-core-checksum-table">
+						<thead>
+							<tr>
+								<th scope="col"><?php esc_html_e( 'File', 'choctaw-wp-security' ); ?></th>
+								<th scope="col"><?php esc_html_e( 'Problem', 'choctaw-wp-security' ); ?></th>
+							</tr>
+						</thead>
+						<tbody>
+							<?php foreach ( $result['unknown'] as $file_path ) : ?>
+								<tr>
+									<td><?php echo esc_html( (string) $file_path ); ?></td>
+									<td><?php esc_html_e( 'Not listed in official checksums', 'choctaw-wp-security' ); ?></td>
+								</tr>
+							<?php endforeach; ?>
+						</tbody>
+					</table>
+					<?php if ( ! empty( $result['unknown_truncated'] ) ) : ?>
+						<p class="description">
+							<?php
+							echo esc_html(
+								sprintf(
+									/* translators: %d: number of additional unknown files not shown */
+									__( '%d additional unknown files were found but are not displayed.', 'choctaw-wp-security' ),
+									(int) $result['unknown_truncated']
+								)
+							);
+							?>
+						</p>
+					<?php endif; ?>
+				<?php endif; ?>
 			<?php endif; ?>
 		</div>
 		<?php
