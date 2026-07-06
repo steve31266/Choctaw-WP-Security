@@ -433,7 +433,7 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 			$cron_raw_string = (string) $cron_raw;
 		}
 
-		if ( '' !== $cron_raw_string ) {
+		if ( ! is_array( $cron_raw ) && '' !== $cron_raw_string ) {
 			$this->scan_value_for_suspicious_strings(
 				$cron_raw_string,
 				'cron',
@@ -462,43 +462,22 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 					continue;
 				}
 
-				if ( ! $this->is_known_cron_hook( $hook ) ) {
-					$findings[] = $this->make_finding(
-						'cron_unknown_hook',
-						'warning',
-						'cron',
-						strlen( $hook ),
-						sprintf(
-							/* translators: 1: cron hook, 2: scheduled timestamp */
-							__( 'Unknown cron hook with no registered handler: %1$s (scheduled %2$s)', 'choctaw-wp-security' ),
-							$hook,
-							gmdate( 'Y-m-d H:i:s', (int) $timestamp )
-						),
-						$hook
-					);
-				}
-
 				if ( ! is_array( $events ) ) {
 					continue;
 				}
 
-				foreach ( $events as $event ) {
+				foreach ( $events as $event_key => $event ) {
 					if ( ! is_array( $event ) ) {
 						continue;
 					}
 
 					$serialized = maybe_serialize( $event );
-
-					$this->scan_value_for_suspicious_strings(
-						$serialized,
-						'cron',
-						$findings,
-						array(
-							'eval(',
-							'base64_decode(',
-							'gzinflate(',
-						),
-						$hook
+					$findings[] = $this->make_cron_event_finding(
+						$hook,
+						(int) $timestamp,
+						(string) $event_key,
+						$event,
+						$serialized
 					);
 				}
 			}
@@ -964,18 +943,128 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 			return true;
 		}
 
+		return $this->is_wordpress_core_cron_hook( $hook );
+	}
+
+	/**
+	 * Determine whether a cron hook is a known WordPress core task.
+	 *
+	 * @param string $hook Cron hook name.
+	 * @return bool
+	 */
+	private function is_wordpress_core_cron_hook( $hook ) {
 		$core_hooks = array(
+			'delete_expired_transients',
+			'do_pings',
+			'importer_scheduled_cleanup',
+			'recovery_mode_clean_expired_keys',
+			'upgrader_scheduled_cleanup',
+			'wp_delete_temp_updater_backup',
+			'wp_delete_temp_updater_backups',
+			'wp_https_detection',
+			'wp_privacy_delete_old_export_files',
+			'wp_scheduled_auto_draft_delete',
+			'wp_scheduled_delete',
+			'wp_site_health_scheduled_check',
+			'wp_update_https_detection_errors',
 			'wp_version_check',
 			'wp_update_plugins',
 			'wp_update_themes',
-			'wp_scheduled_delete',
-			'delete_expired_transients',
-			'wp_scheduled_auto_draft_delete',
-			'recovery_mode_clean_expired_keys',
-			'wp_privacy_delete_old_export_files',
 		);
 
 		return in_array( $hook, $core_hooks, true );
+	}
+
+	/**
+	 * Build an inventory finding for one stored cron event.
+	 *
+	 * @param string               $hook       Cron hook name.
+	 * @param int                  $timestamp  Scheduled timestamp.
+	 * @param string               $event_key  Cron event array key.
+	 * @param array<string, mixed> $event      Cron event payload.
+	 * @param string               $serialized Serialized event payload.
+	 * @return array<string, mixed>
+	 */
+	private function make_cron_event_finding( $hook, $timestamp, $event_key, array $event, $serialized ) {
+		$class      = $this->classify_cron_event( $hook, $serialized );
+		$schedule   = isset( $event['schedule'] ) && '' !== (string) $event['schedule'] ? (string) $event['schedule'] : __( 'one-time', 'choctaw-wp-security' );
+		$next_run   = $timestamp > 0 ? gmdate( 'Y-m-d H:i:s', $timestamp ) : __( 'Unknown', 'choctaw-wp-security' );
+		$severity   = in_array( $class['key'], array( 'investigate', 'suspicious' ), true ) ? 'warning' : 'info';
+		$event_size = strlen( $serialized );
+
+		return $this->make_finding(
+			'cron_event_' . $class['key'],
+			$severity,
+			'cron',
+			$event_size,
+			sprintf(
+				/* translators: 1: classification label, 2: cron hook, 3: next run time, 4: schedule name */
+				__( '%1$s: %2$s. Next run: %3$s UTC. Schedule: %4$s.', 'choctaw-wp-security' ),
+				$class['label'],
+				$hook,
+				$next_run,
+				$schedule
+			),
+			sprintf(
+				/* translators: 1: classification reason, 2: cron event key */
+				__( '%1$s Event key: %2$s', 'choctaw-wp-security' ),
+				$class['reason'],
+				$event_key
+			)
+		);
+	}
+
+	/**
+	 * Classify a cron event for the admin inventory.
+	 *
+	 * @param string $hook       Cron hook name.
+	 * @param string $serialized Serialized event payload.
+	 * @return array{key: string, label: string, reason: string}
+	 */
+	private function classify_cron_event( $hook, $serialized ) {
+		$suspicious_pattern = $this->find_matching_pattern(
+			$serialized,
+			array(
+				'eval(',
+				'base64_decode(',
+				'phar://',
+				'gzinflate(',
+			)
+		);
+
+		if ( '' !== $suspicious_pattern ) {
+			return array(
+				'key'    => 'suspicious',
+				'label'  => __( 'Suspicious', 'choctaw-wp-security' ),
+				'reason' => sprintf(
+					/* translators: %s: matched suspicious pattern */
+					__( 'Cron event payload matched suspicious pattern: %s.', 'choctaw-wp-security' ),
+					$suspicious_pattern
+				),
+			);
+		}
+
+		if ( $this->is_wordpress_core_cron_hook( $hook ) ) {
+			return array(
+				'key'    => 'wp_core',
+				'label'  => __( 'WP Core', 'choctaw-wp-security' ),
+				'reason' => __( 'Recognized WordPress core cron hook.', 'choctaw-wp-security' ),
+			);
+		}
+
+		if ( has_action( $hook ) ) {
+			return array(
+				'key'    => 'plugin_theme',
+				'label'  => __( 'Plugin/Theme', 'choctaw-wp-security' ),
+				'reason' => __( 'A handler is registered during this admin request.', 'choctaw-wp-security' ),
+			);
+		}
+
+		return array(
+			'key'    => 'investigate',
+			'label'  => __( 'Investigate', 'choctaw-wp-security' ),
+			'reason' => __( 'No registered handler was found and this hook is not recognized as WordPress core.', 'choctaw-wp-security' ),
+		);
 	}
 
 	/**

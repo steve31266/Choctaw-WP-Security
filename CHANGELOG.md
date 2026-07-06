@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2026-07-06
+
+### Added
+
+- Database Scan now flags `phar://` in PHP & Execution Patterns and in Cron Events suspicious payload checks.
+
+## [1.5.1] - 2026-07-06
+
+### Changed
+
+- Database Scan Cron Events now reports a classified inventory of stored cron jobs.
+  - Cron rows are labeled as **WP Core**, **Plugin/Theme**, **Investigate**, or **Suspicious**.
+  - Known WordPress core hooks such as `wp_delete_temp_updater_backups` are identified as core instead of reported as unknown-handler warnings.
+  - Each cron event still reports the `option_id` for the underlying `cron` option row to make database lookup faster.
+
 ## [1.5.0] - 2026-07-06
 
 ### Added
@@ -112,6 +127,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: XML-RPC protection and dual-scope login rate limiting.
 - Admin settings page with feature toggles, rate limit policy, and recent lockout log.
 
+[1.5.2]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.5.1...v1.5.2
+[1.5.1]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.4.2...v1.5.0
 [1.4.2]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.4.0...v1.4.1

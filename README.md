@@ -62,6 +62,7 @@ Built for standard WordPress installs. No Composer, build tools, or external dep
 - Warns when the configured table URL does not match the site but another discovered table does
 - Reports potentially compromised or malicious records for investigation
 - Checks site URL and security settings, active plugin consistency, cron events, large autoload options, PHP/execution patterns, known-malware option names, and scripts outside widget/theme options
+- Classifies stored cron events as **WP Core**, **Plugin/Theme**, **Investigate**, or **Suspicious** while keeping the `option_id` for the underlying `cron` row visible
 - Displays scan reports through an AJAX/JSON interface with client-side pagination and sortable columns
 - Establishes a per-table baseline on the first scan of each selected table and reports new/changed/removed options on subsequent scans of that same table
 - Includes **Reset Baseline** to snapshot the current selected options table after cleanup
@@ -237,6 +238,14 @@ choctaw-wp-security/
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
+
+### 1.5.2
+
+- Database Scan now flags `phar://` in PHP & Execution Patterns and Cron Events suspicious payload checks
+
+### 1.5.1
+
+- Cron Events now reports a classified inventory of stored jobs, including WP Core labels and the `option_id` for the underlying `cron` option row
 
 ### 1.5.0
 

@@ -69,6 +69,7 @@ class Choctaw_Wp_Security_Options_Scan_Patterns {
 	public static $execution_patterns = array(
 		'eval(',
 		'base64_decode(',
+		'phar://',
 		'gzinflate(',
 		'gzuncompress(',
 		'str_rot13(',
@@ -132,7 +133,7 @@ class Choctaw_Wp_Security_Options_Scan_Patterns {
 			),
 			'cron_events'              => array(
 				'title'    => __( 'Cron Events', 'choctaw-wp-security' ),
-				'guidance' => __( 'WordPress stores scheduled tasks in the cron option. Unknown hooks or suspicious serialized content deserve investigation.', 'choctaw-wp-security' ),
+				'guidance' => __( 'WordPress stores scheduled tasks in the cron option. Review the classified inventory below; WP Core and Plugin/Theme entries are usually expected, while Investigate or Suspicious entries deserve closer review.', 'choctaw-wp-security' ),
 			),
 			'large_autoload'           => array(
 				'title'    => __( 'Large Autoload Options', 'choctaw-wp-security' ),
