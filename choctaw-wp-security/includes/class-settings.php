@@ -1490,6 +1490,10 @@ class Choctaw_Wp_Security_Settings {
 				<?php $this->render_core_checksum_results( $result ); ?>
 			<?php endif; ?>
 			</div>
+
+			<?php if ( is_array( $result ) ) : ?>
+				<?php $this->render_core_checksum_category_reports( $result ); ?>
+			<?php endif; ?>
 		</div>
 		<?php
 	}
@@ -2940,47 +2944,40 @@ class Choctaw_Wp_Security_Settings {
 						<?php endforeach; ?>
 					</ul>
 				<?php endif; ?>
-
-				<?php if ( ! empty( $result['modified'] ) ) : ?>
-					<?php
-					$this->render_checksum_path_table(
-						__( 'Modified Files', 'choctaw-wp-security' ),
-						$result['modified'],
-						__( 'Checksum mismatch', 'choctaw-wp-security' ),
-						'cws_checksum_modified'
-					);
-					?>
-				<?php endif; ?>
-
-				<?php if ( ! empty( $result['missing'] ) ) : ?>
-					<?php
-					$this->render_checksum_path_table(
-						__( 'Missing Files', 'choctaw-wp-security' ),
-						$result['missing'],
-						__( 'File not found', 'choctaw-wp-security' ),
-						'cws_checksum_missing'
-					);
-					?>
-				<?php endif; ?>
-
-				<?php if ( ! empty( $result['unknown'] ) ) : ?>
-					<h3><?php esc_html_e( 'Unknown Files', 'choctaw-wp-security' ); ?></h3>
-					<p class="description">
-						<?php esc_html_e( 'Some hosts and local development tools place extra files in the WordPress root or core directories. Review these files carefully rather than assuming every unknown file is malware.', 'choctaw-wp-security' ); ?>
-					</p>
-					<?php
-					$this->render_checksum_path_table(
-						'',
-						$result['unknown'],
-						__( 'Not listed in official checksums', 'choctaw-wp-security' ),
-						'cws_checksum_unknown',
-						false
-					);
-					?>
-				<?php endif; ?>
 			<?php endif; ?>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Render the three checksum finding category reports.
+	 *
+	 * @param array<string, mixed> $result Scan result payload.
+	 * @return void
+	 */
+	private function render_core_checksum_category_reports( $result ) {
+		$modified = isset( $result['modified'] ) && is_array( $result['modified'] ) ? $result['modified'] : array();
+		$missing  = isset( $result['missing'] ) && is_array( $result['missing'] ) ? $result['missing'] : array();
+		$unknown  = isset( $result['unknown'] ) && is_array( $result['unknown'] ) ? $result['unknown'] : array();
+
+		$this->render_checksum_category_section(
+			__( 'Modified Files', 'choctaw-wp-security' ),
+			'modified',
+			$modified,
+			'cws_checksum_modified'
+		);
+		$this->render_checksum_category_section(
+			__( 'Missing Files', 'choctaw-wp-security' ),
+			'missing',
+			$missing,
+			'cws_checksum_missing'
+		);
+		$this->render_checksum_category_section(
+			__( 'Unknown Files', 'choctaw-wp-security' ),
+			'unknown',
+			$unknown,
+			'cws_checksum_unknown'
+		);
 	}
 
 	/**
@@ -3038,44 +3035,117 @@ class Choctaw_Wp_Security_Settings {
 	}
 
 	/**
-	 * Render a paginated checksum file table.
+	 * Render one checksum finding category report.
 	 *
-	 * @param string             $heading      Optional section heading.
-	 * @param array<int, string> $file_paths   File paths to display.
-	 * @param string             $problem      Problem label.
-	 * @param string             $page_param   Pagination query parameter.
-	 * @param bool               $show_heading Whether to render the heading.
+	 * @param string             $heading    Section heading.
+	 * @param string             $category   Finding category: modified, missing, or unknown.
+	 * @param array<int, string> $file_paths File paths to display.
+	 * @param string             $page_param Pagination query parameter.
 	 * @return void
 	 */
-	private function render_checksum_path_table( $heading, array $file_paths, $problem, $page_param, $show_heading = true ) {
-		$pagination = $this->paginate_report_items( $file_paths, $this->get_report_page_number( $page_param ) );
+	private function render_checksum_category_section( $heading, $category, array $file_paths, $page_param ) {
+		$display = $this->get_checksum_category_display( $category );
 
-		if ( empty( $pagination['items'] ) ) {
+		if ( empty( $display ) ) {
 			return;
 		}
-
-		if ( $show_heading && '' !== $heading ) {
-			echo '<h3>' . esc_html( $heading ) . '</h3>';
-		}
 		?>
-		<table class="widefat striped cws-core-checksum-table">
-			<thead>
-				<tr>
-					<th scope="col"><?php esc_html_e( 'File', 'choctaw-wp-security' ); ?></th>
-					<th scope="col"><?php esc_html_e( 'Problem', 'choctaw-wp-security' ); ?></th>
-				</tr>
-			</thead>
-			<tbody>
-				<?php foreach ( $pagination['items'] as $file_path ) : ?>
-					<tr>
-						<td><?php $this->render_file_path( (string) $file_path ); ?></td>
-						<td><?php echo esc_html( $problem ); ?></td>
-					</tr>
-				<?php endforeach; ?>
-			</tbody>
-		</table>
+		<div class="cws-report-section cws-core-checksum-category-report">
+			<h3><?php echo esc_html( $heading ); ?></h3>
+
+			<?php if ( empty( $file_paths ) ) : ?>
+				<p><?php esc_html_e( 'No files reported.', 'choctaw-wp-security' ); ?></p>
+			<?php else : ?>
+				<?php
+				$page_number = $this->get_report_page_number( $page_param );
+				$pagination  = $this->paginate_report_items( $file_paths, $page_number );
+				?>
+				<table class="widefat striped cws-core-checksum-table">
+					<thead>
+						<tr>
+							<th scope="col"><?php esc_html_e( 'File', 'choctaw-wp-security' ); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ( $pagination['items'] as $file_path ) : ?>
+							<tr>
+								<td><?php $this->render_file_path( (string) $file_path ); ?></td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+				<?php $this->render_report_pagination( $page_param, $pagination ); ?>
+
+				<div class="cws-component-status cws-core-checksum-instructions <?php echo esc_attr( $display['status_class'] ); ?>">
+					<div class="cws-component-status-body">
+						<h4><?php esc_html_e( 'How to proceed', 'choctaw-wp-security' ); ?></h4>
+						<p><?php echo esc_html( $display['explanation'] ); ?></p>
+						<ol class="cws-core-checksum-list">
+							<?php foreach ( $display['steps'] as $step ) : ?>
+								<li><?php echo wp_kses_post( $step ); ?></li>
+							<?php endforeach; ?>
+						</ol>
+					</div>
+				</div>
+			<?php endif; ?>
+		</div>
 		<?php
-		$this->render_report_pagination( $page_param, $pagination );
+	}
+
+	/**
+	 * Build display copy for a checksum finding category.
+	 *
+	 * @param string $category Finding category: modified, missing, or unknown.
+	 * @return array<string, mixed>|null
+	 */
+	private function get_checksum_category_display( $category ) {
+		switch ( $category ) {
+			case 'modified':
+				return array(
+					'status_class' => 'is-vulnerable',
+					'explanation'  => __( 'These official core files do not match the WordPress.org checksums. They have a high probability of being compromised.', 'choctaw-wp-security' ),
+					'steps'        => array(
+						__( 'Download the suspected file to your local computer.', 'choctaw-wp-security' ),
+						__( 'Open the file in a text editor and review its contents.', 'choctaw-wp-security' ),
+						__( 'If you determine a file was maliciously altered, log into your web server via SSH.', 'choctaw-wp-security' ),
+						__( 'Change directory to your WordPress installation.', 'choctaw-wp-security' ),
+						sprintf(
+							/* translators: %s: WP-CLI command */
+							__( 'Run %s to reinstall a fresh set of core files from WordPress.', 'choctaw-wp-security' ),
+							'<code>wp core download --force</code>'
+						),
+					),
+				);
+
+			case 'missing':
+				return array(
+					'status_class' => 'is-error',
+					'explanation'  => __( 'Official WordPress core files are expected at these paths but were not found on disk. This may indicate deletion, renaming, incomplete installation, or post-compromise cleanup.', 'choctaw-wp-security' ),
+					'steps'        => array(
+						__( 'Confirm the files are genuinely missing (not a permissions or path issue).', 'choctaw-wp-security' ),
+						__( 'Log into your web server via SSH.', 'choctaw-wp-security' ),
+						__( 'Change directory to your WordPress installation.', 'choctaw-wp-security' ),
+						sprintf(
+							/* translators: %s: WP-CLI command */
+							__( 'Run %s to restore missing core files from WordPress.', 'choctaw-wp-security' ),
+							'<code>wp core download --force</code>'
+						),
+					),
+				);
+
+			case 'unknown':
+				return array(
+					'status_class' => 'is-neutral',
+					'explanation'  => __( 'WordPress does not recognize these files as official core files. That does not mean they are malicious—they may have been added by your web host or another tool.', 'choctaw-wp-security' ),
+					'steps'        => array(
+						__( 'Download the file to your local computer.', 'choctaw-wp-security' ),
+						__( 'Open the file in a text editor and review its contents.', 'choctaw-wp-security' ),
+						__( 'Delete the file from the server if it is not needed or appears to be malicious.', 'choctaw-wp-security' ),
+					),
+				);
+		}
+
+		return null;
 	}
 
 	/**

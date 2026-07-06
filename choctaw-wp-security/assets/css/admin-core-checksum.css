@@ -370,6 +370,18 @@
 	padding: 12px 16px 16px;
 }
 
+.cws-core-checksum-instructions {
+	margin-top: 16px;
+}
+
+.cws-core-checksum-instructions .cws-component-status-body {
+	border-top: 0;
+}
+
+.cws-core-checksum-instructions h4 {
+	margin: 0 0 8px;
+}
+
 .cws-component-vulnerability-list {
 	display: grid;
 	gap: 16px;

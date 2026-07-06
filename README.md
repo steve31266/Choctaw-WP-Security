@@ -156,7 +156,7 @@ The settings page under **Settings → Choctaw WP Security** includes:
 - Rate limit policy fields (attempts, window, lockout duration)
 - Read-only status section showing feature state, current policy, and plugin version
 - **Exposed Folders** — manual scan that identifies top-level plugin and theme folders missing common directory index files
-- **WP Core Verify-Checksums** — manual scan that compares installed WordPress core files against official WordPress.org checksums for the current version and locale
+- **WP Core Verify-Checksums** — manual scan that compares installed WordPress core files against official WordPress.org checksums; findings are shown in separate Modified, Missing, and Unknown sections with remediation guidance
 - **Vulnerabilities** — manual scan of WordPress core, active theme, and active plugins against the WPVulnerability API
 - **wp_options** — manual scan of a selected WordPress options table for potentially compromised records
 - **wp_posts** — manual scan of a selected WordPress posts table for potentially malicious content
@@ -302,6 +302,10 @@ choctaw-wp-security/
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
+
+### 1.8.1
+
+- **Verify Checksums** report shows three separate sections (Modified, Missing, Unknown) with file lists and category-specific remediation steps, or "No files reported." when a category is clear
 
 ### 1.8.0
 
