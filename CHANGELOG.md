@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-07-06
+
+### Added
+
+- **wp_users** admin tab — lists all users from a selected `*users` table with sortable columns and pagination (20 per page).
+- Per-user **View activity** drill-down — lazy-loaded forensic report of detectable actions (created/edited content, uploads, comments).
+- Multi-table support for users — when more than one `*users` table exists, choose which table to load (same pattern as wp_options).
+
+### Changed
+
+- Renamed the **Database Scan** admin tab label to **wp_options** (internal slug `database-scan` unchanged for URL compatibility).
+
 ## [1.5.2] - 2026-07-06
 
 ### Added

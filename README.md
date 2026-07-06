@@ -6,7 +6,8 @@ A lightweight WordPress security plugin that hardens common attack paths:
 2. **Login brute force** — rate-limits failed `wp-login.php` attempts
 3. **Uploads PHP execution** — blocks PHP in `wp-content/uploads` where the server allows it
 4. **Exposed folders** — scans plugin and theme folders for missing directory index files
-5. **Database scan** — inspects the `wp_options` table for potentially compromised records
+5. **wp_options scan** — inspects the `wp_options` table for potentially compromised records
+6. **wp_users review** — lists users from the `wp_users` table and reconstructs detectable per-user activity
 
 Built for standard WordPress installs. No Composer, build tools, or external dependencies.
 
@@ -53,9 +54,9 @@ Built for standard WordPress installs. No Composer, build tools, or external dep
 - Provides Apache/LiteSpeed, Nginx, and folder-level remediation guidance
 - Detection-only: does not add files, edit `.htaccess`, or change server configuration
 
-### Database Scan
+### wp_options
 
-- Manual **Scan Now** action on the **Database Scan** admin tab
+- Manual **Scan Now** action on the **wp_options** admin tab
 - Discovers all `*options` tables in the database and lets you choose which one to scan
 - Shows table metadata (row count, data size, `siteurl`/`home` hosts, last updated) to help identify the correct table after staging copies or migrations
 - Marks the WordPress configured table and tables whose URLs match the current site
@@ -67,6 +68,18 @@ Built for standard WordPress installs. No Composer, build tools, or external dep
 - Establishes a per-table baseline on the first scan of each selected table and reports new/changed/removed options on subsequent scans of that same table
 - Includes **Reset Baseline** to snapshot the current selected options table after cleanup
 - Detection-only: does not delete, edit, or quarantine database rows
+
+### wp_users
+
+- Manual **Load Users** action on the **wp_users** admin tab
+- Discovers all `*users` tables in the database and lets you choose which one to load
+- Shows table metadata (row count, data size, last updated) to help identify the correct table after staging copies or migrations
+- Lists every user with ID, login, email, registration date, role label, and display name
+- Sortable columns and client-side pagination (20 per page) through an AJAX/JSON interface
+- **View activity** on each user row loads a forensic activity report on demand
+- Detectable activity includes created or edited content, media uploads, and comments attributed to that user in the database
+- Does **not** detect who created another user account, changed site settings, installed plugins, or edited files on disk — WordPress core does not record those actions with a user ID
+- Read-only: does not modify users or content
 
 ## Requirements
 
@@ -114,7 +127,8 @@ The settings page under **Settings → Choctaw WP Security** includes:
 - Read-only status section showing feature state, current policy, and plugin version
 - **Exposed Folders** — manual scan that identifies top-level plugin and theme folders missing common directory index files
 - **WP Core Verify-Checksums** — manual scan that compares installed WordPress core files against official WordPress.org checksums for the current version and locale
-- **Database Scan** — manual scan of a selected WordPress options table for potentially compromised records
+- **wp_options** — manual scan of a selected WordPress options table for potentially compromised records
+- **wp_users** — manual review of a selected WordPress users table with per-user activity drill-down
 - Recent lockout log with timestamp, IP address, attempted username, scope, and lockout duration
 
 ## How It Works
@@ -149,6 +163,7 @@ This plugin uses WordPress transients for temporary state. It does **not** creat
 | Core checksum scan result | `cws_core_checksum_{user_id}` | 12 hours |
 | Exposed folders scan result | `cws_exposed_folders_{user_id}` | 12 hours |
 | Database scan result | `cws_database_scan_{user_id}` | 12 hours |
+| Users table result | `cws_users_table_{user_id}` | 12 hours |
 
 **Are they safe to keep?** Yes. These rows hold short-lived operational data such as failure counts, lockout flags, and scan results. They do not store passwords or other secrets. Active and recently expired rows are normal.
 
@@ -198,7 +213,9 @@ After install or update, verify:
 - [ ] REST API (`/wp-json/`) still works
 - [ ] Settings save and persist correctly
 - [ ] Exposed Folders scan runs manually and reports top-level plugin/theme folders missing common index files
-- [ ] Database Scan discovers multiple options tables when present and scans the selected table
+- [ ] wp_options discovers multiple options tables when present and scans the selected table
+- [ ] wp_users discovers multiple users tables when present and loads the selected table
+- [ ] wp_users View activity shows detectable content, upload, and comment activity for a user
 - [ ] Disabling XML-RPC blocking from settings stops XML-RPC blocking through this plugin
 - [ ] Disabling login rate limiting from settings stops login blocking through this plugin
 
@@ -222,7 +239,8 @@ choctaw-wp-security/
 │   │   ├── login-lockout.css        # Login lockout styling
 │   │   └── admin-core-checksum.css  # Admin report styling
 │   └── js/
-│       └── admin-database-scan.js   # AJAX Database Scan report UI
+│       ├── admin-database-scan.js   # AJAX wp_options report UI
+│       └── admin-users-table.js     # AJAX wp_users report UI
 └── includes/
     ├── class-plugin.php             # Module coordinator
     ├── class-utils.php              # Options, IP helper, transient keys
@@ -231,6 +249,9 @@ choctaw-wp-security/
     ├── class-options-scan-patterns.php # Database scan patterns and thresholds
     ├── class-options-table-discovery.php # Options table discovery and metadata
     ├── class-options-table-scanner.php # wp_options database scanner
+    ├── class-users-table-discovery.php # Users table discovery and metadata
+    ├── class-users-table-reader.php # wp_users table reader
+    ├── class-user-activity-reader.php # Per-user forensic activity reader
     ├── class-xml-rpc-protection.php # XML-RPC blocking
     └── class-login-rate-limiter.php # Login rate limiting
 ```
@@ -238,6 +259,11 @@ choctaw-wp-security/
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
+
+### 1.6.0
+
+- Added **wp_users** admin tab with sortable user list, pagination, and per-user View activity forensic drill-down
+- Renamed **Database Scan** admin tab label to **wp_options**
 
 ### 1.5.2
 

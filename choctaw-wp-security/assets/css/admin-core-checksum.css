@@ -223,6 +223,16 @@
 	font-size: 11px;
 }
 
+.cws-users-activity-panel {
+	padding: 12px 16px;
+	background: #f6f7f7;
+	border-top: 1px solid #dcdcde;
+}
+
+.cws-users-activity-loading {
+	font-style: italic;
+}
+
 .cws-database-scan-report-actions {
 	margin-top: 24px;
 }

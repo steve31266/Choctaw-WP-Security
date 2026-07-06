@@ -24,9 +24,12 @@ class Choctaw_Wp_Security_Settings {
 		add_action( 'load-settings_page_choctaw-wp-security', array( $this, 'handle_exposed_folders_scan' ) );
 		add_action( 'load-settings_page_choctaw-wp-security', array( $this, 'handle_database_scan' ) );
 		add_action( 'load-settings_page_choctaw-wp-security', array( $this, 'handle_database_scan_baseline_reset' ) );
+		add_action( 'load-settings_page_choctaw-wp-security', array( $this, 'handle_users_table_load' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 		add_action( 'wp_ajax_choctaw_wp_security_database_scan', array( $this, 'ajax_database_scan' ) );
 		add_action( 'wp_ajax_choctaw_wp_security_database_scan_baseline_reset', array( $this, 'ajax_database_scan_baseline_reset' ) );
+		add_action( 'wp_ajax_choctaw_wp_security_users_table_load', array( $this, 'ajax_users_table_load' ) );
+		add_action( 'wp_ajax_choctaw_wp_security_user_activity_load', array( $this, 'ajax_user_activity_load' ) );
 	}
 
 	/**
@@ -248,7 +251,8 @@ class Choctaw_Wp_Security_Settings {
 			'file-changes-uploads' => __( 'Files Changes/Uploads', 'choctaw-wp-security' ),
 			'exposed-folders'      => __( 'Exposed Folders', 'choctaw-wp-security' ),
 			'verify-checksums'     => __( 'Verify Checksums', 'choctaw-wp-security' ),
-			'database-scan'        => __( 'Database Scan', 'choctaw-wp-security' ),
+			'database-scan'        => __( 'wp_options', 'choctaw-wp-security' ),
+			'wp-users'             => __( 'wp_users', 'choctaw-wp-security' ),
 			'about-this-plugin'    => __( 'About This Plugin', 'choctaw-wp-security' ),
 		);
 	}
@@ -315,6 +319,11 @@ class Choctaw_Wp_Security_Settings {
 
 		if ( 'database-scan' === $active_tab ) {
 			$this->render_database_scan_section();
+			return;
+		}
+
+		if ( 'wp-users' === $active_tab ) {
+			$this->render_users_table_section();
 			return;
 		}
 
@@ -898,60 +907,120 @@ class Choctaw_Wp_Security_Settings {
 			CHOCTAW_WP_SECURITY_VERSION
 		);
 
-		if ( 'database-scan' !== $this->get_active_admin_tab() ) {
-			return;
+		if ( 'database-scan' === $this->get_active_admin_tab() ) {
+			wp_enqueue_script(
+				'choctaw-wp-security-database-scan',
+				CHOCTAW_WP_SECURITY_URL . 'assets/js/admin-database-scan.js',
+				array(),
+				CHOCTAW_WP_SECURITY_VERSION,
+				true
+			);
+
+			wp_localize_script(
+				'choctaw-wp-security-database-scan',
+				'choctawWpSecurityDatabaseScan',
+				array(
+					'ajaxUrl'       => admin_url( 'admin-ajax.php' ),
+					'nonce'         => wp_create_nonce( 'choctaw_wp_security_database_scan_ajax' ),
+					'pageSize'      => $this->get_report_page_size(),
+					'initialResult' => $this->load_report_result(
+						$this->get_database_scan_result_transient_key(),
+						Choctaw_Wp_Security_Utils::USER_META_DATABASE_SCAN_RESULT
+					),
+					'strings'       => array(
+						'scanButton'         => __( 'Scan Now', 'choctaw-wp-security' ),
+						'rescanButton'       => __( 'Rescan Selected Table', 'choctaw-wp-security' ),
+						'scanning'           => __( 'Scanning selected options table...', 'choctaw-wp-security' ),
+						'resettingBaseline'  => __( 'Resetting baseline...', 'choctaw-wp-security' ),
+						'scanError'          => __( 'The database scan could not be completed.', 'choctaw-wp-security' ),
+						'resetError'         => __( 'The database scan baseline could not be reset.', 'choctaw-wp-security' ),
+						'noFindings'         => __( 'No findings in this section.', 'choctaw-wp-security' ),
+						'pageOf'             => __( 'Page %1$s of %2$s', 'choctaw-wp-security' ),
+						'items'              => __( '%s items', 'choctaw-wp-security' ),
+						'item'               => __( '%s item', 'choctaw-wp-security' ),
+						'sortAscending'      => __( 'Sort ascending', 'choctaw-wp-security' ),
+						'sortDescending'     => __( 'Sort descending', 'choctaw-wp-security' ),
+						'scannedTable'       => __( 'Scanned table: %s', 'choctaw-wp-security' ),
+						'configuredTable'    => __( 'WordPress configured table: %s', 'choctaw-wp-security' ),
+						'scanCompleteIssues' => __( 'Scan complete. %1$s critical, %2$s warning, and %3$s informational findings worth investigating.', 'choctaw-wp-security' ),
+						'scanCompleteClean'  => __( 'Scan complete. No critical or warning findings. %s informational item(s) reported.', 'choctaw-wp-security' ),
+						'incomplete'         => __( 'The scan stopped early because it reached its time budget. Review the partial results below and run the scan again if needed.', 'choctaw-wp-security' ),
+						'severity'           => __( 'Severity', 'choctaw-wp-security' ),
+						'optionId'           => __( 'Option ID', 'choctaw-wp-security' ),
+						'option'             => __( 'Option', 'choctaw-wp-security' ),
+						'size'               => __( 'Size', 'choctaw-wp-security' ),
+						'detail'             => __( 'Detail', 'choctaw-wp-security' ),
+						'excerpt'            => __( 'Excerpt', 'choctaw-wp-security' ),
+						'firstPage'          => __( 'First page', 'choctaw-wp-security' ),
+						'previousPage'       => __( 'Previous page', 'choctaw-wp-security' ),
+						'nextPage'           => __( 'Next page', 'choctaw-wp-security' ),
+						'lastPage'           => __( 'Last page', 'choctaw-wp-security' ),
+					),
+				)
+			);
 		}
 
-		wp_enqueue_script(
-			'choctaw-wp-security-database-scan',
-			CHOCTAW_WP_SECURITY_URL . 'assets/js/admin-database-scan.js',
-			array(),
-			CHOCTAW_WP_SECURITY_VERSION,
-			true
-		);
+		if ( 'wp-users' === $this->get_active_admin_tab() ) {
+			wp_enqueue_script(
+				'choctaw-wp-security-users-table',
+				CHOCTAW_WP_SECURITY_URL . 'assets/js/admin-users-table.js',
+				array(),
+				CHOCTAW_WP_SECURITY_VERSION,
+				true
+			);
 
-		wp_localize_script(
-			'choctaw-wp-security-database-scan',
-			'choctawWpSecurityDatabaseScan',
-			array(
-				'ajaxUrl'       => admin_url( 'admin-ajax.php' ),
-				'nonce'         => wp_create_nonce( 'choctaw_wp_security_database_scan_ajax' ),
-				'pageSize'      => $this->get_report_page_size(),
-				'initialResult' => $this->load_report_result(
-					$this->get_database_scan_result_transient_key(),
-					Choctaw_Wp_Security_Utils::USER_META_DATABASE_SCAN_RESULT
-				),
-				'strings'       => array(
-					'scanButton'         => __( 'Scan Now', 'choctaw-wp-security' ),
-					'rescanButton'       => __( 'Rescan Selected Table', 'choctaw-wp-security' ),
-					'scanning'           => __( 'Scanning selected options table...', 'choctaw-wp-security' ),
-					'resettingBaseline'  => __( 'Resetting baseline...', 'choctaw-wp-security' ),
-					'scanError'          => __( 'The database scan could not be completed.', 'choctaw-wp-security' ),
-					'resetError'         => __( 'The database scan baseline could not be reset.', 'choctaw-wp-security' ),
-					'noFindings'         => __( 'No findings in this section.', 'choctaw-wp-security' ),
-					'pageOf'             => __( 'Page %1$s of %2$s', 'choctaw-wp-security' ),
-					'items'              => __( '%s items', 'choctaw-wp-security' ),
-					'item'               => __( '%s item', 'choctaw-wp-security' ),
-					'sortAscending'      => __( 'Sort ascending', 'choctaw-wp-security' ),
-					'sortDescending'     => __( 'Sort descending', 'choctaw-wp-security' ),
-					'scannedTable'       => __( 'Scanned table: %s', 'choctaw-wp-security' ),
-					'configuredTable'    => __( 'WordPress configured table: %s', 'choctaw-wp-security' ),
-					'scanCompleteIssues' => __( 'Scan complete. %1$s critical, %2$s warning, and %3$s informational findings worth investigating.', 'choctaw-wp-security' ),
-					'scanCompleteClean'  => __( 'Scan complete. No critical or warning findings. %s informational item(s) reported.', 'choctaw-wp-security' ),
-					'incomplete'         => __( 'The scan stopped early because it reached its time budget. Review the partial results below and run the scan again if needed.', 'choctaw-wp-security' ),
-					'severity'           => __( 'Severity', 'choctaw-wp-security' ),
-					'optionId'           => __( 'Option ID', 'choctaw-wp-security' ),
-					'option'             => __( 'Option', 'choctaw-wp-security' ),
-					'size'               => __( 'Size', 'choctaw-wp-security' ),
-					'detail'             => __( 'Detail', 'choctaw-wp-security' ),
-					'excerpt'            => __( 'Excerpt', 'choctaw-wp-security' ),
-					'firstPage'          => __( 'First page', 'choctaw-wp-security' ),
-					'previousPage'       => __( 'Previous page', 'choctaw-wp-security' ),
-					'nextPage'           => __( 'Next page', 'choctaw-wp-security' ),
-					'lastPage'           => __( 'Last page', 'choctaw-wp-security' ),
-				),
-			)
-		);
+			wp_localize_script(
+				'choctaw-wp-security-users-table',
+				'choctawWpSecurityUsersTable',
+				array(
+					'ajaxUrl'       => admin_url( 'admin-ajax.php' ),
+					'nonce'         => wp_create_nonce( 'choctaw_wp_security_users_table_ajax' ),
+					'pageSize'      => $this->get_report_page_size(),
+					'initialResult' => $this->load_report_result(
+						$this->get_users_table_result_transient_key(),
+						Choctaw_Wp_Security_Utils::USER_META_USERS_TABLE_RESULT
+					),
+					'strings'       => array(
+						'loadButton'           => __( 'Load Users', 'choctaw-wp-security' ),
+						'reloadButton'         => __( 'Reload Selected Table', 'choctaw-wp-security' ),
+						'loading'              => __( 'Loading users from the selected table...', 'choctaw-wp-security' ),
+						'loadError'            => __( 'The users table could not be loaded.', 'choctaw-wp-security' ),
+						'activityError'        => __( 'User activity could not be loaded.', 'choctaw-wp-security' ),
+						'activityLoading'      => __( 'Loading user activity...', 'choctaw-wp-security' ),
+						'viewActivity'         => __( 'View activity', 'choctaw-wp-security' ),
+						'hideActivity'         => __( 'Hide activity', 'choctaw-wp-security' ),
+						'noUsers'              => __( 'No users were found in the selected table.', 'choctaw-wp-security' ),
+						'noActivity'           => __( 'No detectable activity was found for this user.', 'choctaw-wp-security' ),
+						'activityLimitations'  => __( 'Activity is reconstructed from database records only. Creating users, changing settings, and installing plugins are not tracked by WordPress core.', 'choctaw-wp-security' ),
+						'activityCapped'       => __( 'Showing the %s most recent activity items.', 'choctaw-wp-security' ),
+						'loadedTable'          => __( 'Loaded table: %s', 'choctaw-wp-security' ),
+						'configuredTable'      => __( 'WordPress configured table: %s', 'choctaw-wp-security' ),
+						'usersLoaded'          => __( '%s user(s) loaded.', 'choctaw-wp-security' ),
+						'pageOf'               => __( 'Page %1$s of %2$s', 'choctaw-wp-security' ),
+						'items'                => __( '%s items', 'choctaw-wp-security' ),
+						'item'                 => __( '%s item', 'choctaw-wp-security' ),
+						'sortAscending'        => __( 'Sort ascending', 'choctaw-wp-security' ),
+						'sortDescending'       => __( 'Sort descending', 'choctaw-wp-security' ),
+						'id'                   => __( 'ID', 'choctaw-wp-security' ),
+						'userLogin'            => __( 'user_login', 'choctaw-wp-security' ),
+						'userEmail'            => __( 'user_email', 'choctaw-wp-security' ),
+						'userRegistered'       => __( 'user_registered', 'choctaw-wp-security' ),
+						'userStatus'           => __( 'user_status', 'choctaw-wp-security' ),
+						'displayName'          => __( 'display_name', 'choctaw-wp-security' ),
+						'actions'              => __( 'Actions', 'choctaw-wp-security' ),
+						'activityDate'         => __( 'Date', 'choctaw-wp-security' ),
+						'activityLabel'        => __( 'Activity', 'choctaw-wp-security' ),
+						'activityType'         => __( 'Type', 'choctaw-wp-security' ),
+						'activityTitle'        => __( 'Title', 'choctaw-wp-security' ),
+						'activityDetail'       => __( 'Status/Detail', 'choctaw-wp-security' ),
+						'firstPage'            => __( 'First page', 'choctaw-wp-security' ),
+						'previousPage'         => __( 'Previous page', 'choctaw-wp-security' ),
+						'nextPage'             => __( 'Next page', 'choctaw-wp-security' ),
+						'lastPage'             => __( 'Last page', 'choctaw-wp-security' ),
+					),
+				)
+			);
+		}
 	}
 
 	/**
@@ -979,6 +1048,15 @@ class Choctaw_Wp_Security_Settings {
 	 */
 	private function get_database_scan_result_transient_key() {
 		return 'cws_database_scan_' . get_current_user_id();
+	}
+
+	/**
+	 * Build the transient key used to store the latest users table result.
+	 *
+	 * @return string
+	 */
+	private function get_users_table_result_transient_key() {
+		return 'cws_users_table_' . get_current_user_id();
 	}
 
 	/**
@@ -1158,9 +1236,9 @@ class Choctaw_Wp_Security_Settings {
 		?>
 		<div class="cws-admin-tab-panel">
 			<div class="cws-report-section">
-				<h2><?php esc_html_e( 'Database Scan', 'choctaw-wp-security' ); ?></h2>
+				<h2><?php esc_html_e( 'wp_options', 'choctaw-wp-security' ); ?></h2>
 				<p>
-					<?php esc_html_e( 'Database Scan inspects a WordPress options table for records that may indicate compromise. It looks for hijacked site URLs, tampered plugin lists, suspicious cron jobs, oversized autoloaded options, PHP or execution patterns, and other high-risk indicators.', 'choctaw-wp-security' ); ?>
+					<?php esc_html_e( 'wp_options inspects a WordPress options table for records that may indicate compromise. It looks for hijacked site URLs, tampered plugin lists, suspicious cron jobs, oversized autoloaded options, PHP or execution patterns, and other high-risk indicators.', 'choctaw-wp-security' ); ?>
 				</p>
 				<p>
 					<?php esc_html_e( 'Some sites retain multiple options tables after staging copies or hosting migrations. Select the table you want to scan below. The WordPress configured table is selected by default.', 'choctaw-wp-security' ); ?>
@@ -1391,11 +1469,13 @@ class Choctaw_Wp_Security_Settings {
 			$args['cws_tab'] = 'verify-checksums';
 		} elseif ( isset( $_GET['exposed_folders_run'] ) ) {
 			$args['cws_tab'] = 'exposed-folders';
+		} elseif ( isset( $_GET['users_table_load'] ) ) {
+			$args['cws_tab'] = 'wp-users';
 		} elseif ( $this->has_report_pagination_request() ) {
 			$args['cws_tab'] = $this->get_active_admin_tab();
 		}
 
-		foreach ( array( 'database_scan_run', 'database_scan_baseline_reset', 'core_checksum_run', 'exposed_folders_run' ) as $flag ) {
+		foreach ( array( 'database_scan_run', 'database_scan_baseline_reset', 'core_checksum_run', 'exposed_folders_run', 'users_table_load' ) as $flag ) {
 			if ( isset( $_GET[ $flag ] ) ) {
 				$args[ $flag ] = '1';
 			}
@@ -2540,5 +2620,318 @@ class Choctaw_Wp_Security_Settings {
 			get_option( 'date_format' ) . ' ' . get_option( 'time_format' ),
 			$timestamp
 		);
+	}
+
+	/**
+	 * Handle a manual users table load request.
+	 *
+	 * @return void
+	 */
+	public function handle_users_table_load() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+
+		if ( empty( $_POST['choctaw_wp_security_users_table_load'] ) ) {
+			return;
+		}
+
+		check_admin_referer( 'choctaw_wp_security_users_table_form' );
+
+		$requested_table = isset( $_POST['database_scan_users_table'] ) ? wp_unslash( $_POST['database_scan_users_table'] ) : '';
+		$discovery       = new Choctaw_Wp_Security_Users_Table_Discovery();
+		$users_table     = $discovery->resolve_scan_table( (string) $requested_table );
+
+		Choctaw_Wp_Security_Utils::save_database_scan_users_table( $users_table );
+
+		$reader = new Choctaw_Wp_Security_Users_Table_Reader( $discovery );
+		$result = $reader->fetch_users( $users_table );
+
+		$this->save_report_result(
+			$this->get_users_table_result_transient_key(),
+			Choctaw_Wp_Security_Utils::USER_META_USERS_TABLE_RESULT,
+			$result
+		);
+
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'page'             => 'choctaw-wp-security',
+					'cws_tab'          => 'wp-users',
+					'users_table_load' => '1',
+				),
+				admin_url( 'options-general.php' )
+			)
+		);
+		exit;
+	}
+
+	/**
+	 * Handle an AJAX users table load request.
+	 *
+	 * @return void
+	 */
+	public function ajax_users_table_load() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error(
+				array(
+					'message' => __( 'You do not have permission to load users tables.', 'choctaw-wp-security' ),
+				),
+				403
+			);
+		}
+
+		check_ajax_referer( 'choctaw_wp_security_users_table_ajax', 'nonce' );
+
+		$requested_table = isset( $_POST['database_scan_users_table'] ) ? wp_unslash( $_POST['database_scan_users_table'] ) : '';
+		$discovery       = new Choctaw_Wp_Security_Users_Table_Discovery();
+		$users_table     = $discovery->resolve_scan_table( (string) $requested_table );
+
+		Choctaw_Wp_Security_Utils::save_database_scan_users_table( $users_table );
+
+		$reader = new Choctaw_Wp_Security_Users_Table_Reader( $discovery );
+		$result = $reader->fetch_users( $users_table );
+
+		if ( empty( $result['success'] ) ) {
+			wp_send_json_error(
+				array(
+					'message' => isset( $result['message'] ) ? (string) $result['message'] : __( 'The users table could not be loaded.', 'choctaw-wp-security' ),
+				),
+				400
+			);
+		}
+
+		$this->save_report_result(
+			$this->get_users_table_result_transient_key(),
+			Choctaw_Wp_Security_Utils::USER_META_USERS_TABLE_RESULT,
+			$result
+		);
+
+		wp_send_json_success(
+			array(
+				'result' => $result,
+			)
+		);
+	}
+
+	/**
+	 * Handle an AJAX user activity load request.
+	 *
+	 * @return void
+	 */
+	public function ajax_user_activity_load() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error(
+				array(
+					'message' => __( 'You do not have permission to load user activity.', 'choctaw-wp-security' ),
+				),
+				403
+			);
+		}
+
+		check_ajax_referer( 'choctaw_wp_security_users_table_ajax', 'nonce' );
+
+		$requested_table = isset( $_POST['database_scan_users_table'] ) ? wp_unslash( $_POST['database_scan_users_table'] ) : '';
+		$user_id         = isset( $_POST['user_id'] ) ? (int) wp_unslash( $_POST['user_id'] ) : 0;
+		$discovery       = new Choctaw_Wp_Security_Users_Table_Discovery();
+		$users_table     = $discovery->resolve_scan_table( (string) $requested_table );
+		$reader          = new Choctaw_Wp_Security_User_Activity_Reader( $discovery );
+		$result          = $reader->fetch_user_activity( $users_table, $user_id );
+
+		if ( empty( $result['success'] ) ) {
+			wp_send_json_error(
+				array(
+					'message' => isset( $result['message'] ) ? (string) $result['message'] : __( 'User activity could not be loaded.', 'choctaw-wp-security' ),
+				),
+				400
+			);
+		}
+
+		wp_send_json_success( $result );
+	}
+
+	/**
+	 * Render the wp_users section.
+	 *
+	 * @return void
+	 */
+	private function render_users_table_section() {
+		$result          = false;
+		$results_missing = false;
+
+		if ( isset( $_GET['users_table_load'] ) ) {
+			$result = $this->load_report_result(
+				$this->get_users_table_result_transient_key(),
+				Choctaw_Wp_Security_Utils::USER_META_USERS_TABLE_RESULT
+			);
+
+			if ( false === $result ) {
+				$results_missing = true;
+			}
+		}
+
+		$discovery      = new Choctaw_Wp_Security_Users_Table_Discovery();
+		$selected_table = $discovery->resolve_scan_table( '' );
+		$tables_meta    = $discovery->get_tables_with_metadata();
+		?>
+		<div class="cws-admin-tab-panel">
+			<div class="cws-report-section">
+				<h2><?php esc_html_e( 'wp_users', 'choctaw-wp-security' ); ?></h2>
+				<p>
+					<?php esc_html_e( 'wp_users lists every account in a selected WordPress users table. Use it to review unexpected administrator accounts, registration dates, and role assignments after a suspected compromise.', 'choctaw-wp-security' ); ?>
+				</p>
+				<p>
+					<?php esc_html_e( 'Some sites retain multiple users tables after staging copies or hosting migrations. Select the table you want to load below. The WordPress configured table is selected by default.', 'choctaw-wp-security' ); ?>
+				</p>
+				<p>
+					<?php esc_html_e( 'Click View activity on a user row to reconstruct detectable actions from the database, such as created or edited content, uploads, and comments. WordPress does not record who created another user account or who changed site settings, so follow up with the wp_options tab when investigating injected scripts or tampered configuration.', 'choctaw-wp-security' ); ?>
+				</p>
+
+				<?php
+				if ( is_array( $result ) && ! empty( $result['users_table'] ) ) {
+					$selected_table = (string) $result['users_table'];
+				}
+				?>
+
+				<?php if ( $results_missing ) : ?>
+					<div class="notice notice-warning">
+						<p><?php esc_html_e( 'The previous users table results are no longer available. Click Load Users to generate a fresh report.', 'choctaw-wp-security' ); ?></p>
+					</div>
+				<?php endif; ?>
+
+				<form method="post" class="cws-database-scan-form" id="cws-users-table-form">
+					<?php wp_nonce_field( 'choctaw_wp_security_users_table_form' ); ?>
+					<input type="hidden" name="cws_tab" value="wp-users" />
+
+					<?php $this->render_users_table_picker( $tables_meta, $selected_table ); ?>
+
+					<?php submit_button( __( 'Load Users', 'choctaw-wp-security' ), 'secondary', 'choctaw_wp_security_users_table_load', false ); ?>
+				</form>
+
+				<div id="cws-users-table-js-notices" aria-live="polite"></div>
+				<div id="cws-users-table-js-results"></div>
+
+				<div id="cws-users-table-fallback-results">
+					<?php if ( is_array( $result ) ) : ?>
+						<?php $this->render_users_table_results( $result ); ?>
+					<?php endif; ?>
+				</div>
+			</div>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Render users table results for the PHP fallback.
+	 *
+	 * @param array<string, mixed> $result Users table payload.
+	 * @return void
+	 */
+	private function render_users_table_results( array $result ) {
+		$users = isset( $result['users'] ) && is_array( $result['users'] ) ? $result['users'] : array();
+
+		if ( ! empty( $result['users_table'] ) ) {
+			?>
+			<p><?php echo esc_html( sprintf( __( 'Loaded table: %s', 'choctaw-wp-security' ), (string) $result['users_table'] ) ); ?></p>
+			<?php
+		}
+
+		if ( empty( $users ) ) {
+			?>
+			<p><?php esc_html_e( 'No users were found in the selected table.', 'choctaw-wp-security' ); ?></p>
+			<?php
+			return;
+		}
+
+		$pagination = $this->paginate_report_items( $users, $this->get_report_page_number( 'cws_users_table' ) );
+		?>
+		<table class="widefat striped cws-core-checksum-table">
+			<thead>
+				<tr>
+					<th scope="col"><?php esc_html_e( 'ID', 'choctaw-wp-security' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'user_login', 'choctaw-wp-security' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'user_email', 'choctaw-wp-security' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'user_registered', 'choctaw-wp-security' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'user_status', 'choctaw-wp-security' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'display_name', 'choctaw-wp-security' ); ?></th>
+				</tr>
+			</thead>
+			<tbody>
+				<?php foreach ( $pagination['items'] as $user ) : ?>
+					<tr>
+						<td><?php echo esc_html( isset( $user['ID'] ) ? (string) $user['ID'] : '' ); ?></td>
+						<td><code class="cws-file-path"><?php echo esc_html( isset( $user['user_login'] ) ? (string) $user['user_login'] : '' ); ?></code></td>
+						<td><?php echo esc_html( isset( $user['user_email'] ) ? (string) $user['user_email'] : '' ); ?></td>
+						<td><?php echo esc_html( isset( $user['user_registered'] ) ? (string) $user['user_registered'] : '' ); ?></td>
+						<td><?php echo esc_html( isset( $user['user_status'] ) ? (string) $user['user_status'] : '' ); ?></td>
+						<td><?php echo esc_html( isset( $user['display_name'] ) ? (string) $user['display_name'] : '' ); ?></td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+		<?php
+		$this->render_report_pagination( 'cws_users_table', $pagination );
+	}
+
+	/**
+	 * Render the users table picker.
+	 *
+	 * @param array<int, array<string, mixed>> $tables_metadata Discovered table metadata.
+	 * @param string                           $selected_table  Selected table name.
+	 * @return void
+	 */
+	private function render_users_table_picker( array $tables_metadata, $selected_table ) {
+		if ( empty( $tables_metadata ) ) {
+			?>
+			<p><?php esc_html_e( 'No users tables were discovered in this database.', 'choctaw-wp-security' ); ?></p>
+			<?php
+			return;
+		}
+		?>
+		<div class="cws-database-scan-table-picker">
+			<h3><?php esc_html_e( 'Users Table', 'choctaw-wp-security' ); ?></h3>
+			<table class="widefat striped cws-database-scan-table-picker-table">
+				<thead>
+					<tr>
+						<th scope="col"><?php esc_html_e( 'Select', 'choctaw-wp-security' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Table', 'choctaw-wp-security' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Status', 'choctaw-wp-security' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Rows', 'choctaw-wp-security' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Data Size', 'choctaw-wp-security' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Last Updated', 'choctaw-wp-security' ); ?></th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ( $tables_metadata as $table_meta ) : ?>
+						<?php
+						$table_name  = isset( $table_meta['table_name'] ) ? (string) $table_meta['table_name'] : '';
+						$is_selected = $table_name === $selected_table;
+						$badges      = array();
+
+						if ( ! empty( $table_meta['is_wordpress_configured'] ) ) {
+							$badges[] = __( 'WordPress configured', 'choctaw-wp-security' );
+						}
+						?>
+						<tr>
+							<td>
+								<input
+									type="radio"
+									name="database_scan_users_table"
+									class="cws-users-table-choice"
+									value="<?php echo esc_attr( $table_name ); ?>"
+									<?php checked( $is_selected ); ?>
+								/>
+							</td>
+							<td><code class="cws-file-path"><?php echo esc_html( $table_name ); ?></code></td>
+							<td><?php echo esc_html( implode( '; ', $badges ) ); ?></td>
+							<td><?php echo esc_html( number_format_i18n( isset( $table_meta['row_count'] ) ? (int) $table_meta['row_count'] : 0 ) ); ?></td>
+							<td><?php echo esc_html( size_format( isset( $table_meta['data_size'] ) ? (int) $table_meta['data_size'] : 0 ) ); ?></td>
+							<td><?php echo esc_html( $this->format_database_scan_table_timestamp( isset( $table_meta['update_time'] ) ? (string) $table_meta['update_time'] : '' ) ); ?></td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		</div>
+		<?php
 	}
 }

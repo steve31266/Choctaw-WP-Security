@@ -20,6 +20,7 @@ class Choctaw_Wp_Security_Utils {
 	const USER_META_DATABASE_SCAN_RESULT = 'cws_database_scan_result';
 	const USER_META_CORE_CHECKSUM_RESULT = 'cws_core_checksum_result';
 	const USER_META_EXPOSED_FOLDERS_RESULT = 'cws_exposed_folders_result';
+	const USER_META_USERS_TABLE_RESULT = 'cws_users_table_result';
 	const EMPTY_USERNAME_KEY = '__empty__';
 
 	/**
@@ -36,6 +37,7 @@ class Choctaw_Wp_Security_Utils {
 			'failure_window_minutes'    => 15,
 			'lockout_duration_minutes'  => 30,
 			'database_scan_options_table' => '',
+			'database_scan_users_table' => '',
 		);
 	}
 
@@ -234,6 +236,36 @@ class Choctaw_Wp_Security_Utils {
 		$options = self::get_options();
 
 		$options['database_scan_options_table'] = (string) $table_name;
+
+		return update_option( self::OPTION_KEY, $options );
+	}
+
+	/**
+	 * Get the persisted database scan users table selection.
+	 *
+	 * @return string
+	 */
+	public static function get_database_scan_users_table() {
+		$options = self::get_options();
+		$table   = isset( $options['database_scan_users_table'] ) ? (string) $options['database_scan_users_table'] : '';
+
+		if ( preg_match( '/^[A-Za-z0-9_]+$/', $table ) ) {
+			return $table;
+		}
+
+		return '';
+	}
+
+	/**
+	 * Persist the selected database scan users table.
+	 *
+	 * @param string $table_name Validated users table name.
+	 * @return bool
+	 */
+	public static function save_database_scan_users_table( $table_name ) {
+		$options = self::get_options();
+
+		$options['database_scan_users_table'] = (string) $table_name;
 
 		return update_option( self::OPTION_KEY, $options );
 	}
