@@ -192,6 +192,16 @@
 	margin-top: 8px;
 }
 
+.cws-report-pagination {
+	margin-top: 8px;
+	max-width: 960px;
+}
+
+.cws-report-pagination .tablenav-pages {
+	float: none;
+	margin: 0;
+}
+
 @media screen and (max-width: 782px) {
 	.cws-about-plugin {
 		display: block;

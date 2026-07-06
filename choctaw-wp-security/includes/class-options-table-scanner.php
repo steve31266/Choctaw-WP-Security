@@ -520,17 +520,14 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 		}
 
 		$table = $this->get_options_table_sql();
-		$limit = (int) Choctaw_Wp_Security_Options_Scan_Patterns::AUTOLOAD_TOP_LIMIT;
-		$rows  = $wpdb->get_results(
+		$rows = $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT option_id, option_name, LENGTH(option_value) AS option_size, LEFT(option_value, %d) AS option_excerpt
 				FROM {$table}
 				WHERE autoload = %s
-				ORDER BY option_size DESC
-				LIMIT %d",
+				ORDER BY option_size DESC",
 				Choctaw_Wp_Security_Options_Scan_Patterns::LARGE_AUTOLOAD_PREVIEW_LENGTH,
-				'yes',
-				$limit
+				'yes'
 			),
 			ARRAY_A
 		);
@@ -774,8 +771,6 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 				$sql .= $wpdb->prepare( ' AND option_name NOT LIKE %s', $wpdb->esc_like( $prefix ) . '%' );
 			}
 		}
-
-		$sql .= ' LIMIT ' . (int) ( Choctaw_Wp_Security_Options_Scan_Patterns::FINDINGS_DISPLAY_LIMIT + 1 );
 
 		$rows = $wpdb->get_results( $wpdb->prepare( $sql, $where_values ), ARRAY_A );
 

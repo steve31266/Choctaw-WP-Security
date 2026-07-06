@@ -520,6 +520,12 @@ class Choctaw_Wp_Security_Settings {
 			<h2><?php esc_html_e( 'PHP Files in Uploads and Must-Use Plugins', 'choctaw-wp-security' ); ?></h2>
 			<p><?php esc_html_e( 'PHP files in', 'choctaw-wp-security' ); ?> <?php $this->render_file_path( 'uploads' ); ?> <?php esc_html_e( 'are suspicious. Must-use plugins may be legitimate, but are worth reviewing because they load automatically.', 'choctaw-wp-security' ); ?></p>
 			<?php if ( ! empty( $content_php_files ) ) : ?>
+				<?php
+				$php_files_pagination = $this->paginate_report_items(
+					$content_php_files,
+					$this->get_report_page_number( 'cws_php_files' )
+				);
+				?>
 				<table class="widefat striped">
 					<thead>
 						<tr>
@@ -529,7 +535,7 @@ class Choctaw_Wp_Security_Settings {
 						</tr>
 					</thead>
 					<tbody>
-						<?php foreach ( $content_php_files as $php_file ) : ?>
+						<?php foreach ( $php_files_pagination['items'] as $php_file ) : ?>
 							<tr>
 								<td><?php echo esc_html( $php_file['location'] ); ?></td>
 								<td><?php $this->render_file_path( $php_file['path'] ); ?></td>
@@ -538,6 +544,7 @@ class Choctaw_Wp_Security_Settings {
 						<?php endforeach; ?>
 					</tbody>
 				</table>
+				<?php $this->render_report_pagination( 'cws_php_files', $php_files_pagination ); ?>
 			<?php else : ?>
 				<p>
 					<?php esc_html_e( 'No PHP files were found in the', 'choctaw-wp-security' ); ?>
@@ -563,6 +570,12 @@ class Choctaw_Wp_Security_Settings {
 				<?php endforeach; ?>
 			<?php endif; ?>
 			<?php if ( ! empty( $uploads_plugin_folders['folders'] ) ) : ?>
+				<?php
+				$uploads_folders_pagination = $this->paginate_report_items(
+					$uploads_plugin_folders['folders'],
+					$this->get_report_page_number( 'cws_uploads_folders' )
+				);
+				?>
 				<table class="widefat striped">
 					<thead>
 						<tr>
@@ -571,7 +584,7 @@ class Choctaw_Wp_Security_Settings {
 						</tr>
 					</thead>
 					<tbody>
-						<?php foreach ( $uploads_plugin_folders['folders'] as $folder ) : ?>
+						<?php foreach ( $uploads_folders_pagination['items'] as $folder ) : ?>
 							<tr>
 								<td><?php $this->render_file_path( $folder['path'] ); ?></td>
 								<td><?php echo esc_html( $folder['modified'] ); ?></td>
@@ -579,6 +592,7 @@ class Choctaw_Wp_Security_Settings {
 						<?php endforeach; ?>
 					</tbody>
 				</table>
+				<?php $this->render_report_pagination( 'cws_uploads_folders', $uploads_folders_pagination ); ?>
 			<?php elseif ( empty( $uploads_plugin_folders['errors'] ) ) : ?>
 				<p>
 					<?php esc_html_e( 'No non-Media Library folders were found in the', 'choctaw-wp-security' ); ?>
@@ -656,7 +670,11 @@ class Choctaw_Wp_Security_Settings {
 		$scanner = new Choctaw_Wp_Security_Core_Checksum_Scanner();
 		$result  = $scanner->scan();
 
-		set_transient( $this->get_core_checksum_result_transient_key(), $result, MINUTE_IN_SECONDS );
+		$this->save_report_result(
+			$this->get_core_checksum_result_transient_key(),
+			Choctaw_Wp_Security_Utils::USER_META_CORE_CHECKSUM_RESULT,
+			$result
+		);
 
 		wp_safe_redirect(
 			add_query_arg(
@@ -689,7 +707,11 @@ class Choctaw_Wp_Security_Settings {
 
 		$result = $this->scan_exposed_folders();
 
-		set_transient( $this->get_exposed_folders_result_transient_key(), $result, MINUTE_IN_SECONDS );
+		$this->save_report_result(
+			$this->get_exposed_folders_result_transient_key(),
+			Choctaw_Wp_Security_Utils::USER_META_EXPOSED_FOLDERS_RESULT,
+			$result
+		);
 
 		wp_safe_redirect(
 			add_query_arg(
@@ -729,7 +751,11 @@ class Choctaw_Wp_Security_Settings {
 		$scanner = new Choctaw_Wp_Security_Options_Table_Scanner( $options_table );
 		$result  = $scanner->scan();
 
-		set_transient( $this->get_database_scan_result_transient_key(), $result, MINUTE_IN_SECONDS );
+		$this->save_report_result(
+			$this->get_database_scan_result_transient_key(),
+			Choctaw_Wp_Security_Utils::USER_META_DATABASE_SCAN_RESULT,
+			$result
+		);
 
 		wp_safe_redirect(
 			add_query_arg(
@@ -828,6 +854,63 @@ class Choctaw_Wp_Security_Settings {
 	}
 
 	/**
+	 * Retrieve how long stored scan reports should remain available.
+	 *
+	 * @return int
+	 */
+	private function get_report_result_ttl() {
+		return (int) Choctaw_Wp_Security_Utils::REPORT_RESULT_TTL;
+	}
+
+	/**
+	 * Persist a scan report for later pagination and review.
+	 *
+	 * @param string               $transient_key Transient storage key.
+	 * @param string               $user_meta_key User meta storage key.
+	 * @param array<string, mixed> $result        Scan result payload.
+	 * @return void
+	 */
+	private function save_report_result( $transient_key, $user_meta_key, array $result ) {
+		$user_id = get_current_user_id();
+
+		if ( $user_id <= 0 ) {
+			return;
+		}
+
+		set_transient( $transient_key, $result, $this->get_report_result_ttl() );
+		update_user_meta( $user_id, $user_meta_key, $result );
+	}
+
+	/**
+	 * Load a stored scan report and refresh its transient expiration.
+	 *
+	 * @param string $transient_key Transient storage key.
+	 * @param string $user_meta_key User meta storage key.
+	 * @return array<string, mixed>|false
+	 */
+	private function load_report_result( $transient_key, $user_meta_key ) {
+		$user_id = get_current_user_id();
+
+		if ( $user_id <= 0 ) {
+			return false;
+		}
+
+		$result = get_transient( $transient_key );
+
+		if ( false === $result ) {
+			$result = get_user_meta( $user_id, $user_meta_key, true );
+		}
+
+		if ( ! is_array( $result ) || empty( $result ) ) {
+			return false;
+		}
+
+		set_transient( $transient_key, $result, $this->get_report_result_ttl() );
+
+		return $result;
+	}
+
+	/**
 	 * Render the exposed folders scan section.
 	 *
 	 * @return void
@@ -836,7 +919,10 @@ class Choctaw_Wp_Security_Settings {
 		$result = false;
 
 		if ( isset( $_GET['exposed_folders_run'] ) ) {
-			$result = get_transient( $this->get_exposed_folders_result_transient_key() );
+			$result = $this->load_report_result(
+				$this->get_exposed_folders_result_transient_key(),
+				Choctaw_Wp_Security_Utils::USER_META_EXPOSED_FOLDERS_RESULT
+			);
 		}
 		?>
 		<div class="cws-admin-tab-panel">
@@ -884,7 +970,10 @@ class Choctaw_Wp_Security_Settings {
 		$result = false;
 
 		if ( isset( $_GET['core_checksum_run'] ) ) {
-			$result = get_transient( $this->get_core_checksum_result_transient_key() );
+			$result = $this->load_report_result(
+				$this->get_core_checksum_result_transient_key(),
+				Choctaw_Wp_Security_Utils::USER_META_CORE_CHECKSUM_RESULT
+			);
 		}
 		?>
 		<div class="cws-admin-tab-panel">
@@ -919,10 +1008,18 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	private function render_database_scan_section() {
-		$result = false;
+		$result         = false;
+		$results_missing = false;
 
 		if ( isset( $_GET['database_scan_run'] ) ) {
-			$result = get_transient( $this->get_database_scan_result_transient_key() );
+			$result = $this->load_report_result(
+				$this->get_database_scan_result_transient_key(),
+				Choctaw_Wp_Security_Utils::USER_META_DATABASE_SCAN_RESULT
+			);
+
+			if ( false === $result ) {
+				$results_missing = true;
+			}
 		}
 
 		$baseline_reset = isset( $_GET['database_scan_baseline_reset'] );
@@ -958,6 +1055,12 @@ class Choctaw_Wp_Security_Settings {
 					$selected_table = (string) $result['options_table'];
 				}
 				?>
+
+				<?php if ( $results_missing ) : ?>
+					<div class="notice notice-warning">
+						<p><?php esc_html_e( 'The previous database scan results are no longer available. Run Scan Now to generate a fresh report.', 'choctaw-wp-security' ); ?></p>
+					</div>
+				<?php endif; ?>
 
 				<?php if ( $baseline_reset ) : ?>
 					<div class="notice notice-success is-dismissible">
@@ -1090,6 +1193,226 @@ class Choctaw_Wp_Security_Settings {
 	}
 
 	/**
+	 * Retrieve the page size used for paginated admin reports.
+	 *
+	 * @return int
+	 */
+	private function get_report_page_size() {
+		return (int) Choctaw_Wp_Security_Utils::REPORT_PAGE_SIZE;
+	}
+
+	/**
+	 * Read a requested report page number from the query string.
+	 *
+	 * @param string $param_name Query parameter name.
+	 * @return int
+	 */
+	private function get_report_page_number( $param_name ) {
+		$param_name = sanitize_key( (string) $param_name );
+
+		if ( '' === $param_name || ! isset( $_GET[ $param_name ] ) ) {
+			return 1;
+		}
+
+		return max( 1, (int) wp_unslash( $_GET[ $param_name ] ) );
+	}
+
+	/**
+	 * Slice a report item list for the requested page.
+	 *
+	 * @param array<int, mixed> $items Report items.
+	 * @param int               $page  Requested page number.
+	 * @return array{items: array<int, mixed>, page: int, total: int, total_pages: int, per_page: int}
+	 */
+	private function paginate_report_items( array $items, $page ) {
+		$per_page    = $this->get_report_page_size();
+		$total       = count( $items );
+		$total_pages = max( 1, (int) ceil( $total / $per_page ) );
+		$page        = min( max( 1, (int) $page ), $total_pages );
+		$offset      = ( $page - 1 ) * $per_page;
+
+		return array(
+			'items'       => array_slice( $items, $offset, $per_page ),
+			'page'        => $page,
+			'total'       => $total,
+			'total_pages' => $total_pages,
+			'per_page'    => $per_page,
+		);
+	}
+
+	/**
+	 * Build query args that should be preserved across report pagination links.
+	 *
+	 * @return array<string, string>
+	 */
+	private function get_report_page_preserve_args() {
+		$args = array(
+			'page' => 'choctaw-wp-security',
+		);
+
+		if ( ! empty( $_GET['cws_tab'] ) ) {
+			$args['cws_tab'] = sanitize_key( wp_unslash( $_GET['cws_tab'] ) );
+		} elseif ( isset( $_GET['database_scan_run'] ) ) {
+			$args['cws_tab'] = 'database-scan';
+		} elseif ( isset( $_GET['core_checksum_run'] ) ) {
+			$args['cws_tab'] = 'verify-checksums';
+		} elseif ( isset( $_GET['exposed_folders_run'] ) ) {
+			$args['cws_tab'] = 'exposed-folders';
+		} elseif ( $this->has_report_pagination_request() ) {
+			$args['cws_tab'] = $this->get_active_admin_tab();
+		}
+
+		foreach ( array( 'database_scan_run', 'database_scan_baseline_reset', 'core_checksum_run', 'exposed_folders_run' ) as $flag ) {
+			if ( isset( $_GET[ $flag ] ) ) {
+				$args[ $flag ] = '1';
+			}
+		}
+
+		return $args;
+	}
+
+	/**
+	 * Determine whether the current request is paginating a report table.
+	 *
+	 * @return bool
+	 */
+	private function has_report_pagination_request() {
+		foreach ( $_GET as $key => $value ) {
+			if ( ! is_string( $key ) || 0 !== strpos( $key, 'cws_' ) || 'cws_tab' === $key || ! is_scalar( $value ) ) {
+				continue;
+			}
+
+			if ( is_numeric( $value ) && (int) $value > 0 ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Build a paginated report URL for the settings screen.
+	 *
+	 * @param string               $param_name    Pagination query parameter.
+	 * @param int                  $page          Target page number.
+	 * @param array<string, string> $preserve_args Args to preserve in the URL.
+	 * @return string
+	 */
+	private function build_report_page_url( $param_name, $page, array $preserve_args = array() ) {
+		$param_name = sanitize_key( (string) $param_name );
+
+		if ( empty( $preserve_args ) ) {
+			$preserve_args = $this->get_report_page_preserve_args();
+		}
+
+		$args = $preserve_args;
+
+		foreach ( $_GET as $key => $value ) {
+			if ( ! is_string( $key ) || 0 !== strpos( $key, 'cws_' ) || $key === $param_name || ! is_scalar( $value ) ) {
+				continue;
+			}
+
+			$args[ sanitize_key( $key ) ] = sanitize_text_field( wp_unslash( (string) $value ) );
+		}
+
+		if ( $page > 1 ) {
+			$args[ $param_name ] = (string) (int) $page;
+		} else {
+			unset( $args[ $param_name ] );
+		}
+
+		return add_query_arg( $args, admin_url( 'options-general.php' ) );
+	}
+
+	/**
+	 * Render pagination links below a report table.
+	 *
+	 * @param string                             $param_name Pagination query parameter.
+	 * @param array{items: array<int, mixed>, page: int, total: int, total_pages: int, per_page: int} $pagination Pagination state.
+	 * @return void
+	 */
+	private function render_report_pagination( $param_name, array $pagination ) {
+		if ( $pagination['total_pages'] <= 1 ) {
+			return;
+		}
+
+		$current_page = (int) $pagination['page'];
+		$total_pages  = (int) $pagination['total_pages'];
+		$total_items  = (int) $pagination['total'];
+		?>
+		<div class="tablenav bottom cws-report-pagination">
+			<div class="tablenav-pages">
+				<span class="displaying-num">
+					<?php
+					echo esc_html(
+						sprintf(
+							/* translators: %s: number of items */
+							_n( '%s item', '%s items', $total_items, 'choctaw-wp-security' ),
+							number_format_i18n( $total_items )
+						)
+					);
+					?>
+				</span>
+				<span class="pagination-links">
+					<?php if ( $current_page > 1 ) : ?>
+						<a class="first-page button" href="<?php echo esc_url( $this->build_report_page_url( $param_name, 1 ) ); ?>">
+							<span class="screen-reader-text"><?php esc_html_e( 'First page', 'choctaw-wp-security' ); ?></span>
+							<span aria-hidden="true">&laquo;</span>
+						</a>
+						<a class="prev-page button" href="<?php echo esc_url( $this->build_report_page_url( $param_name, $current_page - 1 ) ); ?>">
+							<span class="screen-reader-text"><?php esc_html_e( 'Previous page', 'choctaw-wp-security' ); ?></span>
+							<span aria-hidden="true">&lsaquo;</span>
+						</a>
+					<?php else : ?>
+						<span class="tablenav-pages-navspan button disabled" aria-hidden="true">&laquo;</span>
+						<span class="tablenav-pages-navspan button disabled" aria-hidden="true">&lsaquo;</span>
+					<?php endif; ?>
+
+					<span class="paging-input">
+						<span class="tablenav-paging-text">
+							<?php
+							echo esc_html(
+								sprintf(
+									/* translators: 1: current page number, 2: total pages */
+									__( 'Page %1$s of %2$s', 'choctaw-wp-security' ),
+									number_format_i18n( $current_page ),
+									number_format_i18n( $total_pages )
+								)
+							);
+							?>
+						</span>
+					</span>
+
+					<?php if ( $current_page < $total_pages ) : ?>
+						<a class="next-page button" href="<?php echo esc_url( $this->build_report_page_url( $param_name, $current_page + 1 ) ); ?>">
+							<span class="screen-reader-text"><?php esc_html_e( 'Next page', 'choctaw-wp-security' ); ?></span>
+							<span aria-hidden="true">&rsaquo;</span>
+						</a>
+						<a class="last-page button" href="<?php echo esc_url( $this->build_report_page_url( $param_name, $total_pages ) ); ?>">
+							<span class="screen-reader-text"><?php esc_html_e( 'Last page', 'choctaw-wp-security' ); ?></span>
+							<span aria-hidden="true">&raquo;</span>
+						</a>
+					<?php else : ?>
+						<span class="tablenav-pages-navspan button disabled" aria-hidden="true">&rsaquo;</span>
+						<span class="tablenav-pages-navspan button disabled" aria-hidden="true">&raquo;</span>
+					<?php endif; ?>
+				</span>
+			</div>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Build the pagination query parameter for a database scan section.
+	 *
+	 * @param string $section_key Section identifier.
+	 * @return string
+	 */
+	private function get_database_scan_page_param( $section_key ) {
+		return 'cws_dbscan_' . sanitize_key( (string) $section_key );
+	}
+
+	/**
 	 * Render one database scan report section.
 	 *
 	 * @param array<string, mixed> $section     Section payload.
@@ -1101,9 +1424,9 @@ class Choctaw_Wp_Security_Settings {
 		$info_message = isset( $section['info_message'] ) ? (string) $section['info_message'] : '';
 		$title        = isset( $section['title'] ) ? (string) $section['title'] : '';
 		$guidance     = isset( $section['guidance'] ) ? (string) $section['guidance'] : '';
-		$display_limit = Choctaw_Wp_Security_Options_Scan_Patterns::FINDINGS_DISPLAY_LIMIT;
-		$visible       = array_slice( $findings, 0, $display_limit );
-		$truncated     = max( 0, count( $findings ) - count( $visible ) );
+		$page_param   = $this->get_database_scan_page_param( $section_key );
+		$pagination   = $this->paginate_report_items( $findings, $this->get_report_page_number( $page_param ) );
+		$visible      = $pagination['items'];
 		$section_class = 'cws-report-section cws-database-scan-section';
 
 		if ( 'large_autoload' === $section_key ) {
@@ -1149,19 +1472,7 @@ class Choctaw_Wp_Security_Settings {
 					</tbody>
 				</table>
 
-				<?php if ( $truncated > 0 ) : ?>
-					<p>
-						<?php
-						echo esc_html(
-							sprintf(
-								/* translators: %d: number of additional findings */
-								__( '...and %d more finding(s) not shown.', 'choctaw-wp-security' ),
-								$truncated
-							)
-						);
-						?>
-					</p>
-				<?php endif; ?>
+				<?php $this->render_report_pagination( $page_param, $pagination ); ?>
 			<?php endif; ?>
 		</div>
 		<?php
@@ -1339,43 +1650,25 @@ class Choctaw_Wp_Security_Settings {
 				<?php endif; ?>
 
 				<?php if ( ! empty( $result['modified'] ) ) : ?>
-					<h3><?php esc_html_e( 'Modified Files', 'choctaw-wp-security' ); ?></h3>
-					<table class="widefat striped cws-core-checksum-table">
-						<thead>
-							<tr>
-								<th scope="col"><?php esc_html_e( 'File', 'choctaw-wp-security' ); ?></th>
-								<th scope="col"><?php esc_html_e( 'Problem', 'choctaw-wp-security' ); ?></th>
-							</tr>
-						</thead>
-						<tbody>
-							<?php foreach ( $result['modified'] as $file_path ) : ?>
-								<tr>
-									<td><?php $this->render_file_path( (string) $file_path ); ?></td>
-									<td><?php esc_html_e( 'Checksum mismatch', 'choctaw-wp-security' ); ?></td>
-								</tr>
-							<?php endforeach; ?>
-						</tbody>
-					</table>
+					<?php
+					$this->render_checksum_path_table(
+						__( 'Modified Files', 'choctaw-wp-security' ),
+						$result['modified'],
+						__( 'Checksum mismatch', 'choctaw-wp-security' ),
+						'cws_checksum_modified'
+					);
+					?>
 				<?php endif; ?>
 
 				<?php if ( ! empty( $result['missing'] ) ) : ?>
-					<h3><?php esc_html_e( 'Missing Files', 'choctaw-wp-security' ); ?></h3>
-					<table class="widefat striped cws-core-checksum-table">
-						<thead>
-							<tr>
-								<th scope="col"><?php esc_html_e( 'File', 'choctaw-wp-security' ); ?></th>
-								<th scope="col"><?php esc_html_e( 'Problem', 'choctaw-wp-security' ); ?></th>
-							</tr>
-						</thead>
-						<tbody>
-							<?php foreach ( $result['missing'] as $file_path ) : ?>
-								<tr>
-									<td><?php $this->render_file_path( (string) $file_path ); ?></td>
-									<td><?php esc_html_e( 'File not found', 'choctaw-wp-security' ); ?></td>
-								</tr>
-							<?php endforeach; ?>
-						</tbody>
-					</table>
+					<?php
+					$this->render_checksum_path_table(
+						__( 'Missing Files', 'choctaw-wp-security' ),
+						$result['missing'],
+						__( 'File not found', 'choctaw-wp-security' ),
+						'cws_checksum_missing'
+					);
+					?>
 				<?php endif; ?>
 
 				<?php if ( ! empty( $result['unknown'] ) ) : ?>
@@ -1383,35 +1676,15 @@ class Choctaw_Wp_Security_Settings {
 					<p class="description">
 						<?php esc_html_e( 'Some hosts and local development tools place extra files in the WordPress root or core directories. Review these files carefully rather than assuming every unknown file is malware.', 'choctaw-wp-security' ); ?>
 					</p>
-					<table class="widefat striped cws-core-checksum-table">
-						<thead>
-							<tr>
-								<th scope="col"><?php esc_html_e( 'File', 'choctaw-wp-security' ); ?></th>
-								<th scope="col"><?php esc_html_e( 'Problem', 'choctaw-wp-security' ); ?></th>
-							</tr>
-						</thead>
-						<tbody>
-							<?php foreach ( $result['unknown'] as $file_path ) : ?>
-								<tr>
-									<td><?php $this->render_file_path( (string) $file_path ); ?></td>
-									<td><?php esc_html_e( 'Not listed in official checksums', 'choctaw-wp-security' ); ?></td>
-								</tr>
-							<?php endforeach; ?>
-						</tbody>
-					</table>
-					<?php if ( ! empty( $result['unknown_truncated'] ) ) : ?>
-						<p class="description">
-							<?php
-							echo esc_html(
-								sprintf(
-									/* translators: %d: number of additional unknown files not shown */
-									__( '%d additional unknown files were found but are not displayed.', 'choctaw-wp-security' ),
-									(int) $result['unknown_truncated']
-								)
-							);
-							?>
-						</p>
-					<?php endif; ?>
+					<?php
+					$this->render_checksum_path_table(
+						'',
+						$result['unknown'],
+						__( 'Not listed in official checksums', 'choctaw-wp-security' ),
+						'cws_checksum_unknown',
+						false
+					);
+					?>
 				<?php endif; ?>
 			<?php endif; ?>
 		</div>
@@ -1450,8 +1723,8 @@ class Choctaw_Wp_Security_Settings {
 			<?php if ( 0 === $total ) : ?>
 				<p><?php esc_html_e( 'No plugin or theme folders missing directory index files were found.', 'choctaw-wp-security' ); ?></p>
 			<?php else : ?>
-				<?php $this->render_exposed_folders_table( __( 'Plugin Folders', 'choctaw-wp-security' ), $plugins ); ?>
-				<?php $this->render_exposed_folders_table( __( 'Theme Folders', 'choctaw-wp-security' ), $themes ); ?>
+				<?php $this->render_exposed_folders_table( __( 'Plugin Folders', 'choctaw-wp-security' ), $plugins, 'cws_exposed_plugins' ); ?>
+				<?php $this->render_exposed_folders_table( __( 'Theme Folders', 'choctaw-wp-security' ), $themes, 'cws_exposed_themes' ); ?>
 			<?php endif; ?>
 
 			<?php if ( $truncated ) : ?>
@@ -1473,14 +1746,62 @@ class Choctaw_Wp_Security_Settings {
 	}
 
 	/**
-	 * Render one exposed folders result table.
+	 * Render a paginated checksum file table.
 	 *
-	 * @param string             $heading Section heading.
-	 * @param array<int, string> $folders Folders missing index files.
+	 * @param string             $heading      Optional section heading.
+	 * @param array<int, string> $file_paths   File paths to display.
+	 * @param string             $problem      Problem label.
+	 * @param string             $page_param   Pagination query parameter.
+	 * @param bool               $show_heading Whether to render the heading.
 	 * @return void
 	 */
-	private function render_exposed_folders_table( $heading, $folders ) {
+	private function render_checksum_path_table( $heading, array $file_paths, $problem, $page_param, $show_heading = true ) {
+		$pagination = $this->paginate_report_items( $file_paths, $this->get_report_page_number( $page_param ) );
+
+		if ( empty( $pagination['items'] ) ) {
+			return;
+		}
+
+		if ( $show_heading && '' !== $heading ) {
+			echo '<h3>' . esc_html( $heading ) . '</h3>';
+		}
+		?>
+		<table class="widefat striped cws-core-checksum-table">
+			<thead>
+				<tr>
+					<th scope="col"><?php esc_html_e( 'File', 'choctaw-wp-security' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'Problem', 'choctaw-wp-security' ); ?></th>
+				</tr>
+			</thead>
+			<tbody>
+				<?php foreach ( $pagination['items'] as $file_path ) : ?>
+					<tr>
+						<td><?php $this->render_file_path( (string) $file_path ); ?></td>
+						<td><?php echo esc_html( $problem ); ?></td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+		<?php
+		$this->render_report_pagination( $page_param, $pagination );
+	}
+
+	/**
+	 * Render one exposed folders result table.
+	 *
+	 * @param string             $heading    Section heading.
+	 * @param array<int, string> $folders    Folders missing index files.
+	 * @param string             $page_param Pagination query parameter.
+	 * @return void
+	 */
+	private function render_exposed_folders_table( $heading, $folders, $page_param ) {
 		if ( empty( $folders ) ) {
+			return;
+		}
+
+		$pagination = $this->paginate_report_items( $folders, $this->get_report_page_number( $page_param ) );
+
+		if ( empty( $pagination['items'] ) ) {
 			return;
 		}
 		?>
@@ -1493,7 +1814,7 @@ class Choctaw_Wp_Security_Settings {
 				</tr>
 			</thead>
 			<tbody>
-				<?php foreach ( $folders as $folder ) : ?>
+				<?php foreach ( $pagination['items'] as $folder ) : ?>
 					<?php $folder_url = $this->get_public_url_for_display_path( (string) $folder ); ?>
 					<tr>
 						<td>
@@ -1509,6 +1830,7 @@ class Choctaw_Wp_Security_Settings {
 			</tbody>
 		</table>
 		<?php
+		$this->render_report_pagination( $page_param, $pagination );
 	}
 
 	/**

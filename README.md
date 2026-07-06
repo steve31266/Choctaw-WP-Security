@@ -234,6 +234,11 @@ choctaw-wp-security/
 
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
 
+### 1.4.2
+
+- Paginated report tables (20 per page) across Database Scan, Verify Checksums, Exposed Folders, and Files Changes/Uploads
+- Fixed Database Scan table selection not being submitted with Scan Now
+
 ### 1.4.1
 
 - Database Scan can discover multiple options tables and lets you choose which one to scan

@@ -16,7 +16,7 @@ class Choctaw_Wp_Security_Options_Scan_Patterns {
 	const SCAN_TIME_BUDGET          = 30;
 	const AUTOLOAD_SIZE_THRESHOLD   = 102400;
 	const AUTOLOAD_TOP_LIMIT        = 20;
-	const FINDINGS_DISPLAY_LIMIT    = 50;
+	const FINDINGS_DISPLAY_LIMIT    = 20;
 	const EXCERPT_LENGTH            = 120;
 	const LARGE_AUTOLOAD_PREVIEW_LENGTH = 200;
 

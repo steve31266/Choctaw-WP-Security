@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2026-07-06
+
+### Added
+
+- Paginated report tables (20 records per page) with navigation links when a section has more results.
+  - Applies to Database Scan sections, Verify Checksums, Exposed Folders, and Files Changes/Uploads.
+  - Large Autoload and pattern-matching scans now collect full result sets for pagination.
+
+### Fixed
+
+- Database Scan table picker now submits the selected options table reliably when clicking **Scan Now** or **Reset Baseline**.
+
 ## [1.4.1] - 2026-07-06
 
 ### Added
@@ -89,6 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: XML-RPC protection and dual-scope login rate limiting.
 - Admin settings page with feature toggles, rate limit policy, and recent lockout log.
 
+[1.4.2]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.2.1...v1.3.0

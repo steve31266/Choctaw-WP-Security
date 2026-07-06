@@ -15,6 +15,11 @@ class Choctaw_Wp_Security_Utils {
 	const OPTION_KEY         = 'choctaw_wp_security_options';
 	const LOCKOUT_LOG_KEY    = 'choctaw_wp_security_lockout_log';
 	const LOCKOUT_LOG_LIMIT  = 20;
+	const REPORT_PAGE_SIZE   = 20;
+	const REPORT_RESULT_TTL  = 43200;
+	const USER_META_DATABASE_SCAN_RESULT = 'cws_database_scan_result';
+	const USER_META_CORE_CHECKSUM_RESULT = 'cws_core_checksum_result';
+	const USER_META_EXPOSED_FOLDERS_RESULT = 'cws_exposed_folders_result';
 	const EMPTY_USERNAME_KEY = '__empty__';
 
 	/**

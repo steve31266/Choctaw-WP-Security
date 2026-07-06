@@ -12,8 +12,7 @@ defined( 'ABSPATH' ) || exit;
  */
 class Choctaw_Wp_Security_Core_Checksum_Scanner {
 
-	const UNKNOWN_DISPLAY_LIMIT = 50;
-	const SCAN_TIME_BUDGET      = 25;
+	const SCAN_TIME_BUDGET = 25;
 
 	/**
 	 * Basenames excluded from unknown-file reporting at the WordPress root.
@@ -122,14 +121,9 @@ class Choctaw_Wp_Security_Core_Checksum_Scanner {
 			$result['errors'][] = __( 'Scan timed out before all directories could be scanned for unknown files.', 'choctaw-wp-security' );
 		}
 
-		$result['unknown_total'] = count( $unknown_files );
-
-		if ( $result['unknown_total'] > self::UNKNOWN_DISPLAY_LIMIT ) {
-			$result['unknown_truncated'] = $result['unknown_total'] - self::UNKNOWN_DISPLAY_LIMIT;
-			$unknown_files               = array_slice( $unknown_files, 0, self::UNKNOWN_DISPLAY_LIMIT );
-		}
-
-		$result['unknown'] = $unknown_files;
+		$result['unknown_total']     = count( $unknown_files );
+		$result['unknown_truncated'] = 0;
+		$result['unknown']           = $unknown_files;
 
 		return $this->finalize_result( $result );
 	}
