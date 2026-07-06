@@ -56,11 +56,14 @@ Built for standard WordPress installs. No Composer, build tools, or external dep
 ### Database Scan
 
 - Manual **Scan Now** action on the **Database Scan** admin tab
-- Inspects the WordPress `wp_options` table only (not posts, users, or other tables)
+- Discovers all `*options` tables in the database and lets you choose which one to scan
+- Shows table metadata (row count, data size, `siteurl`/`home` hosts, last updated) to help identify the correct table after staging copies or migrations
+- Marks the WordPress configured table and tables whose URLs match the current site
+- Warns when the configured table URL does not match the site but another discovered table does
 - Reports potentially compromised or malicious records for investigation
 - Checks site URL and security settings, active plugin consistency, cron events, large autoload options, PHP/execution patterns, known-malware option names, and scripts outside widget/theme options
-- Establishes a baseline on the first scan and reports new/changed/removed options on subsequent scans
-- Includes **Reset Baseline** to snapshot the current options table after cleanup
+- Establishes a per-table baseline on the first scan of each selected table and reports new/changed/removed options on subsequent scans of that same table
+- Includes **Reset Baseline** to snapshot the current selected options table after cleanup
 - Detection-only: does not delete, edit, or quarantine database rows
 
 ## Requirements
@@ -109,7 +112,7 @@ The settings page under **Settings → Choctaw WP Security** includes:
 - Read-only status section showing feature state, current policy, and plugin version
 - **Exposed Folders** — manual scan that identifies top-level plugin and theme folders missing common directory index files
 - **WP Core Verify-Checksums** — manual scan that compares installed WordPress core files against official WordPress.org checksums for the current version and locale
-- **Database Scan** — manual scan of the `wp_options` table for potentially compromised records
+- **Database Scan** — manual scan of a selected WordPress options table for potentially compromised records
 - Recent lockout log with timestamp, IP address, attempted username, scope, and lockout duration
 
 ## How It Works
@@ -193,7 +196,7 @@ After install or update, verify:
 - [ ] REST API (`/wp-json/`) still works
 - [ ] Settings save and persist correctly
 - [ ] Exposed Folders scan runs manually and reports top-level plugin/theme folders missing common index files
-- [ ] Database Scan runs manually and reports grouped findings from the `wp_options` table
+- [ ] Database Scan discovers multiple options tables when present and scans the selected table
 - [ ] Disabling XML-RPC blocking from settings stops XML-RPC blocking through this plugin
 - [ ] Disabling login rate limiting from settings stops login blocking through this plugin
 
@@ -221,6 +224,7 @@ choctaw-wp-security/
     ├── class-settings.php           # Admin settings page
     ├── class-core-checksum-scanner.php # WordPress core checksum scanner
     ├── class-options-scan-patterns.php # Database scan patterns and thresholds
+    ├── class-options-table-discovery.php # Options table discovery and metadata
     ├── class-options-table-scanner.php # wp_options database scanner
     ├── class-xml-rpc-protection.php # XML-RPC blocking
     └── class-login-rate-limiter.php # Login rate limiting
@@ -229,6 +233,10 @@ choctaw-wp-security/
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
+
+### 1.4.1
+
+- Database Scan can discover multiple options tables and lets you choose which one to scan
 
 ### 1.4.0
 

@@ -105,6 +105,22 @@
 	margin-top: 8px;
 }
 
+.cws-database-scan-table-picker {
+	margin-top: 20px;
+	max-width: none;
+	width: 100%;
+}
+
+.cws-database-scan-table-picker h3 {
+	margin-bottom: 8px;
+}
+
+.cws-database-scan-table-picker-table {
+	margin-top: 8px;
+	table-layout: auto;
+	width: 100%;
+}
+
 .cws-database-scan-section h3 {
 	margin-bottom: 8px;
 }

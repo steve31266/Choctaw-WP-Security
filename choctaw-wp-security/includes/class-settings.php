@@ -718,9 +718,15 @@ class Choctaw_Wp_Security_Settings {
 			return;
 		}
 
-		check_admin_referer( 'choctaw_wp_security_database_scan' );
+		check_admin_referer( 'choctaw_wp_security_database_scan_form' );
 
-		$scanner = new Choctaw_Wp_Security_Options_Table_Scanner();
+		$requested_table = isset( $_POST['database_scan_options_table'] ) ? wp_unslash( $_POST['database_scan_options_table'] ) : '';
+		$discovery       = new Choctaw_Wp_Security_Options_Table_Discovery();
+		$options_table   = $discovery->resolve_scan_table( (string) $requested_table );
+
+		Choctaw_Wp_Security_Utils::save_database_scan_options_table( $options_table );
+
+		$scanner = new Choctaw_Wp_Security_Options_Table_Scanner( $options_table );
 		$result  = $scanner->scan();
 
 		set_transient( $this->get_database_scan_result_transient_key(), $result, MINUTE_IN_SECONDS );
@@ -752,9 +758,15 @@ class Choctaw_Wp_Security_Settings {
 			return;
 		}
 
-		check_admin_referer( 'choctaw_wp_security_database_scan_baseline_reset' );
+		check_admin_referer( 'choctaw_wp_security_database_scan_form' );
 
-		Choctaw_Wp_Security_Options_Table_Scanner::reset_baseline();
+		$requested_table = isset( $_POST['database_scan_options_table'] ) ? wp_unslash( $_POST['database_scan_options_table'] ) : '';
+		$discovery       = new Choctaw_Wp_Security_Options_Table_Discovery();
+		$options_table   = $discovery->resolve_scan_table( (string) $requested_table );
+
+		Choctaw_Wp_Security_Utils::save_database_scan_options_table( $options_table );
+
+		Choctaw_Wp_Security_Options_Table_Scanner::reset_baseline( $options_table );
 
 		wp_safe_redirect(
 			add_query_arg(
@@ -914,38 +926,63 @@ class Choctaw_Wp_Security_Settings {
 		}
 
 		$baseline_reset = isset( $_GET['database_scan_baseline_reset'] );
+		$discovery      = new Choctaw_Wp_Security_Options_Table_Discovery();
+		$selected_table = $discovery->resolve_scan_table( '' );
+		$tables_meta    = $discovery->get_tables_with_metadata();
+		$mismatch_warn  = $discovery->get_mismatch_warning( $tables_meta );
 		?>
 		<div class="cws-admin-tab-panel">
 			<div class="cws-report-section">
 				<h2><?php esc_html_e( 'Database Scan', 'choctaw-wp-security' ); ?></h2>
 				<p>
-					<?php esc_html_e( 'Database Scan inspects the WordPress wp_options table for records that may indicate compromise. It looks for hijacked site URLs, tampered plugin lists, suspicious cron jobs, oversized autoloaded options, PHP or execution patterns, and other high-risk indicators.', 'choctaw-wp-security' ); ?>
+					<?php esc_html_e( 'Database Scan inspects a WordPress options table for records that may indicate compromise. It looks for hijacked site URLs, tampered plugin lists, suspicious cron jobs, oversized autoloaded options, PHP or execution patterns, and other high-risk indicators.', 'choctaw-wp-security' ); ?>
 				</p>
 				<p>
-					<?php esc_html_e( 'This scan covers only the wp_options table. It does not scan posts, users, comments, or other database tables. Findings are reported for investigation — nothing is automatically deleted or modified.', 'choctaw-wp-security' ); ?>
+					<?php esc_html_e( 'Some sites retain multiple options tables after staging copies or hosting migrations. Select the table you want to scan below. The WordPress configured table is selected by default.', 'choctaw-wp-security' ); ?>
 				</p>
 				<p>
-					<?php esc_html_e( 'The first scan establishes a baseline for change tracking. Subsequent scans report options that are new or changed since the previous scan.', 'choctaw-wp-security' ); ?>
+					<?php esc_html_e( 'This scan covers only the selected options table. It does not scan posts, users, comments, or other database tables. Findings are reported for investigation — nothing is automatically deleted or modified.', 'choctaw-wp-security' ); ?>
+				</p>
+				<p>
+					<?php esc_html_e( 'The first scan of a selected table establishes a baseline for change tracking. Subsequent scans of that same table report options that are new or changed since the previous scan.', 'choctaw-wp-security' ); ?>
 				</p>
 
-				<?php if ( $baseline_reset ) : ?>
-					<div class="notice notice-success is-dismissible">
-						<p><?php esc_html_e( 'The database scan baseline was reset to the current wp_options snapshot.', 'choctaw-wp-security' ); ?></p>
+				<?php if ( '' !== $mismatch_warn ) : ?>
+					<div class="notice notice-warning">
+						<p><?php echo esc_html( $mismatch_warn ); ?></p>
 					</div>
 				<?php endif; ?>
 
-				<form method="post" class="cws-database-scan-form">
-					<?php wp_nonce_field( 'choctaw_wp_security_database_scan' ); ?>
-					<input type="hidden" name="choctaw_wp_security_database_scan" value="1" />
-					<input type="hidden" name="cws_tab" value="database-scan" />
-					<?php submit_button( __( 'Scan Now', 'choctaw-wp-security' ), 'secondary', 'submit', false ); ?>
-				</form>
+				<?php
+				if ( is_array( $result ) && ! empty( $result['options_table'] ) ) {
+					$selected_table = (string) $result['options_table'];
+				}
+				?>
 
-				<form method="post" class="cws-database-scan-baseline-form" onsubmit="return confirm('<?php echo esc_js( __( 'Reset the baseline to the current wp_options snapshot?', 'choctaw-wp-security' ) ); ?>');">
-					<?php wp_nonce_field( 'choctaw_wp_security_database_scan_baseline_reset' ); ?>
-					<input type="hidden" name="choctaw_wp_security_database_scan_baseline_reset" value="1" />
+				<?php if ( $baseline_reset ) : ?>
+					<div class="notice notice-success is-dismissible">
+						<p><?php esc_html_e( 'The database scan baseline was reset for the selected options table.', 'choctaw-wp-security' ); ?></p>
+					</div>
+				<?php endif; ?>
+
+				<form method="post" class="cws-database-scan-form" id="cws-database-scan-form">
+					<?php wp_nonce_field( 'choctaw_wp_security_database_scan_form' ); ?>
 					<input type="hidden" name="cws_tab" value="database-scan" />
-					<?php submit_button( __( 'Reset Baseline', 'choctaw-wp-security' ), 'secondary', 'submit', false ); ?>
+
+					<?php $this->render_database_scan_table_picker( $tables_meta, $selected_table ); ?>
+
+					<?php submit_button( __( 'Scan Now', 'choctaw-wp-security' ), 'secondary', 'choctaw_wp_security_database_scan', false ); ?>
+					<?php
+					submit_button(
+						__( 'Reset Baseline', 'choctaw-wp-security' ),
+						'secondary',
+						'choctaw_wp_security_database_scan_baseline_reset',
+						false,
+						array(
+							'onclick' => "return confirm('" . esc_js( __( 'Reset the baseline to the current options table snapshot?', 'choctaw-wp-security' ) ) . "');",
+						)
+					);
+					?>
 				</form>
 
 				<?php if ( is_array( $result ) ) : ?>
@@ -1017,6 +1054,20 @@ class Choctaw_Wp_Security_Settings {
 							/* translators: %s: options table name */
 							__( 'Scanned table: %s', 'choctaw-wp-security' ),
 							(string) $result['options_table']
+						)
+					);
+					?>
+				</p>
+			<?php endif; ?>
+
+			<?php if ( ! empty( $result['wordpress_configured_table'] ) && ! empty( $result['options_table'] ) && $result['wordpress_configured_table'] !== $result['options_table'] ) : ?>
+				<p>
+					<?php
+					echo esc_html(
+						sprintf(
+							/* translators: %s: WordPress configured options table */
+							__( 'WordPress configured table: %s', 'choctaw-wp-security' ),
+							(string) $result['wordpress_configured_table']
 						)
 					);
 					?>
@@ -1152,6 +1203,90 @@ class Choctaw_Wp_Security_Settings {
 		}
 
 		return '-';
+	}
+
+	/**
+	 * Render the options table picker for database scans.
+	 *
+	 * @param array<int, array<string, mixed>> $tables_metadata Discovered table metadata.
+	 * @param string                           $selected_table  Selected table name.
+	 * @return void
+	 */
+	private function render_database_scan_table_picker( array $tables_metadata, $selected_table ) {
+		if ( empty( $tables_metadata ) ) {
+			?>
+			<p><?php esc_html_e( 'No options tables were discovered in this database.', 'choctaw-wp-security' ); ?></p>
+			<?php
+			return;
+		}
+		?>
+		<div class="cws-database-scan-table-picker">
+			<h3><?php esc_html_e( 'Options Table', 'choctaw-wp-security' ); ?></h3>
+			<table class="widefat striped cws-database-scan-table-picker-table">
+				<thead>
+					<tr>
+						<th scope="col"><?php esc_html_e( 'Select', 'choctaw-wp-security' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Table', 'choctaw-wp-security' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Status', 'choctaw-wp-security' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Rows', 'choctaw-wp-security' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Data Size', 'choctaw-wp-security' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'siteurl Host', 'choctaw-wp-security' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'home Host', 'choctaw-wp-security' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Last Updated', 'choctaw-wp-security' ); ?></th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ( $tables_metadata as $table_meta ) : ?>
+						<?php
+						$table_name = isset( $table_meta['table_name'] ) ? (string) $table_meta['table_name'] : '';
+						$is_selected = $table_name === $selected_table;
+						$badges = array();
+
+						if ( ! empty( $table_meta['is_wordpress_configured'] ) ) {
+							$badges[] = __( 'WordPress configured', 'choctaw-wp-security' );
+						}
+
+						if ( ! empty( $table_meta['url_matches_site'] ) ) {
+							$badges[] = __( 'URL matches site', 'choctaw-wp-security' );
+						}
+						?>
+						<tr>
+							<td>
+								<input
+									type="radio"
+									name="database_scan_options_table"
+									class="cws-database-scan-table-choice"
+									value="<?php echo esc_attr( $table_name ); ?>"
+									<?php checked( $is_selected ); ?>
+								/>
+							</td>
+							<td><code class="cws-file-path"><?php echo esc_html( $table_name ); ?></code></td>
+							<td><?php echo esc_html( implode( '; ', $badges ) ); ?></td>
+							<td><?php echo esc_html( number_format_i18n( isset( $table_meta['row_count'] ) ? (int) $table_meta['row_count'] : 0 ) ); ?></td>
+							<td><?php echo esc_html( size_format( isset( $table_meta['data_size'] ) ? (int) $table_meta['data_size'] : 0 ) ); ?></td>
+							<td><?php echo esc_html( isset( $table_meta['siteurl_host'] ) ? (string) $table_meta['siteurl_host'] : '' ); ?></td>
+							<td><?php echo esc_html( isset( $table_meta['home_host'] ) ? (string) $table_meta['home_host'] : '' ); ?></td>
+							<td><?php echo esc_html( $this->format_database_scan_table_timestamp( isset( $table_meta['update_time'] ) ? (string) $table_meta['update_time'] : '' ) ); ?></td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Format a table timestamp for display.
+	 *
+	 * @param string $timestamp Raw timestamp value.
+	 * @return string
+	 */
+	private function format_database_scan_table_timestamp( $timestamp ) {
+		if ( '' === $timestamp || '0000-00-00 00:00:00' === $timestamp ) {
+			return __( 'Not available (InnoDB)', 'choctaw-wp-security' );
+		}
+
+		return $timestamp;
 	}
 
 	/**

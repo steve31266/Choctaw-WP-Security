@@ -30,6 +30,7 @@ class Choctaw_Wp_Security_Utils {
 			'allowed_failed_attempts'    => 5,
 			'failure_window_minutes'    => 15,
 			'lockout_duration_minutes'  => 30,
+			'database_scan_options_table' => '',
 		);
 	}
 
@@ -200,5 +201,35 @@ class Choctaw_Wp_Security_Utils {
 		$events = get_option( self::LOCKOUT_LOG_KEY, array() );
 
 		return is_array( $events ) ? $events : array();
+	}
+
+	/**
+	 * Get the persisted database scan options table selection.
+	 *
+	 * @return string
+	 */
+	public static function get_database_scan_options_table() {
+		$options = self::get_options();
+		$table   = isset( $options['database_scan_options_table'] ) ? (string) $options['database_scan_options_table'] : '';
+
+		if ( preg_match( '/^[A-Za-z0-9_]+$/', $table ) ) {
+			return $table;
+		}
+
+		return '';
+	}
+
+	/**
+	 * Persist the selected database scan options table.
+	 *
+	 * @param string $table_name Validated options table name.
+	 * @return bool
+	 */
+	public static function save_database_scan_options_table( $table_name ) {
+		$options = self::get_options();
+
+		$options['database_scan_options_table'] = (string) $table_name;
+
+		return update_option( self::OPTION_KEY, $options );
 	}
 }

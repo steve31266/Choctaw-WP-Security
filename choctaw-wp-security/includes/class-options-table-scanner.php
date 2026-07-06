@@ -34,13 +34,35 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 	private $option_id_map = null;
 
 	/**
+	 * Selected options table name.
+	 *
+	 * @var string
+	 */
+	private $options_table = '';
+
+	/**
+	 * Table discovery helper.
+	 *
+	 * @var Choctaw_Wp_Security_Options_Table_Discovery
+	 */
+	private $discovery;
+
+	/**
+	 * Create a scanner for a specific options table.
+	 *
+	 * @param string $options_table Requested options table name.
+	 */
+	public function __construct( $options_table = '' ) {
+		$this->discovery     = new Choctaw_Wp_Security_Options_Table_Discovery();
+		$this->options_table = $this->discovery->resolve_scan_table( $options_table );
+	}
+
+	/**
 	 * Run the full wp_options scan.
 	 *
 	 * @return array<string, mixed>
 	 */
 	public function scan() {
-		global $wpdb;
-
 		$this->start_time      = microtime( true );
 		$this->scan_incomplete = false;
 		$this->option_id_map   = null;
@@ -65,25 +87,85 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 		$summary = $this->build_summary( $sections );
 
 		return array(
-			'success'              => 0 === ( $summary['critical'] + $summary['warning'] ),
-			'scan_incomplete'      => $this->scan_incomplete,
-			'baseline_established' => empty( $baseline ),
-			'sections'             => $sections,
-			'summary'              => $summary,
-			'options_table'        => $wpdb->options,
+			'success'                    => 0 === ( $summary['critical'] + $summary['warning'] ),
+			'scan_incomplete'            => $this->scan_incomplete,
+			'baseline_established'       => $this->is_baseline_uninitialized( $baseline ),
+			'sections'                   => $sections,
+			'summary'                    => $summary,
+			'options_table'              => $this->options_table,
+			'wordpress_configured_table' => Choctaw_Wp_Security_Options_Table_Discovery::get_wordpress_configured_table(),
 		);
 	}
 
 	/**
 	 * Capture and save a baseline snapshot without running a full scan.
 	 *
+	 * @param string $options_table Requested options table name.
 	 * @return bool
 	 */
-	public static function reset_baseline() {
-		$scanner  = new self();
+	public static function reset_baseline( $options_table = '' ) {
+		$scanner  = new self( $options_table );
 		$snapshot = $scanner->capture_baseline_snapshot();
 
 		return $scanner->save_baseline( $snapshot );
+	}
+
+	/**
+	 * Get the selected options table name.
+	 *
+	 * @return string
+	 */
+	public function get_options_table() {
+		return $this->options_table;
+	}
+
+	/**
+	 * Determine whether a baseline is uninitialized for the selected table.
+	 *
+	 * @param array<string, mixed>|null $baseline Stored baseline.
+	 * @return bool
+	 */
+	private function is_baseline_uninitialized( $baseline ) {
+		if ( empty( $baseline ) || ! is_array( $baseline ) ) {
+			return true;
+		}
+
+		$baseline_table = isset( $baseline['options_table'] ) ? (string) $baseline['options_table'] : '';
+
+		return $baseline_table !== $this->options_table;
+	}
+
+	/**
+	 * Quote the selected options table for SQL usage.
+	 *
+	 * @return string
+	 */
+	private function get_options_table_sql() {
+		return $this->discovery->quote_table_name( $this->options_table );
+	}
+
+	/**
+	 * Read an option value from the selected options table.
+	 *
+	 * @param string $option_name Option name.
+	 * @param mixed  $default     Default value when missing.
+	 * @return mixed
+	 */
+	private function get_table_option( $option_name, $default = false ) {
+		global $wpdb;
+
+		$value = $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT option_value FROM ' . $this->get_options_table_sql() . ' WHERE option_name = %s LIMIT 1',
+				$option_name
+			)
+		);
+
+		if ( null === $value ) {
+			return $default;
+		}
+
+		return maybe_unserialize( $value );
 	}
 
 	/**
@@ -116,8 +198,8 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 	 * @return void
 	 */
 	private function scan_site_url_security( array &$findings ) {
-		$home     = (string) get_option( 'home', '' );
-		$siteurl  = (string) get_option( 'siteurl', '' );
+		$home     = (string) $this->get_table_option( 'home', '' );
+		$siteurl  = (string) $this->get_table_option( 'siteurl', '' );
 		$expected = $this->get_expected_hosts();
 
 		if ( '' !== $home && '' !== $siteurl ) {
@@ -193,7 +275,7 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 			}
 		}
 
-		if ( (bool) get_option( 'users_can_register', false ) ) {
+		if ( (bool) $this->get_table_option( 'users_can_register', false ) ) {
 			$findings[] = $this->make_finding(
 				'users_can_register_enabled',
 				'warning',
@@ -203,7 +285,7 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 			);
 		}
 
-		$default_role = (string) get_option( 'default_role', 'subscriber' );
+		$default_role = (string) $this->get_table_option( 'default_role', 'subscriber' );
 
 		if ( 'administrator' === $default_role ) {
 			$findings[] = $this->make_finding(
@@ -216,7 +298,7 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 			);
 		}
 
-		$admin_email = (string) get_option( 'admin_email', '' );
+		$admin_email = (string) $this->get_table_option( 'admin_email', '' );
 
 		if ( '' === $admin_email || ! is_email( $admin_email ) ) {
 			$findings[] = $this->make_finding(
@@ -245,7 +327,7 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 				continue;
 			}
 
-			$value = get_option( $option_name, null );
+			$value = $this->get_table_option( $option_name, null );
 
 			if ( ! is_string( $value ) || '' === $value ) {
 				continue;
@@ -278,7 +360,7 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 	 * @return void
 	 */
 	private function scan_active_plugins( array &$findings ) {
-		$active_plugins = get_option( 'active_plugins', array() );
+		$active_plugins = $this->get_table_option( 'active_plugins', array() );
 
 		if ( ! is_array( $active_plugins ) ) {
 			$findings[] = $this->make_finding(
@@ -342,8 +424,8 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 	 * @return void
 	 */
 	private function scan_cron_events( array &$findings ) {
-		$cron_raw = get_option( 'cron', array() );
-		$cron     = _get_cron_array();
+		$cron_raw = $this->get_table_option( 'cron', array() );
+		$cron     = is_array( $cron_raw ) ? $cron_raw : array();
 
 		if ( is_array( $cron_raw ) ) {
 			$cron_raw_string = maybe_serialize( $cron_raw );
@@ -437,7 +519,7 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 			return;
 		}
 
-		$table = $wpdb->options;
+		$table = $this->get_options_table_sql();
 		$limit = (int) Choctaw_Wp_Security_Options_Scan_Patterns::AUTOLOAD_TOP_LIMIT;
 		$rows  = $wpdb->get_results(
 			$wpdb->prepare(
@@ -524,7 +606,7 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 			return;
 		}
 
-		$table        = $wpdb->options;
+		$table        = $this->get_options_table_sql();
 		$placeholders = implode( ', ', array_fill( 0, count( $names ), '%s' ) );
 		$sql          = "SELECT option_id, option_name, LENGTH(option_value) AS option_size, LEFT(option_value, %d) AS option_excerpt
 			FROM {$table}
@@ -582,6 +664,22 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 	 * @return void
 	 */
 	private function scan_baseline_diff( array &$section, $baseline ) {
+		$baseline_table = ( is_array( $baseline ) && isset( $baseline['options_table'] ) ) ? (string) $baseline['options_table'] : '';
+
+		if ( $this->is_baseline_uninitialized( $baseline ) ) {
+			if ( '' !== $baseline_table && $baseline_table !== $this->options_table ) {
+				$section['info_message'] = sprintf(
+					/* translators: 1: previous options table, 2: selected options table */
+					__( 'Baseline was captured for %1$s. Establishing a new baseline for %2$s.', 'choctaw-wp-security' ),
+					$baseline_table,
+					$this->options_table
+				);
+			} else {
+				$section['info_message'] = __( 'Baseline established. Future scans will report options that are new or changed since this scan.', 'choctaw-wp-security' );
+			}
+			return;
+		}
+
 		if ( empty( $baseline ) || ! isset( $baseline['options'] ) || ! is_array( $baseline['options'] ) ) {
 			$section['info_message'] = __( 'Baseline established. Future scans will report options that are new or changed since this scan.', 'choctaw-wp-security' );
 			return;
@@ -653,7 +751,7 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 			return;
 		}
 
-		$table         = $wpdb->options;
+		$table         = $this->get_options_table_sql();
 		$where_clauses = array();
 		$where_values  = array();
 
@@ -766,7 +864,7 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 	private function capture_baseline_snapshot() {
 		global $wpdb;
 
-		$table = $wpdb->options;
+		$table = $this->get_options_table_sql();
 		$rows  = $wpdb->get_results(
 			"SELECT option_id, option_name, option_value
 			FROM {$table}
@@ -796,8 +894,9 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 		}
 
 		return array(
-			'captured_at' => gmdate( 'Y-m-d H:i:s' ),
-			'options'     => $options,
+			'options_table' => $this->options_table,
+			'captured_at'   => gmdate( 'Y-m-d H:i:s' ),
+			'options'       => $options,
 		);
 	}
 
@@ -1013,7 +1112,7 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 		$this->option_id_map = array();
 
 		$rows = $wpdb->get_results(
-			"SELECT option_id, option_name FROM {$wpdb->options}",
+			'SELECT option_id, option_name FROM ' . $this->get_options_table_sql(),
 			ARRAY_A
 		);
 

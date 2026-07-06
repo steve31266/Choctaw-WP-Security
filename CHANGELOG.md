@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-07-06
+
+### Added
+
+- Database Scan now discovers all `*options` tables in the database and lets you choose which table to scan.
+  - Shows row count, data size, `siteurl`/`home` hosts, and last-updated metadata to help identify the correct table.
+  - Marks the WordPress configured table and tables whose URLs match the current site.
+  - Warns when the configured table URL does not match the site but another discovered table does.
+  - Baseline snapshots are scoped per selected table; switching tables establishes a new baseline.
+
 ## [1.4.0] - 2026-07-06
 
 ### Added
@@ -79,6 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: XML-RPC protection and dual-scope login rate limiting.
 - Admin settings page with feature toggles, rate limit policy, and recent lockout log.
 
+[1.4.1]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.2.0...v1.2.1
