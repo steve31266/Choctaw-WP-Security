@@ -25,6 +25,8 @@ class Choctaw_Wp_Security_Settings {
 		add_action( 'load-settings_page_choctaw-wp-security', array( $this, 'handle_database_scan' ) );
 		add_action( 'load-settings_page_choctaw-wp-security', array( $this, 'handle_database_scan_baseline_reset' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
+		add_action( 'wp_ajax_choctaw_wp_security_database_scan', array( $this, 'ajax_database_scan' ) );
+		add_action( 'wp_ajax_choctaw_wp_security_database_scan_baseline_reset', array( $this, 'ajax_database_scan_baseline_reset' ) );
 	}
 
 	/**
@@ -808,6 +810,77 @@ class Choctaw_Wp_Security_Settings {
 	}
 
 	/**
+	 * Handle an AJAX database scan request.
+	 *
+	 * @return void
+	 */
+	public function ajax_database_scan() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error(
+				array(
+					'message' => __( 'You do not have permission to run database scans.', 'choctaw-wp-security' ),
+				),
+				403
+			);
+		}
+
+		check_ajax_referer( 'choctaw_wp_security_database_scan_ajax', 'nonce' );
+
+		$requested_table = isset( $_POST['database_scan_options_table'] ) ? wp_unslash( $_POST['database_scan_options_table'] ) : '';
+		$discovery       = new Choctaw_Wp_Security_Options_Table_Discovery();
+		$options_table   = $discovery->resolve_scan_table( (string) $requested_table );
+
+		Choctaw_Wp_Security_Utils::save_database_scan_options_table( $options_table );
+
+		$scanner = new Choctaw_Wp_Security_Options_Table_Scanner( $options_table );
+		$result  = $scanner->scan();
+
+		$this->save_report_result(
+			$this->get_database_scan_result_transient_key(),
+			Choctaw_Wp_Security_Utils::USER_META_DATABASE_SCAN_RESULT,
+			$result
+		);
+
+		wp_send_json_success(
+			array(
+				'result' => $result,
+			)
+		);
+	}
+
+	/**
+	 * Handle an AJAX database scan baseline reset request.
+	 *
+	 * @return void
+	 */
+	public function ajax_database_scan_baseline_reset() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error(
+				array(
+					'message' => __( 'You do not have permission to reset the database scan baseline.', 'choctaw-wp-security' ),
+				),
+				403
+			);
+		}
+
+		check_ajax_referer( 'choctaw_wp_security_database_scan_ajax', 'nonce' );
+
+		$requested_table = isset( $_POST['database_scan_options_table'] ) ? wp_unslash( $_POST['database_scan_options_table'] ) : '';
+		$discovery       = new Choctaw_Wp_Security_Options_Table_Discovery();
+		$options_table   = $discovery->resolve_scan_table( (string) $requested_table );
+
+		Choctaw_Wp_Security_Utils::save_database_scan_options_table( $options_table );
+		Choctaw_Wp_Security_Options_Table_Scanner::reset_baseline( $options_table );
+
+		wp_send_json_success(
+			array(
+				'message'       => __( 'The database scan baseline was reset for the selected options table.', 'choctaw-wp-security' ),
+				'options_table' => $options_table,
+			)
+		);
+	}
+
+	/**
 	 * Enqueue admin assets for the settings page.
 	 *
 	 * @param string $hook_suffix Current admin page hook suffix.
@@ -823,6 +896,61 @@ class Choctaw_Wp_Security_Settings {
 			CHOCTAW_WP_SECURITY_URL . 'assets/css/admin-core-checksum.css',
 			array(),
 			CHOCTAW_WP_SECURITY_VERSION
+		);
+
+		if ( 'database-scan' !== $this->get_active_admin_tab() ) {
+			return;
+		}
+
+		wp_enqueue_script(
+			'choctaw-wp-security-database-scan',
+			CHOCTAW_WP_SECURITY_URL . 'assets/js/admin-database-scan.js',
+			array(),
+			CHOCTAW_WP_SECURITY_VERSION,
+			true
+		);
+
+		wp_localize_script(
+			'choctaw-wp-security-database-scan',
+			'choctawWpSecurityDatabaseScan',
+			array(
+				'ajaxUrl'       => admin_url( 'admin-ajax.php' ),
+				'nonce'         => wp_create_nonce( 'choctaw_wp_security_database_scan_ajax' ),
+				'pageSize'      => $this->get_report_page_size(),
+				'initialResult' => $this->load_report_result(
+					$this->get_database_scan_result_transient_key(),
+					Choctaw_Wp_Security_Utils::USER_META_DATABASE_SCAN_RESULT
+				),
+				'strings'       => array(
+					'scanButton'         => __( 'Scan Now', 'choctaw-wp-security' ),
+					'rescanButton'       => __( 'Rescan Selected Table', 'choctaw-wp-security' ),
+					'scanning'           => __( 'Scanning selected options table...', 'choctaw-wp-security' ),
+					'resettingBaseline'  => __( 'Resetting baseline...', 'choctaw-wp-security' ),
+					'scanError'          => __( 'The database scan could not be completed.', 'choctaw-wp-security' ),
+					'resetError'         => __( 'The database scan baseline could not be reset.', 'choctaw-wp-security' ),
+					'noFindings'         => __( 'No findings in this section.', 'choctaw-wp-security' ),
+					'pageOf'             => __( 'Page %1$s of %2$s', 'choctaw-wp-security' ),
+					'items'              => __( '%s items', 'choctaw-wp-security' ),
+					'item'               => __( '%s item', 'choctaw-wp-security' ),
+					'sortAscending'      => __( 'Sort ascending', 'choctaw-wp-security' ),
+					'sortDescending'     => __( 'Sort descending', 'choctaw-wp-security' ),
+					'scannedTable'       => __( 'Scanned table: %s', 'choctaw-wp-security' ),
+					'configuredTable'    => __( 'WordPress configured table: %s', 'choctaw-wp-security' ),
+					'scanCompleteIssues' => __( 'Scan complete. %1$s critical, %2$s warning, and %3$s informational findings worth investigating.', 'choctaw-wp-security' ),
+					'scanCompleteClean'  => __( 'Scan complete. No critical or warning findings. %s informational item(s) reported.', 'choctaw-wp-security' ),
+					'incomplete'         => __( 'The scan stopped early because it reached its time budget. Review the partial results below and run the scan again if needed.', 'choctaw-wp-security' ),
+					'severity'           => __( 'Severity', 'choctaw-wp-security' ),
+					'optionId'           => __( 'Option ID', 'choctaw-wp-security' ),
+					'option'             => __( 'Option', 'choctaw-wp-security' ),
+					'size'               => __( 'Size', 'choctaw-wp-security' ),
+					'detail'             => __( 'Detail', 'choctaw-wp-security' ),
+					'excerpt'            => __( 'Excerpt', 'choctaw-wp-security' ),
+					'firstPage'          => __( 'First page', 'choctaw-wp-security' ),
+					'previousPage'       => __( 'Previous page', 'choctaw-wp-security' ),
+					'nextPage'           => __( 'Next page', 'choctaw-wp-security' ),
+					'lastPage'           => __( 'Last page', 'choctaw-wp-security' ),
+				),
+			)
 		);
 	}
 
@@ -1088,9 +1216,14 @@ class Choctaw_Wp_Security_Settings {
 					?>
 				</form>
 
-				<?php if ( is_array( $result ) ) : ?>
-					<?php $this->render_database_scan_results( $result ); ?>
-				<?php endif; ?>
+				<div id="cws-database-scan-js-notices" aria-live="polite"></div>
+				<div id="cws-database-scan-js-results"></div>
+
+				<div id="cws-database-scan-fallback-results">
+					<?php if ( is_array( $result ) ) : ?>
+						<?php $this->render_database_scan_results( $result ); ?>
+					<?php endif; ?>
+				</div>
 			</div>
 		</div>
 		<?php

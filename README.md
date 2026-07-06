@@ -62,6 +62,7 @@ Built for standard WordPress installs. No Composer, build tools, or external dep
 - Warns when the configured table URL does not match the site but another discovered table does
 - Reports potentially compromised or malicious records for investigation
 - Checks site URL and security settings, active plugin consistency, cron events, large autoload options, PHP/execution patterns, known-malware option names, and scripts outside widget/theme options
+- Displays scan reports through an AJAX/JSON interface with client-side pagination and sortable columns
 - Establishes a per-table baseline on the first scan of each selected table and reports new/changed/removed options on subsequent scans of that same table
 - Includes **Reset Baseline** to snapshot the current selected options table after cleanup
 - Detection-only: does not delete, edit, or quarantine database rows
@@ -144,17 +145,17 @@ This plugin uses WordPress transients for temporary state. It does **not** creat
 | Lockout (per IP) | `cws_lock_ip_{hash}` | Lockout duration (30 minutes) |
 | Failed login count (per IP + username) | `cws_fail_ipu_{hash}` | Failure window (15 minutes) |
 | Lockout (per IP + username) | `cws_lock_ipu_{hash}` | Lockout duration (30 minutes) |
-| Core checksum scan result | `cws_core_checksum_{user_id}` | 1 minute |
-| Exposed folders scan result | `cws_exposed_folders_{user_id}` | 1 minute |
-| Database scan result | `cws_database_scan_{user_id}` | 1 minute |
+| Core checksum scan result | `cws_core_checksum_{user_id}` | 12 hours |
+| Exposed folders scan result | `cws_exposed_folders_{user_id}` | 12 hours |
+| Database scan result | `cws_database_scan_{user_id}` | 12 hours |
 
 **Are they safe to keep?** Yes. These rows hold short-lived operational data such as failure counts, lockout flags, and scan results. They do not store passwords or other secrets. Active and recently expired rows are normal.
 
-**Do they get removed?** Yes, primarily by expiration. Lockouts and failure counters expire after the configured window or duration. Scan results expire after one minute. WordPress removes expired transients when they are accessed and also during scheduled cleanup, so expired rows may remain visible in `wp_options` for a while before cleanup runs. On successful login, the plugin explicitly clears the IP+username failure counter only; the IP-only counter is intentionally left in place. There is no uninstall hook that deletes plugin transients; they are expected to age out on their own.
+**Do they get removed?** Yes, primarily by expiration. Lockouts and failure counters expire after the configured window or duration. Scan results expire after 12 hours and are refreshed while viewing paginated reports. WordPress removes expired transients when they are accessed and also during scheduled cleanup, so expired rows may remain visible in `wp_options` for a while before cleanup runs. On successful login, the plugin explicitly clears the IP+username failure counter only; the IP-only counter is intentionally left in place. There is no uninstall hook that deletes plugin transients; they are expected to age out on their own.
 
 **Does repeated use create more records?** Admin scans reuse a fixed key per admin user, so running a scan again overwrites the previous result instead of adding rows. Login rate limiting reuses the same keys for a given IP or IP+username pair. The main scenario that temporarily increases row count is sustained failed login attempts from many different IP addresses, such as bot traffic. Those rows should drop off as TTLs expire and WordPress cleanup runs.
 
-The plugin also stores regular (non-transient) options: `choctaw_wp_security_options` (settings), `choctaw_wp_security_lockout_log` (the last 20 lockout events shown in admin), and `choctaw_wp_security_options_baseline` (database scan change-tracking snapshot).
+The plugin also stores regular (non-transient) options: `choctaw_wp_security_options` (settings), `choctaw_wp_security_lockout_log` (the last 20 lockout events shown in admin), and `choctaw_wp_security_options_baseline` (database scan change-tracking snapshot). Scan results are also backed up in user meta so report pagination can survive object-cache transient eviction.
 
 Sites with a persistent object cache (Redis, Memcached, etc.) may store transients in the cache backend instead of `wp_options`.
 
@@ -215,9 +216,12 @@ wp-content/plugins/choctaw-wp-security/
 ```
 choctaw-wp-security/
 ├── choctaw-wp-security.php          # Bootstrap, constants, activation hook
-├── assets/css/
-│   ├── login-lockout.css            # Login lockout styling
-│   └── admin-core-checksum.css      # Core checksum scan results styling
+├── assets/
+│   ├── css/
+│   │   ├── login-lockout.css        # Login lockout styling
+│   │   └── admin-core-checksum.css  # Admin report styling
+│   └── js/
+│       └── admin-database-scan.js   # AJAX Database Scan report UI
 └── includes/
     ├── class-plugin.php             # Module coordinator
     ├── class-utils.php              # Options, IP helper, transient keys
@@ -233,6 +237,10 @@ choctaw-wp-security/
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
+
+### 1.5.0
+
+- Refactored Database Scan reports to an AJAX/JSON UI with no-reload scanning, client-side pagination, sortable columns, and a bottom rescan button
 
 ### 1.4.2
 

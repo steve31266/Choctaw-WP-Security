@@ -202,6 +202,31 @@
 	margin: 0;
 }
 
+.cws-sortable-column {
+	background: transparent;
+	border: 0;
+	color: inherit;
+	cursor: pointer;
+	font: inherit;
+	font-weight: 600;
+	padding: 0;
+	text-align: left;
+}
+
+.cws-sortable-column:hover,
+.cws-sortable-column:focus {
+	color: #2271b1;
+}
+
+.cws-sort-indicator {
+	color: #646970;
+	font-size: 11px;
+}
+
+.cws-database-scan-report-actions {
+	margin-top: 24px;
+}
+
 @media screen and (max-width: 782px) {
 	.cws-about-plugin {
 		display: block;

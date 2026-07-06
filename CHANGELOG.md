@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-07-06
+
+### Added
+
+- Database Scan now uses an AJAX/JSON report interface.
+  - Scans and baseline resets run without a full page reload.
+  - Report pagination happens client-side without adding page parameters to the URL.
+  - Database Scan report column headings are sortable across the full section dataset.
+  - Default sort indicators are shown immediately, with Large Autoload Options defaulting to Size descending.
+  - A bottom **Rescan Selected Table** button appears after the report for long cleanup/review sessions.
+
 ## [1.4.2] - 2026-07-06
 
 ### Added
@@ -101,6 +112,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: XML-RPC protection and dual-scope login rate limiting.
 - Admin settings page with feature toggles, rate limit policy, and recent lockout log.
 
+[1.5.0]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.4.2...v1.5.0
 [1.4.2]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.3.0...v1.4.0
