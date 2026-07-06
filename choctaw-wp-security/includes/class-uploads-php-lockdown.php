@@ -245,21 +245,21 @@ class Choctaw_Wp_Security_Uploads_Php_Lockdown {
 				return array(
 					'key'   => self::STATUS_UNKNOWN_INSTALLED,
 					'label' => __( 'Managed .htaccess block installed; server support unknown', 'choctaw-wp-security' ),
-					'note'  => __( 'The managed block was written, but this server may not honor .htaccess files. Verify enforcement separately if possible.', 'choctaw-wp-security' ),
+					'note'  => __( 'The managed block was written, but this server may not honor <code class="cws-file-path">.htaccess</code> files. Verify enforcement separately if possible.', 'choctaw-wp-security' ),
 				);
 			}
 
 			return array(
 				'key'   => self::STATUS_PROTECTED,
 				'label' => __( 'Protected by managed .htaccess block', 'choctaw-wp-security' ),
-				'note'  => __( 'The plugin installed its managed block in wp-content/uploads/.htaccess. This indicates the rule is in place, not that PHP execution has been independently verified.', 'choctaw-wp-security' ),
+				'note'  => __( 'The plugin installed its managed block in <code class="cws-file-path">wp-content/uploads/.htaccess</code>. This indicates the rule is in place, not that PHP execution has been independently verified.', 'choctaw-wp-security' ),
 			);
 		}
 
 		return array(
 			'key'   => self::STATUS_UNABLE_TO_WRITE,
 			'label' => __( 'Unable to write uploads .htaccess', 'choctaw-wp-security' ),
-			'note'  => __( 'The uploads directory or .htaccess file is missing or not writable by WordPress.', 'choctaw-wp-security' ),
+			'note'  => __( 'The uploads directory or <code class="cws-file-path">.htaccess</code> file is missing or not writable by WordPress.', 'choctaw-wp-security' ),
 		);
 	}
 

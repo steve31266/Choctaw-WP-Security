@@ -6,6 +6,46 @@
 	margin-top: 20px;
 }
 
+.cws-report-section {
+	max-width: 960px;
+}
+
+.cws-admin-tab-panel > .cws-report-section + .cws-report-section,
+.cws-report-section + .cws-report-section {
+	margin-top: 32px;
+}
+
+.cws-report-section h2 {
+	margin-top: 0;
+}
+
+.cws-report-section .widefat {
+	max-width: 100%;
+	width: 100%;
+}
+
+.cws-report-section textarea.large-text {
+	box-sizing: border-box;
+	max-width: 100%;
+	width: 100%;
+}
+
+.cws-file-path {
+	font-family: Consolas, Monaco, "Andale Mono", "DejaVu Sans Mono", monospace;
+	font-size: 13px;
+}
+
+.cws-exposed-folders-guidance {
+	margin-top: 32px;
+	max-width: 960px;
+}
+
+.cws-exposed-folders-guidance textarea.large-text {
+	box-sizing: border-box;
+	max-width: 100%;
+	width: 100%;
+}
+
 .cws-about-plugin {
 	align-items: flex-start;
 	display: flex;
