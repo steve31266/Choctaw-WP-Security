@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       Choctaw WP Security
  * Plugin URI:        https://github.com/steve31266/Choctaw-WP-Security
- * Description:       XML-RPC protection, login rate limiting, uploads PHP lockdown, and core checkssshum scanning.
- * Version:           1.3.0
+ * Description:       XML-RPC protection, login rate limiting, uploads PHP lockdown, core checksum scanning, database scan, and other tools.
+ * Version:           1.4.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Choctaw Websites
@@ -16,7 +16,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'CHOCTAW_WP_SECURITY_VERSION', '1.3.0' );
+define( 'CHOCTAW_WP_SECURITY_VERSION', '1.4.0' );
 define( 'CHOCTAW_WP_SECURITY_FILE', __FILE__ );
 define( 'CHOCTAW_WP_SECURITY_PATH', plugin_dir_path( __FILE__ ) );
 define( 'CHOCTAW_WP_SECURITY_URL', plugin_dir_url( __FILE__ ) );
@@ -28,6 +28,8 @@ require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-xml-rpc-protection.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-login-rate-limiter.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-uploads-php-lockdown.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-core-checksum-scanner.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-options-scan-patterns.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-options-table-scanner.php';
 
 // Block xmlrpc.php as early as possible, matching legacy plugin behavior.
 Choctaw_Wp_Security_Xml_Rpc_Protection::block_xmlrpc_request_if_needed();

@@ -22,6 +22,8 @@ class Choctaw_Wp_Security_Settings {
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
 		add_action( 'load-settings_page_choctaw-wp-security', array( $this, 'handle_core_checksum_scan' ) );
 		add_action( 'load-settings_page_choctaw-wp-security', array( $this, 'handle_exposed_folders_scan' ) );
+		add_action( 'load-settings_page_choctaw-wp-security', array( $this, 'handle_database_scan' ) );
+		add_action( 'load-settings_page_choctaw-wp-security', array( $this, 'handle_database_scan_baseline_reset' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 	}
 
@@ -55,9 +57,10 @@ class Choctaw_Wp_Security_Settings {
 			'choctaw-wp-security',
 			'choctaw_wp_security_features',
 			array(
-				'label_for' => 'xmlrpc_blocking_enabled',
-				'option'    => 'xmlrpc_blocking_enabled',
-				'label'     => __( 'Block XML-RPC requests', 'choctaw-wp-security' ),
+				'label_for'   => 'xmlrpc_blocking_enabled',
+				'option'      => 'xmlrpc_blocking_enabled',
+				'label'       => __( 'Block XML-RPC requests', 'choctaw-wp-security' ),
+				'description' => __( 'XML-RPC is an old feature meant to facilitate WordPress functionality in third-party applications, but remains a popular attack vector for automated-hacks. Leave this box checked.', 'choctaw-wp-security' ),
 			)
 		);
 
@@ -68,9 +71,10 @@ class Choctaw_Wp_Security_Settings {
 			'choctaw-wp-security',
 			'choctaw_wp_security_features',
 			array(
-				'label_for' => 'login_rate_limit_enabled',
-				'option'    => 'login_rate_limit_enabled',
-				'label'     => __( 'Enable login rate limiting', 'choctaw-wp-security' ),
+				'label_for'   => 'login_rate_limit_enabled',
+				'option'      => 'login_rate_limit_enabled',
+				'label'       => __( 'Enable login rate limiting', 'choctaw-wp-security' ),
+				'description' => __( 'Leave this box checked to force login-delays after several failed login attempts. This prevents automated-hacks from spamming your login with password attempts.', 'choctaw-wp-security' ),
 			)
 		);
 
@@ -101,11 +105,12 @@ class Choctaw_Wp_Security_Settings {
 			'choctaw-wp-security',
 			'choctaw_wp_security_policy',
 			array(
-				'label_for' => 'allowed_failed_attempts',
-				'option'    => 'allowed_failed_attempts',
-				'min'       => 1,
-				'max'       => 100,
-				'step'      => 1,
+				'label_for'   => 'allowed_failed_attempts',
+				'option'      => 'allowed_failed_attempts',
+				'min'         => 1,
+				'max'         => 100,
+				'step'        => 1,
+				'description' => __( 'Enter the maximum number of failed login attempts before delay kicks in.', 'choctaw-wp-security' ),
 			)
 		);
 
@@ -116,11 +121,12 @@ class Choctaw_Wp_Security_Settings {
 			'choctaw-wp-security',
 			'choctaw_wp_security_policy',
 			array(
-				'label_for' => 'failure_window_minutes',
-				'option'    => 'failure_window_minutes',
-				'min'       => 1,
-				'max'       => 1440,
-				'step'      => 1,
+				'label_for'   => 'failure_window_minutes',
+				'option'      => 'failure_window_minutes',
+				'min'         => 1,
+				'max'         => 1440,
+				'step'        => 1,
+				'description' => __( 'This is the number of minutes in a window of failed attempts (5 failed attempts within a 15 minute window).', 'choctaw-wp-security' ),
 			)
 		);
 
@@ -131,11 +137,12 @@ class Choctaw_Wp_Security_Settings {
 			'choctaw-wp-security',
 			'choctaw_wp_security_policy',
 			array(
-				'label_for' => 'lockout_duration_minutes',
-				'option'    => 'lockout_duration_minutes',
-				'min'       => 1,
-				'max'       => 1440,
-				'step'      => 1,
+				'label_for'   => 'lockout_duration_minutes',
+				'option'      => 'lockout_duration_minutes',
+				'min'         => 1,
+				'max'         => 1440,
+				'step'        => 1,
+				'description' => __( 'Enter how many minutes someone must wait to attempt more logins.', 'choctaw-wp-security' ),
 			)
 		);
 	}
@@ -239,6 +246,7 @@ class Choctaw_Wp_Security_Settings {
 			'file-changes-uploads' => __( 'Files Changes/Uploads', 'choctaw-wp-security' ),
 			'exposed-folders'      => __( 'Exposed Folders', 'choctaw-wp-security' ),
 			'verify-checksums'     => __( 'Verify Checksums', 'choctaw-wp-security' ),
+			'database-scan'        => __( 'Database Scan', 'choctaw-wp-security' ),
 			'about-this-plugin'    => __( 'About This Plugin', 'choctaw-wp-security' ),
 		);
 	}
@@ -300,6 +308,11 @@ class Choctaw_Wp_Security_Settings {
 
 		if ( 'exposed-folders' === $active_tab ) {
 			$this->render_exposed_folders_section();
+			return;
+		}
+
+		if ( 'database-scan' === $active_tab ) {
+			$this->render_database_scan_section();
 			return;
 		}
 
@@ -541,7 +554,7 @@ class Choctaw_Wp_Security_Settings {
 			<p>
 				<?php esc_html_e( 'The following folders were found in', 'choctaw-wp-security' ); ?>
 				<?php $this->render_file_path( 'wp-content/uploads/' ); ?>.
-				<?php esc_html_e( 'Some of these folders are from plugins that were uninstalled, but left remnant files behind. These could be exploited as attack vectors if they contain executable files. Delete these folders if you do not plan to reinstall those plugins.', 'choctaw-wp-security' ); ?>
+				<?php esc_html_e( 'Investigate these folders to determine if they are from active plugins, or if they are remnants of uninstalled plugins. Remnants of uninstalled plugins could still pose as attack vectors, especially if they contain executable files.', 'choctaw-wp-security' ); ?>
 			</p>
 			<p><strong><?php esc_html_e( 'IMPORTANT: Do not delete folders from active plugins, only those from plugins that were uninstalled.', 'choctaw-wp-security' ); ?></strong></p>
 			<?php if ( ! empty( $uploads_plugin_folders['errors'] ) ) : ?>
@@ -600,6 +613,8 @@ class Choctaw_Wp_Security_Settings {
 				<p>
 					<?php esc_html_e( 'Choctaw WP Security was created by Steve Johnson, Lead Developer, Choctaw Websites.', 'choctaw-wp-security' ); ?>
 					<a href="https://www.choctawwebsites.com" target="_blank" rel="noopener noreferrer">https://www.choctawwebsites.com</a>
+					<?php esc_html_e( ' Follow Steve on X at:', 'choctaw-wp-security' ); ?>
+					<a href="https://x.com/stelis" target="_blank" rel="noopener noreferrer">@stelis</a>
 				</p>
 			</div>
 		</div>
@@ -690,6 +705,71 @@ class Choctaw_Wp_Security_Settings {
 	}
 
 	/**
+	 * Handle a manual database scan request.
+	 *
+	 * @return void
+	 */
+	public function handle_database_scan() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+
+		if ( empty( $_POST['choctaw_wp_security_database_scan'] ) ) {
+			return;
+		}
+
+		check_admin_referer( 'choctaw_wp_security_database_scan' );
+
+		$scanner = new Choctaw_Wp_Security_Options_Table_Scanner();
+		$result  = $scanner->scan();
+
+		set_transient( $this->get_database_scan_result_transient_key(), $result, MINUTE_IN_SECONDS );
+
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'page'              => 'choctaw-wp-security',
+					'cws_tab'           => 'database-scan',
+					'database_scan_run' => '1',
+				),
+				admin_url( 'options-general.php' )
+			)
+		);
+		exit;
+	}
+
+	/**
+	 * Handle a baseline reset request for the database scan.
+	 *
+	 * @return void
+	 */
+	public function handle_database_scan_baseline_reset() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+
+		if ( empty( $_POST['choctaw_wp_security_database_scan_baseline_reset'] ) ) {
+			return;
+		}
+
+		check_admin_referer( 'choctaw_wp_security_database_scan_baseline_reset' );
+
+		Choctaw_Wp_Security_Options_Table_Scanner::reset_baseline();
+
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'page'                        => 'choctaw-wp-security',
+					'cws_tab'                     => 'database-scan',
+					'database_scan_baseline_reset' => '1',
+				),
+				admin_url( 'options-general.php' )
+			)
+		);
+		exit;
+	}
+
+	/**
 	 * Enqueue admin assets for the settings page.
 	 *
 	 * @param string $hook_suffix Current admin page hook suffix.
@@ -724,6 +804,15 @@ class Choctaw_Wp_Security_Settings {
 	 */
 	private function get_exposed_folders_result_transient_key() {
 		return 'cws_exposed_folders_' . get_current_user_id();
+	}
+
+	/**
+	 * Build the transient key used to store the latest database scan result.
+	 *
+	 * @return string
+	 */
+	private function get_database_scan_result_transient_key() {
+		return 'cws_database_scan_' . get_current_user_id();
 	}
 
 	/**
@@ -810,6 +899,259 @@ class Choctaw_Wp_Security_Settings {
 			</div>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Render the database scan section.
+	 *
+	 * @return void
+	 */
+	private function render_database_scan_section() {
+		$result = false;
+
+		if ( isset( $_GET['database_scan_run'] ) ) {
+			$result = get_transient( $this->get_database_scan_result_transient_key() );
+		}
+
+		$baseline_reset = isset( $_GET['database_scan_baseline_reset'] );
+		?>
+		<div class="cws-admin-tab-panel">
+			<div class="cws-report-section">
+				<h2><?php esc_html_e( 'Database Scan', 'choctaw-wp-security' ); ?></h2>
+				<p>
+					<?php esc_html_e( 'Database Scan inspects the WordPress wp_options table for records that may indicate compromise. It looks for hijacked site URLs, tampered plugin lists, suspicious cron jobs, oversized autoloaded options, PHP or execution patterns, and other high-risk indicators.', 'choctaw-wp-security' ); ?>
+				</p>
+				<p>
+					<?php esc_html_e( 'This scan covers only the wp_options table. It does not scan posts, users, comments, or other database tables. Findings are reported for investigation — nothing is automatically deleted or modified.', 'choctaw-wp-security' ); ?>
+				</p>
+				<p>
+					<?php esc_html_e( 'The first scan establishes a baseline for change tracking. Subsequent scans report options that are new or changed since the previous scan.', 'choctaw-wp-security' ); ?>
+				</p>
+
+				<?php if ( $baseline_reset ) : ?>
+					<div class="notice notice-success is-dismissible">
+						<p><?php esc_html_e( 'The database scan baseline was reset to the current wp_options snapshot.', 'choctaw-wp-security' ); ?></p>
+					</div>
+				<?php endif; ?>
+
+				<form method="post" class="cws-database-scan-form">
+					<?php wp_nonce_field( 'choctaw_wp_security_database_scan' ); ?>
+					<input type="hidden" name="choctaw_wp_security_database_scan" value="1" />
+					<input type="hidden" name="cws_tab" value="database-scan" />
+					<?php submit_button( __( 'Scan Now', 'choctaw-wp-security' ), 'secondary', 'submit', false ); ?>
+				</form>
+
+				<form method="post" class="cws-database-scan-baseline-form" onsubmit="return confirm('<?php echo esc_js( __( 'Reset the baseline to the current wp_options snapshot?', 'choctaw-wp-security' ) ); ?>');">
+					<?php wp_nonce_field( 'choctaw_wp_security_database_scan_baseline_reset' ); ?>
+					<input type="hidden" name="choctaw_wp_security_database_scan_baseline_reset" value="1" />
+					<input type="hidden" name="cws_tab" value="database-scan" />
+					<?php submit_button( __( 'Reset Baseline', 'choctaw-wp-security' ), 'secondary', 'submit', false ); ?>
+				</form>
+
+				<?php if ( is_array( $result ) ) : ?>
+					<?php $this->render_database_scan_results( $result ); ?>
+				<?php endif; ?>
+			</div>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Render database scan results.
+	 *
+	 * @param array<string, mixed> $result Scan result payload.
+	 * @return void
+	 */
+	private function render_database_scan_results( $result ) {
+		$summary       = isset( $result['summary'] ) && is_array( $result['summary'] ) ? $result['summary'] : array();
+		$critical      = isset( $summary['critical'] ) ? (int) $summary['critical'] : 0;
+		$warning       = isset( $summary['warning'] ) ? (int) $summary['warning'] : 0;
+		$info          = isset( $summary['info'] ) ? (int) $summary['info'] : 0;
+		$has_problems = ( $critical + $warning ) > 0;
+
+		if ( $critical > 0 ) {
+			$panel_class = 'cws-core-checksum-results is-error';
+		} elseif ( $warning > 0 ) {
+			$panel_class = 'cws-core-checksum-results is-warning';
+		} else {
+			$panel_class = 'cws-core-checksum-results is-success';
+		}
+
+		?>
+		<div class="<?php echo esc_attr( $panel_class ); ?>">
+			<p class="cws-core-checksum-summary">
+				<?php if ( $has_problems ) : ?>
+					<?php
+					echo esc_html(
+						sprintf(
+							/* translators: 1: critical count, 2: warning count, 3: info count */
+							__( 'Scan complete. %1$d critical, %2$d warning, and %3$d informational findings worth investigating.', 'choctaw-wp-security' ),
+							$critical,
+							$warning,
+							$info
+						)
+					);
+					?>
+				<?php else : ?>
+					<?php
+					echo esc_html(
+						sprintf(
+							/* translators: %d: informational finding count */
+							__( 'Scan complete. No critical or warning findings. %d informational item(s) reported.', 'choctaw-wp-security' ),
+							$info
+						)
+					);
+					?>
+				<?php endif; ?>
+			</p>
+
+			<?php if ( ! empty( $result['scan_incomplete'] ) ) : ?>
+				<p><?php esc_html_e( 'The scan stopped early because it reached its time budget. Review the partial results below and run the scan again if needed.', 'choctaw-wp-security' ); ?></p>
+			<?php endif; ?>
+
+			<?php if ( ! empty( $result['options_table'] ) ) : ?>
+				<p>
+					<?php
+					echo esc_html(
+						sprintf(
+							/* translators: %s: options table name */
+							__( 'Scanned table: %s', 'choctaw-wp-security' ),
+							(string) $result['options_table']
+						)
+					);
+					?>
+				</p>
+			<?php endif; ?>
+		</div>
+
+		<?php
+		if ( empty( $result['sections'] ) || ! is_array( $result['sections'] ) ) {
+			return;
+		}
+
+		foreach ( Choctaw_Wp_Security_Options_Scan_Patterns::$section_keys as $section_key ) {
+			if ( empty( $result['sections'][ $section_key ] ) || ! is_array( $result['sections'][ $section_key ] ) ) {
+				continue;
+			}
+
+			$this->render_database_scan_section_results( $result['sections'][ $section_key ], $section_key );
+		}
+	}
+
+	/**
+	 * Render one database scan report section.
+	 *
+	 * @param array<string, mixed> $section     Section payload.
+	 * @param string               $section_key Section identifier.
+	 * @return void
+	 */
+	private function render_database_scan_section_results( $section, $section_key = '' ) {
+		$findings     = isset( $section['findings'] ) && is_array( $section['findings'] ) ? $section['findings'] : array();
+		$info_message = isset( $section['info_message'] ) ? (string) $section['info_message'] : '';
+		$title        = isset( $section['title'] ) ? (string) $section['title'] : '';
+		$guidance     = isset( $section['guidance'] ) ? (string) $section['guidance'] : '';
+		$display_limit = Choctaw_Wp_Security_Options_Scan_Patterns::FINDINGS_DISPLAY_LIMIT;
+		$visible       = array_slice( $findings, 0, $display_limit );
+		$truncated     = max( 0, count( $findings ) - count( $visible ) );
+		$section_class = 'cws-report-section cws-database-scan-section';
+
+		if ( 'large_autoload' === $section_key ) {
+			$section_class .= ' cws-database-scan-section-full-width';
+		}
+		?>
+		<div class="<?php echo esc_attr( $section_class ); ?>">
+			<h3>
+				<?php echo esc_html( $title ); ?>
+				<span class="cws-database-scan-count">(<?php echo esc_html( (string) count( $findings ) ); ?>)</span>
+			</h3>
+			<p><?php echo esc_html( $guidance ); ?></p>
+
+			<?php if ( '' !== $info_message ) : ?>
+				<div class="cws-core-checksum-results is-success">
+					<p class="cws-core-checksum-summary"><?php echo esc_html( $info_message ); ?></p>
+				</div>
+			<?php elseif ( empty( $findings ) ) : ?>
+				<p><?php esc_html_e( 'No findings in this section.', 'choctaw-wp-security' ); ?></p>
+			<?php else : ?>
+				<table class="widefat striped cws-core-checksum-table">
+					<thead>
+						<tr>
+							<th scope="col"><?php esc_html_e( 'Severity', 'choctaw-wp-security' ); ?></th>
+							<th scope="col"><?php esc_html_e( 'Option ID', 'choctaw-wp-security' ); ?></th>
+							<th scope="col"><?php esc_html_e( 'Option', 'choctaw-wp-security' ); ?></th>
+							<th scope="col"><?php esc_html_e( 'Size', 'choctaw-wp-security' ); ?></th>
+							<th scope="col"><?php esc_html_e( 'Detail', 'choctaw-wp-security' ); ?></th>
+							<th scope="col"><?php esc_html_e( 'Excerpt', 'choctaw-wp-security' ); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ( $visible as $finding ) : ?>
+							<tr>
+								<td><?php echo esc_html( $this->format_database_scan_severity( isset( $finding['severity'] ) ? (string) $finding['severity'] : 'info' ) ); ?></td>
+								<td><?php echo esc_html( $this->format_database_scan_option_id( $finding ) ); ?></td>
+								<td><code class="cws-file-path"><?php echo esc_html( isset( $finding['option_name'] ) ? (string) $finding['option_name'] : '' ); ?></code></td>
+								<td><?php echo esc_html( size_format( isset( $finding['size'] ) ? (int) $finding['size'] : 0 ) ); ?></td>
+								<td><?php echo esc_html( isset( $finding['detail'] ) ? (string) $finding['detail'] : '' ); ?></td>
+								<td class="<?php echo 'large_autoload' === $section_key ? 'cws-database-scan-excerpt' : ''; ?>"><?php echo esc_html( isset( $finding['excerpt'] ) ? (string) $finding['excerpt'] : '' ); ?></td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+
+				<?php if ( $truncated > 0 ) : ?>
+					<p>
+						<?php
+						echo esc_html(
+							sprintf(
+								/* translators: %d: number of additional findings */
+								__( '...and %d more finding(s) not shown.', 'choctaw-wp-security' ),
+								$truncated
+							)
+						);
+						?>
+					</p>
+				<?php endif; ?>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Format a database scan severity label.
+	 *
+	 * @param string $severity Severity key.
+	 * @return string
+	 */
+	private function format_database_scan_severity( $severity ) {
+		if ( 'critical' === $severity ) {
+			return __( 'Critical', 'choctaw-wp-security' );
+		}
+
+		if ( 'warning' === $severity ) {
+			return __( 'Warning', 'choctaw-wp-security' );
+		}
+
+		return __( 'Info', 'choctaw-wp-security' );
+	}
+
+	/**
+	 * Format an option_id value for database scan results.
+	 *
+	 * @param array<string, mixed> $finding Finding payload.
+	 * @return string
+	 */
+	private function format_database_scan_option_id( $finding ) {
+		if ( ! empty( $finding['option_id_label'] ) ) {
+			return (string) $finding['option_id_label'];
+		}
+
+		$option_id = isset( $finding['option_id'] ) ? (int) $finding['option_id'] : 0;
+
+		if ( $option_id > 0 ) {
+			return (string) $option_id;
+		}
+
+		return '-';
 	}
 
 	/**
@@ -1099,6 +1441,9 @@ class Choctaw_Wp_Security_Settings {
 			<?php echo esc_html( $args['label'] ); ?>
 		</label>
 		<?php
+		if ( ! empty( $args['description'] ) ) {
+			echo '<p class="description">' . esc_html( $args['description'] ) . '</p>';
+		}
 	}
 
 	/**
@@ -1109,6 +1454,14 @@ class Choctaw_Wp_Security_Settings {
 	 */
 	public function render_uploads_lockdown_field( $args ) {
 		$this->render_checkbox_field( $args );
+
+		echo '<p class="description">';
+		esc_html_e( 'Leave this box checked to prevent PHP scripts from being executed from your', 'choctaw-wp-security' );
+		echo ' ';
+		$this->render_file_path( 'wp-content/uploads/' );
+		echo ' ';
+		esc_html_e( 'folder, which is a common attack vector.', 'choctaw-wp-security' );
+		echo '</p>';
 
 		$lockdown = new Choctaw_Wp_Security_Uploads_Php_Lockdown();
 		$server   = $lockdown->get_server_type();
@@ -1154,6 +1507,9 @@ class Choctaw_Wp_Security_Settings {
 			step="<?php echo esc_attr( (string) $args['step'] ); ?>"
 		/>
 		<?php
+		if ( ! empty( $args['description'] ) ) {
+			echo '<p class="description">' . esc_html( $args['description'] ) . '</p>';
+		}
 	}
 
 	/**

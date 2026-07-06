@@ -6,6 +6,7 @@ A lightweight WordPress security plugin that hardens common attack paths:
 2. **Login brute force** — rate-limits failed `wp-login.php` attempts
 3. **Uploads PHP execution** — blocks PHP in `wp-content/uploads` where the server allows it
 4. **Exposed folders** — scans plugin and theme folders for missing directory index files
+5. **Database scan** — inspects the `wp_options` table for potentially compromised records
 
 Built for standard WordPress installs. No Composer, build tools, or external dependencies.
 
@@ -51,6 +52,16 @@ Built for standard WordPress installs. No Composer, build tools, or external dep
 - Reports potentially exposed folders grouped by plugins and themes
 - Provides Apache/LiteSpeed, Nginx, and folder-level remediation guidance
 - Detection-only: does not add files, edit `.htaccess`, or change server configuration
+
+### Database Scan
+
+- Manual **Scan Now** action on the **Database Scan** admin tab
+- Inspects the WordPress `wp_options` table only (not posts, users, or other tables)
+- Reports potentially compromised or malicious records for investigation
+- Checks site URL and security settings, active plugin consistency, cron events, large autoload options, PHP/execution patterns, known-malware option names, and scripts outside widget/theme options
+- Establishes a baseline on the first scan and reports new/changed/removed options on subsequent scans
+- Includes **Reset Baseline** to snapshot the current options table after cleanup
+- Detection-only: does not delete, edit, or quarantine database rows
 
 ## Requirements
 
@@ -98,6 +109,7 @@ The settings page under **Settings → Choctaw WP Security** includes:
 - Read-only status section showing feature state, current policy, and plugin version
 - **Exposed Folders** — manual scan that identifies top-level plugin and theme folders missing common directory index files
 - **WP Core Verify-Checksums** — manual scan that compares installed WordPress core files against official WordPress.org checksums for the current version and locale
+- **Database Scan** — manual scan of the `wp_options` table for potentially compromised records
 - Recent lockout log with timestamp, IP address, attempted username, scope, and lockout duration
 
 ## How It Works
@@ -118,6 +130,30 @@ When enabled, direct requests to `xmlrpc.php` receive an early 403 response. Add
 ### IP detection
 
 The plugin uses `$_SERVER['REMOTE_ADDR']` by default and validates the address with `filter_var()`. It does **not** trust `X-Forwarded-For` by default. Trusted reverse-proxy support (for example Cloudflare) can be added later with explicit configuration.
+
+### Transient records
+
+This plugin uses WordPress transients for temporary state. It does **not** create custom database tables for rate limiting or scan results. In `wp_options`, each transient normally appears as two rows: `_transient_{key}` (the value) and `_transient_timeout_{key}` (the expiration timestamp). Plugin transients use keys prefixed with `cws_`.
+
+| Purpose | Key pattern | Default TTL |
+|---|---|---|
+| Failed login count (per IP) | `cws_fail_ip_{hash}` | Failure window (15 minutes) |
+| Lockout (per IP) | `cws_lock_ip_{hash}` | Lockout duration (30 minutes) |
+| Failed login count (per IP + username) | `cws_fail_ipu_{hash}` | Failure window (15 minutes) |
+| Lockout (per IP + username) | `cws_lock_ipu_{hash}` | Lockout duration (30 minutes) |
+| Core checksum scan result | `cws_core_checksum_{user_id}` | 1 minute |
+| Exposed folders scan result | `cws_exposed_folders_{user_id}` | 1 minute |
+| Database scan result | `cws_database_scan_{user_id}` | 1 minute |
+
+**Are they safe to keep?** Yes. These rows hold short-lived operational data such as failure counts, lockout flags, and scan results. They do not store passwords or other secrets. Active and recently expired rows are normal.
+
+**Do they get removed?** Yes, primarily by expiration. Lockouts and failure counters expire after the configured window or duration. Scan results expire after one minute. WordPress removes expired transients when they are accessed and also during scheduled cleanup, so expired rows may remain visible in `wp_options` for a while before cleanup runs. On successful login, the plugin explicitly clears the IP+username failure counter only; the IP-only counter is intentionally left in place. There is no uninstall hook that deletes plugin transients; they are expected to age out on their own.
+
+**Does repeated use create more records?** Admin scans reuse a fixed key per admin user, so running a scan again overwrites the previous result instead of adding rows. Login rate limiting reuses the same keys for a given IP or IP+username pair. The main scenario that temporarily increases row count is sustained failed login attempts from many different IP addresses, such as bot traffic. Those rows should drop off as TTLs expire and WordPress cleanup runs.
+
+The plugin also stores regular (non-transient) options: `choctaw_wp_security_options` (settings), `choctaw_wp_security_lockout_log` (the last 20 lockout events shown in admin), and `choctaw_wp_security_options_baseline` (database scan change-tracking snapshot).
+
+Sites with a persistent object cache (Redis, Memcached, etc.) may store transients in the cache backend instead of `wp_options`.
 
 ## Security Notes
 
@@ -157,6 +193,7 @@ After install or update, verify:
 - [ ] REST API (`/wp-json/`) still works
 - [ ] Settings save and persist correctly
 - [ ] Exposed Folders scan runs manually and reports top-level plugin/theme folders missing common index files
+- [ ] Database Scan runs manually and reports grouped findings from the `wp_options` table
 - [ ] Disabling XML-RPC blocking from settings stops XML-RPC blocking through this plugin
 - [ ] Disabling login rate limiting from settings stops login blocking through this plugin
 
@@ -183,6 +220,8 @@ choctaw-wp-security/
     ├── class-utils.php              # Options, IP helper, transient keys
     ├── class-settings.php           # Admin settings page
     ├── class-core-checksum-scanner.php # WordPress core checksum scanner
+    ├── class-options-scan-patterns.php # Database scan patterns and thresholds
+    ├── class-options-table-scanner.php # wp_options database scanner
     ├── class-xml-rpc-protection.php # XML-RPC blocking
     └── class-login-rate-limiter.php # Login rate limiting
 ```
@@ -190,6 +229,10 @@ choctaw-wp-security/
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
+
+### 1.4.0
+
+- Added Database Scan admin tab for the `wp_options` table with baseline change tracking
 
 ### 1.3.0
 

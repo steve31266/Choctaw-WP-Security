@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-07-06
+
+### Added
+
+- Added a **Database Scan** admin tab that inspects the WordPress `wp_options` table for potentially compromised records.
+  - Manual **Scan Now** action with detection-only reporting (no automatic fixes).
+  - Checks site URL and security settings, active plugin consistency, cron events, large autoload options, PHP/execution patterns, known-malware option names, and scripts outside widget/theme options.
+  - Establishes a `wp_options` baseline on the first scan and reports new/changed/removed options on subsequent scans.
+  - Includes a **Reset Baseline** action to snapshot the current options table after cleanup.
+
 ## [1.3.0] - 2026-07-05
 
 ### Added
@@ -69,6 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: XML-RPC protection and dual-scope login rate limiting.
 - Admin settings page with feature toggles, rate limit policy, and recent lockout log.
 
+[1.4.0]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.1.0...v1.2.0
