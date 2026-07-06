@@ -2,11 +2,11 @@
 /**
  * Plugin Name:       Choctaw WP Security
  * Plugin URI:        https://github.com/steve31266/Choctaw-WP-Security
- * Description:       XML-RPC protection, login rate limiting, uploads PHP lockdown, and core checksum scanning.
- * Version:           1.2.0
+ * Description:       XML-RPC protection, login rate limiting, uploads PHP lockdown, and core checkssshum scanning.
+ * Version:           1.3.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
- * Author:            Choctaw
+ * Author:            Choctaw Websites
  * License:           GPL-3.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-3.0.html
  * Text Domain:       choctaw-wp-security
@@ -16,7 +16,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'CHOCTAW_WP_SECURITY_VERSION', '1.2.0' );
+define( 'CHOCTAW_WP_SECURITY_VERSION', '1.3.0' );
 define( 'CHOCTAW_WP_SECURITY_FILE', __FILE__ );
 define( 'CHOCTAW_WP_SECURITY_PATH', plugin_dir_path( __FILE__ ) );
 define( 'CHOCTAW_WP_SECURITY_URL', plugin_dir_url( __FILE__ ) );
@@ -41,6 +41,39 @@ function choctaw_wp_security_bootstrap() {
 	Choctaw_Wp_Security_Plugin::instance()->init();
 }
 add_action( 'plugins_loaded', 'choctaw_wp_security_bootstrap' );
+
+/**
+ * Add a Settings link to the plugin row actions.
+ *
+ * @param array<string, string> $links Existing plugin action links.
+ * @return array<string, string>
+ */
+function choctaw_wp_security_plugin_action_links( $links ) {
+	$settings_link = sprintf(
+		'<a href="%s">%s</a>',
+		esc_url( admin_url( 'options-general.php?page=choctaw-wp-security' ) ),
+		esc_html__( 'Settings', 'choctaw-wp-security' )
+	);
+
+	if ( isset( $links['deactivate'] ) ) {
+		$updated_links = array();
+
+		foreach ( $links as $key => $link ) {
+			$updated_links[ $key ] = $link;
+
+			if ( 'deactivate' === $key ) {
+				$updated_links['settings'] = $settings_link;
+			}
+		}
+
+		return $updated_links;
+	}
+
+	$links['settings'] = $settings_link;
+
+	return $links;
+}
+add_filter( 'plugin_action_links_' . plugin_basename( CHOCTAW_WP_SECURITY_FILE ), 'choctaw_wp_security_plugin_action_links' );
 
 /**
  * Set default options on activation.

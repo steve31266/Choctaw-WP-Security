@@ -1,3 +1,33 @@
+.cws-admin-tabs {
+	margin-top: 16px;
+}
+
+.cws-admin-tab-panel {
+	margin-top: 20px;
+}
+
+.cws-about-plugin {
+	align-items: flex-start;
+	display: flex;
+	gap: 24px;
+	max-width: 960px;
+}
+
+.cws-about-logo-wrap {
+	flex: 0 0 180px;
+}
+
+.cws-about-logo {
+	display: block;
+	height: auto;
+	max-width: 180px;
+	width: 100%;
+}
+
+.cws-about-content {
+	max-width: 680px;
+}
+
 .cws-core-checksum-results {
 	border-left: 4px solid #ccd0d4;
 	margin-top: 16px;
@@ -34,4 +64,14 @@
 
 .cws-core-checksum-table {
 	margin-top: 8px;
+}
+
+@media screen and (max-width: 782px) {
+	.cws-about-plugin {
+		display: block;
+	}
+
+	.cws-about-logo-wrap {
+		margin-bottom: 16px;
+	}
 }

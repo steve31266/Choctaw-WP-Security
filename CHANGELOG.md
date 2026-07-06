@@ -5,6 +5,28 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-07-05
+
+### Added
+
+- Added an **Exposed Folders** admin scan for top-level plugin and theme directories missing common directory index files.
+  - Scans one level down from `wp-content/plugins/` and `wp-content/themes/` only after a manual **Scan Now** action.
+  - Reports potentially exposed folders grouped by plugins and themes.
+  - Provides Apache/LiteSpeed, Nginx, and folder-level remediation guidance.
+  - Detection-only: does not add files, edit `.htaccess`, or change server configuration.
+
+## [1.2.1] - 2026-07-05
+
+### Added
+
+- Added WordPress-style admin tabs to organize the settings page into **Main**, **Files Changes/Uploads**, **Verify Checksums**, and **About This Plugin** sections.
+- Added an **About This Plugin** tab with free-use information, official GitHub repository link, Choctaw Websites attribution, and Choctaw Websites branding.
+- Added a **Settings** plugin action link from the Plugins screen to the Choctaw WP Security settings page.
+
+### Changed
+
+- Moved existing file-change/upload reports and checksum scanning into their own tabs for a cleaner admin layout.
+
 ## [1.2.0] - 2026-07-05
 
 ### Added
@@ -47,6 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: XML-RPC protection and dual-scope login rate limiting.
 - Admin settings page with feature toggles, rate limit policy, and recent lockout log.
 
+[1.3.0]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.2.1...v1.3.0
+[1.2.1]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/steve31266/Choctaw-WP-Security/compare/v1.0.0...v1.0.1

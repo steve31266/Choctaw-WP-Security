@@ -5,6 +5,7 @@ A lightweight WordPress security plugin that hardens common attack paths:
 1. **XML-RPC abuse** — blocks unauthorized XML-RPC access
 2. **Login brute force** — rate-limits failed `wp-login.php` attempts
 3. **Uploads PHP execution** — blocks PHP in `wp-content/uploads` where the server allows it
+4. **Exposed folders** — scans plugin and theme folders for missing directory index files
 
 Built for standard WordPress installs. No Composer, build tools, or external dependencies.
 
@@ -42,6 +43,14 @@ Built for standard WordPress installs. No Composer, build tools, or external dep
 - Reports modified core files, missing core files, and unknown files in core-owned directories
 - Detection-only: does not repair, delete, quarantine, or modify files
 - Does **not** scan plugins, themes, uploads, mu-plugins, or `wp-config.php`
+
+### Exposed Folders
+
+- Manual **Scan Now** action on the settings page
+- Scans one level down from `wp-content/plugins/` and `wp-content/themes/` for folders missing `index.php`, `index.html`, or `index.htm`
+- Reports potentially exposed folders grouped by plugins and themes
+- Provides Apache/LiteSpeed, Nginx, and folder-level remediation guidance
+- Detection-only: does not add files, edit `.htaccess`, or change server configuration
 
 ## Requirements
 
@@ -87,6 +96,7 @@ The settings page under **Settings → Choctaw WP Security** includes:
 - Feature toggles for XML-RPC blocking and login rate limiting
 - Rate limit policy fields (attempts, window, lockout duration)
 - Read-only status section showing feature state, current policy, and plugin version
+- **Exposed Folders** — manual scan that identifies top-level plugin and theme folders missing common directory index files
 - **WP Core Verify-Checksums** — manual scan that compares installed WordPress core files against official WordPress.org checksums for the current version and locale
 - Recent lockout log with timestamp, IP address, attempted username, scope, and lockout duration
 
@@ -125,6 +135,7 @@ The plugin uses `$_SERVER['REMOTE_ADDR']` by default and validates the address w
 - Add CAPTCHA or two-factor authentication
 - Act as a full web application firewall
 - Stop distributed attacks from many different IP addresses
+- Automatically edit third-party plugin or theme folders when exposed folders are found
 
 **Known limitations:**
 
@@ -145,6 +156,7 @@ After install or update, verify:
 - [ ] `POST` to `/xmlrpc.php` returns 403 with `XML-RPC is disabled.`
 - [ ] REST API (`/wp-json/`) still works
 - [ ] Settings save and persist correctly
+- [ ] Exposed Folders scan runs manually and reports top-level plugin/theme folders missing common index files
 - [ ] Disabling XML-RPC blocking from settings stops XML-RPC blocking through this plugin
 - [ ] Disabling login rate limiting from settings stops login blocking through this plugin
 
@@ -178,6 +190,14 @@ choctaw-wp-security/
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
+
+### 1.3.0
+
+- Added Exposed Folders admin scan for top-level plugin and theme folders missing directory index files
+
+### 1.2.1
+
+- Added tabbed settings page sections, About This Plugin information, and a Plugins screen Settings link
 
 ### 1.2.0
 
