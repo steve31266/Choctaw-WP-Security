@@ -6,10 +6,11 @@ A lightweight WordPress security plugin that hardens common attack paths:
 2. **Login brute force** — rate-limits failed `wp-login.php` attempts
 3. **Uploads PHP execution** — blocks PHP in `wp-content/uploads` where the server allows it
 4. **Exposed folders** — scans plugin and theme folders for missing directory index files
-5. **wp_options scan** — inspects the `wp_options` table for potentially compromised records
-6. **wp_posts scan** — inspects the `wp_posts` table for potentially malicious post content
-7. **wp_users review** — lists users from the `wp_users` table and reconstructs detectable per-user activity
-8. **Vulnerabilities** — checks WordPress core, active plugins, and active theme against the WPVulnerability API for known CVEs
+5. **Verify Checksums** — compares WordPress core files against official WordPress.org checksums
+6. **wp_options scan** — inspects the `wp_options` table for potentially compromised records
+7. **wp_posts scan** — inspects the `wp_posts` table for potentially malicious post content
+8. **wp_users review** — lists users from the `wp_users` table and reconstructs detectable per-user activity
+9. **Vulnerabilities** — checks WordPress core, active plugins, and active theme against the WPVulnerability API for known CVEs
 
 Built for standard WordPress installs. No Composer, build tools, or bundled PHP dependencies. The Vulnerabilities scan requires outbound HTTPS access to `wpvulnerability.net`.
 
