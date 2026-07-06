@@ -5,6 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-07-06
+
+### Added
+
+- **Vulnerabilities** admin tab — queries the public WPVulnerability API for known vulnerabilities in WordPress core, the active theme, and active plugins.
+- Four report sections: WordPress Core, Active Theme, Active Plugins, and Unrecognized Components (all installed plugins/themes with no API record).
+- Expandable green/red `<details>` rows per scanned component with inline vulnerability name, description, severity, CWE, version range, and external reference links.
+- Per-slug API response caching in transients (`cws_wpv_*`) for 12 hours.
+- WPVulnerability attribution on the Vulnerabilities tab and in About This Plugin.
+
+## [1.7.0] - 2026-07-06
+
+### Added
+
+- **wp_posts** admin tab — scans a selected `*posts` table for potentially malicious content.
+- Six report sections: PHP & Execution Patterns, Script & Iframe Injection, High-Confidence Script Patterns, SEO Spam Titles, Large Post Content, and Changed Posts Since Last Scan (baseline diff).
+- Multi-table support — when more than one `*posts` table exists, choose which table to scan (same pattern as wp_options).
+- User ID column displays `post_author` with the author's display name shown on hover (resolved from the paired `*users` table).
+- AJAX/JSON report interface with client-side pagination, sortable columns, and Reset Baseline.
+
 ## [1.6.0] - 2026-07-06
 
 ### Added

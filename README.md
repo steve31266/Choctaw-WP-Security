@@ -7,9 +7,11 @@ A lightweight WordPress security plugin that hardens common attack paths:
 3. **Uploads PHP execution** — blocks PHP in `wp-content/uploads` where the server allows it
 4. **Exposed folders** — scans plugin and theme folders for missing directory index files
 5. **wp_options scan** — inspects the `wp_options` table for potentially compromised records
-6. **wp_users review** — lists users from the `wp_users` table and reconstructs detectable per-user activity
+6. **wp_posts scan** — inspects the `wp_posts` table for potentially malicious post content
+7. **wp_users review** — lists users from the `wp_users` table and reconstructs detectable per-user activity
+8. **Vulnerabilities** — checks WordPress core, active plugins, and active theme against the WPVulnerability API for known CVEs
 
-Built for standard WordPress installs. No Composer, build tools, or external dependencies.
+Built for standard WordPress installs. No Composer, build tools, or bundled PHP dependencies. The Vulnerabilities scan requires outbound HTTPS access to `wpvulnerability.net`.
 
 ## Features
 
@@ -46,6 +48,19 @@ Built for standard WordPress installs. No Composer, build tools, or external dep
 - Detection-only: does not repair, delete, quarantine, or modify files
 - Does **not** scan plugins, themes, uploads, mu-plugins, or `wp-config.php`
 
+### Vulnerabilities
+
+- Manual **Scan Now** action on the **Vulnerabilities** admin tab
+- Queries the public [WPVulnerability](https://www.wpvulnerability.com/) API at `wpvulnerability.net` for known vulnerabilities
+- Scans WordPress core, the active theme, and active plugins (API-recognized components only)
+- Reports four sections: WordPress Core, Active Theme, Active Plugins, and Unrecognized Components
+- Expandable green/red rows per scanned component with inline vulnerability detail, severity, CWE, and external reference links
+- Lists all installed plugins and themes not recognized by the API (active or inactive)
+- Per-slug API responses cached in transients for 12 hours during scans
+- Credits WPVulnerability on the tab and in About This Plugin
+- Detection-only: does not update, deactivate, or modify components
+- Does **not** scan PHP, Apache, MySQL, or other hosting stack software
+
 ### Exposed Folders
 
 - Manual **Scan Now** action on the settings page
@@ -67,6 +82,20 @@ Built for standard WordPress installs. No Composer, build tools, or external dep
 - Displays scan reports through an AJAX/JSON interface with client-side pagination and sortable columns
 - Establishes a per-table baseline on the first scan of each selected table and reports new/changed/removed options on subsequent scans of that same table
 - Includes **Reset Baseline** to snapshot the current selected options table after cleanup
+- Detection-only: does not delete, edit, or quarantine database rows
+
+### wp_posts
+
+- Manual **Scan Now** action on the **wp_posts** admin tab
+- Discovers all `*posts` tables in the database and lets you choose which one to scan
+- Shows table metadata (row count, data size, last updated) to help identify the correct table after staging copies or migrations
+- Marks the WordPress configured table
+- Reports potentially compromised or malicious post content for investigation
+- Checks PHP and execution patterns, script and iframe injections, high-confidence script patterns, SEO spam titles, large post content, and baseline change tracking
+- Resolves author display names from the paired `*users` table; shows **User ID** in the report with display name on hover
+- Displays scan reports through an AJAX/JSON interface with client-side pagination and sortable columns
+- Establishes a per-table baseline on the first scan of each selected table and reports new/changed/removed posts on subsequent scans
+- Includes **Reset Baseline** to snapshot the current selected posts table after cleanup
 - Detection-only: does not delete, edit, or quarantine database rows
 
 ### wp_users
@@ -127,7 +156,9 @@ The settings page under **Settings → Choctaw WP Security** includes:
 - Read-only status section showing feature state, current policy, and plugin version
 - **Exposed Folders** — manual scan that identifies top-level plugin and theme folders missing common directory index files
 - **WP Core Verify-Checksums** — manual scan that compares installed WordPress core files against official WordPress.org checksums for the current version and locale
+- **Vulnerabilities** — manual scan of WordPress core, active theme, and active plugins against the WPVulnerability API
 - **wp_options** — manual scan of a selected WordPress options table for potentially compromised records
+- **wp_posts** — manual scan of a selected WordPress posts table for potentially malicious content
 - **wp_users** — manual review of a selected WordPress users table with per-user activity drill-down
 - Recent lockout log with timestamp, IP address, attempted username, scope, and lockout duration
 
@@ -161,8 +192,10 @@ This plugin uses WordPress transients for temporary state. It does **not** creat
 | Failed login count (per IP + username) | `cws_fail_ipu_{hash}` | Failure window (15 minutes) |
 | Lockout (per IP + username) | `cws_lock_ipu_{hash}` | Lockout duration (30 minutes) |
 | Core checksum scan result | `cws_core_checksum_{user_id}` | 12 hours |
+| Vulnerabilities scan result | `cws_component_scan_{user_id}` | 12 hours |
 | Exposed folders scan result | `cws_exposed_folders_{user_id}` | 12 hours |
 | Database scan result | `cws_database_scan_{user_id}` | 12 hours |
+| Posts scan result | `cws_posts_scan_{user_id}` | 12 hours |
 | Users table result | `cws_users_table_{user_id}` | 12 hours |
 
 **Are they safe to keep?** Yes. These rows hold short-lived operational data such as failure counts, lockout flags, and scan results. They do not store passwords or other secrets. Active and recently expired rows are normal.
@@ -171,7 +204,7 @@ This plugin uses WordPress transients for temporary state. It does **not** creat
 
 **Does repeated use create more records?** Admin scans reuse a fixed key per admin user, so running a scan again overwrites the previous result instead of adding rows. Login rate limiting reuses the same keys for a given IP or IP+username pair. The main scenario that temporarily increases row count is sustained failed login attempts from many different IP addresses, such as bot traffic. Those rows should drop off as TTLs expire and WordPress cleanup runs.
 
-The plugin also stores regular (non-transient) options: `choctaw_wp_security_options` (settings), `choctaw_wp_security_lockout_log` (the last 20 lockout events shown in admin), and `choctaw_wp_security_options_baseline` (database scan change-tracking snapshot). Scan results are also backed up in user meta so report pagination can survive object-cache transient eviction.
+The plugin also stores regular (non-transient) options: `choctaw_wp_security_options` (settings), `choctaw_wp_security_lockout_log` (the last 20 lockout events shown in admin), `choctaw_wp_security_options_baseline` (database scan change-tracking snapshot), and `choctaw_wp_security_posts_baseline` (posts scan change-tracking snapshot). Scan results are also backed up in user meta so report pagination can survive object-cache transient eviction.
 
 Sites with a persistent object cache (Redis, Memcached, etc.) may store transients in the cache backend instead of `wp_options`.
 
@@ -213,7 +246,11 @@ After install or update, verify:
 - [ ] REST API (`/wp-json/`) still works
 - [ ] Settings save and persist correctly
 - [ ] Exposed Folders scan runs manually and reports top-level plugin/theme folders missing common index files
+- [ ] Vulnerabilities scan runs manually and reports core, active theme, and active plugin vulnerability status
+- [ ] Vulnerabilities scan lists unrecognized installed plugins/themes in the fourth report section
 - [ ] wp_options discovers multiple options tables when present and scans the selected table
+- [ ] wp_posts discovers multiple posts tables when present and scans the selected table
+- [ ] wp_posts User ID hover shows display name from paired users table
 - [ ] wp_users discovers multiple users tables when present and loads the selected table
 - [ ] wp_users View activity shows detectable content, upload, and comment activity for a user
 - [ ] Disabling XML-RPC blocking from settings stops XML-RPC blocking through this plugin
@@ -240,15 +277,20 @@ choctaw-wp-security/
 │   │   └── admin-core-checksum.css  # Admin report styling
 │   └── js/
 │       ├── admin-database-scan.js   # AJAX wp_options report UI
+│       ├── admin-posts-scan.js      # AJAX wp_posts report UI
 │       └── admin-users-table.js     # AJAX wp_users report UI
 └── includes/
     ├── class-plugin.php             # Module coordinator
     ├── class-utils.php              # Options, IP helper, transient keys
     ├── class-settings.php           # Admin settings page
     ├── class-core-checksum-scanner.php # WordPress core checksum scanner
+    ├── class-component-vulnerability-scanner.php # WPVulnerability API component scanner
     ├── class-options-scan-patterns.php # Database scan patterns and thresholds
     ├── class-options-table-discovery.php # Options table discovery and metadata
     ├── class-options-table-scanner.php # wp_options database scanner
+    ├── class-posts-scan-patterns.php # Posts scan patterns and thresholds
+    ├── class-posts-table-discovery.php # Posts table discovery and metadata
+    ├── class-posts-table-scanner.php # wp_posts database scanner
     ├── class-users-table-discovery.php # Users table discovery and metadata
     ├── class-users-table-reader.php # wp_users table reader
     ├── class-user-activity-reader.php # Per-user forensic activity reader
@@ -259,6 +301,17 @@ choctaw-wp-security/
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
+
+### 1.8.0
+
+- Added **Vulnerabilities** admin tab — checks WordPress core, active theme, and active plugins against the WPVulnerability API
+- Four report sections with expandable green/red component rows and inline CVE detail
+- Lists installed plugins and themes not recognized by the API
+
+### 1.7.0
+
+- Added **wp_posts** admin tab with malware pattern scanning, baseline change tracking, and AJAX report UI
+- User ID column shows `post_author` with display name on hover via paired users table lookup
 
 ### 1.6.0
 

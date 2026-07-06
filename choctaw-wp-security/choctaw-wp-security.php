@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       Choctaw WP Security
  * Plugin URI:        https://github.com/steve31266/Choctaw-WP-Security
- * Description:       XML-RPC protection, login rate limiting, uploads PHP lockdown, core checksum scanning, database scan, and other tools.
- * Version:           1.6.0
+ * Description:       XML-RPC protection, login rate limiting, uploads PHP lockdown, core checksum scanning, known vulnerability scanning, wp_options scan, wp_posts scan, and other tools.
+ * Version:           1.8.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Choctaw Websites
@@ -16,7 +16,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'CHOCTAW_WP_SECURITY_VERSION', '1.6.0' );
+define( 'CHOCTAW_WP_SECURITY_VERSION', '1.8.0' );
 define( 'CHOCTAW_WP_SECURITY_FILE', __FILE__ );
 define( 'CHOCTAW_WP_SECURITY_PATH', plugin_dir_path( __FILE__ ) );
 define( 'CHOCTAW_WP_SECURITY_URL', plugin_dir_url( __FILE__ ) );
@@ -28,9 +28,13 @@ require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-xml-rpc-protection.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-login-rate-limiter.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-uploads-php-lockdown.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-core-checksum-scanner.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-component-vulnerability-scanner.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-options-scan-patterns.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-options-table-discovery.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-options-table-scanner.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-posts-scan-patterns.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-posts-table-discovery.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-posts-table-scanner.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-users-table-discovery.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-users-table-reader.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-user-activity-reader.php';

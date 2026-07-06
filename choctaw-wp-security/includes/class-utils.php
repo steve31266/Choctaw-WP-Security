@@ -21,6 +21,8 @@ class Choctaw_Wp_Security_Utils {
 	const USER_META_CORE_CHECKSUM_RESULT = 'cws_core_checksum_result';
 	const USER_META_EXPOSED_FOLDERS_RESULT = 'cws_exposed_folders_result';
 	const USER_META_USERS_TABLE_RESULT = 'cws_users_table_result';
+	const USER_META_POSTS_SCAN_RESULT = 'cws_posts_scan_result';
+	const USER_META_COMPONENT_SCAN_RESULT = 'cws_component_scan_result';
 	const EMPTY_USERNAME_KEY = '__empty__';
 
 	/**
@@ -38,6 +40,7 @@ class Choctaw_Wp_Security_Utils {
 			'lockout_duration_minutes'  => 30,
 			'database_scan_options_table' => '',
 			'database_scan_users_table' => '',
+			'database_scan_posts_table' => '',
 		);
 	}
 
@@ -266,6 +269,36 @@ class Choctaw_Wp_Security_Utils {
 		$options = self::get_options();
 
 		$options['database_scan_users_table'] = (string) $table_name;
+
+		return update_option( self::OPTION_KEY, $options );
+	}
+
+	/**
+	 * Get the persisted database scan posts table selection.
+	 *
+	 * @return string
+	 */
+	public static function get_database_scan_posts_table() {
+		$options = self::get_options();
+		$table   = isset( $options['database_scan_posts_table'] ) ? (string) $options['database_scan_posts_table'] : '';
+
+		if ( preg_match( '/^[A-Za-z0-9_]+$/', $table ) ) {
+			return $table;
+		}
+
+		return '';
+	}
+
+	/**
+	 * Persist the selected database scan posts table.
+	 *
+	 * @param string $table_name Validated posts table name.
+	 * @return bool
+	 */
+	public static function save_database_scan_posts_table( $table_name ) {
+		$options = self::get_options();
+
+		$options['database_scan_posts_table'] = (string) $table_name;
 
 		return update_option( self::OPTION_KEY, $options );
 	}
