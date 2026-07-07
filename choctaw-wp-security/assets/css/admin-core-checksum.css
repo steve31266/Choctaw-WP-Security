@@ -54,13 +54,13 @@
 }
 
 .cws-about-logo-wrap {
-	flex: 0 0 180px;
+	flex: 0 0 135px;
 }
 
 .cws-about-logo {
 	display: block;
 	height: auto;
-	max-width: 180px;
+	max-width: 135px;
 	width: 100%;
 }
 

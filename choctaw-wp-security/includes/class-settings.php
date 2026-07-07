@@ -723,6 +723,20 @@ class Choctaw_Wp_Security_Settings {
 			<div class="cws-about-content">
 				<h2><?php esc_html_e( 'About This Plugin', 'choctaw-wp-security' ); ?></h2>
 				<p><?php esc_html_e( 'Choctaw WP Security is 100% free to use.', 'choctaw-wp-security' ); ?></p>
+
+				<h3><?php esc_html_e( 'Important: Please Read First!', 'choctaw-wp-security' ); ?></h3>
+				<p><?php esc_html_e( 'This plugin is offered for free because it is not meant to provide a "set it and forget it" solution towards security. Rather, it is intended to be used as a tool for site admins who take an active approach towards thwarting attacks.', 'choctaw-wp-security' ); ?></p>
+				<p><?php esc_html_e( 'As long as a site admin employs the following practices, this plugin will help close the gap towards 100% security:', 'choctaw-wp-security' ); ?></p>
+				<ul class="cws-core-checksum-list">
+					<li><?php esc_html_e( 'Logs into the WordPress Dashboard regularly and runs the scans available in this plugin.', 'choctaw-wp-security' ); ?></li>
+					<li><?php esc_html_e( 'Investigates all reported results from these scans.', 'choctaw-wp-security' ); ?></li>
+					<li><?php esc_html_e( 'Keeps the active theme updated.', 'choctaw-wp-security' ); ?></li>
+					<li><?php esc_html_e( 'Keeps all active plugins updated.', 'choctaw-wp-security' ); ?></li>
+					<li><?php esc_html_e( 'Removes unused themes and deactivated plugins.', 'choctaw-wp-security' ); ?></li>
+					<li><?php esc_html_e( 'Periodically changes their login password.', 'choctaw-wp-security' ); ?></li>
+				</ul>
+
+				<h3><?php esc_html_e( 'Credits', 'choctaw-wp-security' ); ?></h3>
 				<p>
 					<?php esc_html_e( 'Please submit feature requests, bugs, and inquiries to its official Github Repository at:', 'choctaw-wp-security' ); ?>
 					<a href="https://github.com/steve31266/Choctaw-WP-Security" target="_blank" rel="noopener noreferrer">https://github.com/steve31266/Choctaw-WP-Security</a>
