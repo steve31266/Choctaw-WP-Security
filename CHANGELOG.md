@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-07-07
+
+### Added
+
+- **Block Username Discovery** on the Main tab — four independently toggled protections (all enabled by default):
+  - Block Anonymous Access to User REST API (`/wp/v2/users` routes for anonymous visitors)
+  - Block Anonymous Access to User Enumeration (`/?author={id}` for anonymous visitors)
+  - Block Anonymous Access to Author Archive pages (`/author/{nicename}/` for anonymous visitors)
+  - Normalize failed login error message to `Failed login, please try again.`
+
 ## [1.8.1] - 2026-07-06
 
 ### Changed

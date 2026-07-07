@@ -5,12 +5,13 @@ A lightweight WordPress security plugin that hardens common attack paths:
 1. **XML-RPC abuse** — blocks unauthorized XML-RPC access
 2. **Login brute force** — rate-limits failed `wp-login.php` attempts
 3. **Uploads PHP execution** — blocks PHP in `wp-content/uploads` where the server allows it
-4. **Exposed folders** — scans plugin and theme folders for missing directory index files
-5. **Verify Checksums** — compares WordPress core files against official WordPress.org checksums
-6. **wp_options scan** — inspects the `wp_options` table for potentially compromised records
-7. **wp_posts scan** — inspects the `wp_posts` table for potentially malicious post content
-8. **wp_users review** — lists users from the `wp_users` table and reconstructs detectable per-user activity
-9. **Vulnerabilities** — checks WordPress core, active plugins, and active theme against the WPVulnerability API for known CVEs
+4. **Username discovery** — blocks common ways bots enumerate WordPress usernames
+5. **Exposed folders** — scans plugin and theme folders for missing directory index files
+6. **Verify Checksums** — compares WordPress core files against official WordPress.org checksums
+7. **wp_options scan** — inspects the `wp_options` table for potentially compromised records
+8. **wp_posts scan** — inspects the `wp_posts` table for potentially malicious post content
+9. **wp_users review** — lists users from the `wp_users` table and reconstructs detectable per-user activity
+10. **Vulnerabilities** — checks WordPress core, active plugins, and active theme against the WPVulnerability API for known CVEs
 
 Built for standard WordPress installs. No Composer, build tools, or bundled PHP dependencies. The Vulnerabilities scan requires outbound HTTPS access to `wpvulnerability.net`.
 
@@ -24,7 +25,18 @@ Built for standard WordPress installs. No Composer, build tools, or bundled PHP 
 - Removes the `X-Pingback` header
 - Disables all XML-RPC methods
 - Can be toggled on/off in settings
-- Does **not** affect the WordPress REST API
+- Does **not** block anonymous access to the WordPress users REST endpoint when username discovery blocking is disabled
+
+### Block Username Discovery
+
+Four independently toggled protections on the **Main** tab (all enabled by default):
+
+- **Block Anonymous Access to User REST API** — returns HTTP **403** for anonymous requests to `/wp-json/wp/v2/users` and `/wp-json/wp/v2/users/{id}`
+- **Block Anonymous Access to User Enumeration** — returns HTTP **403** for anonymous `/?author={id}` requests (uses the theme 403 template when available)
+- **Block Anonymous Access to Author Archive pages** — returns HTTP **403** for anonymous `/author/{nicename}/` requests (uses the theme 403 template when available)
+- **Normalize failed login error message** — replaces distinct WordPress login failure messages with: `Failed login, please try again.`
+
+Logged-in users are not affected by the three anonymous blocking options. These settings address the most common username discovery vectors but do not block every possible method.
 
 ### Login Rate Limiting
 
@@ -215,12 +227,13 @@ Sites with a persistent object cache (Redis, Memcached, etc.) may store transien
 
 - Blocks a common XML-RPC attack surface
 - Slows brute-force and username-spraying attacks against `wp-login.php`
+- Blocks common anonymous username discovery vectors (REST users endpoint, author query, author archives)
 - Uses temporary transients instead of permanent IP bans
 - Returns generic error messages to avoid user enumeration
 
 **What this plugin does not do:**
 
-- Block REST API access
+- Block all REST API access (only anonymous `/wp/v2/users` routes when enabled)
 - Block wp-admin globally
 - Add CAPTCHA or two-factor authentication
 - Act as a full web application firewall
@@ -244,7 +257,13 @@ After install or update, verify:
 - [ ] Lockout message is generic and does not reveal whether a username exists
 - [ ] Successful login clears IP+username failures but not the IP-only counter
 - [ ] `POST` to `/xmlrpc.php` returns 403 with `XML-RPC is disabled.`
-- [ ] REST API (`/wp-json/`) still works
+- [ ] Anonymous `GET /wp-json/wp/v2/users` returns 403 when username discovery blocking is enabled
+- [ ] Anonymous `GET /wp-json/wp/v2/users/1` returns 403 when username discovery blocking is enabled
+- [ ] Logged-in users can still access `/wp-json/wp/v2/users` when username discovery blocking is enabled
+- [ ] Anonymous `GET /?author=1` returns 403 when user enumeration blocking is enabled
+- [ ] Anonymous `GET /author/{nicename}/` returns 403 when author archive blocking is enabled
+- [ ] Failed login shows `Failed login, please try again.` when login error normalization is enabled
+- [ ] REST API (`/wp-json/`) still works for non-users routes
 - [ ] Settings save and persist correctly
 - [ ] Exposed Folders scan runs manually and reports top-level plugin/theme folders missing common index files
 - [ ] Vulnerabilities scan runs manually and reports core, active theme, and active plugin vulnerability status

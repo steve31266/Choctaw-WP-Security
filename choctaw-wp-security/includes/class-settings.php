@@ -102,6 +102,73 @@ class Choctaw_Wp_Security_Settings {
 		);
 
 		add_settings_section(
+			'choctaw_wp_security_username_discovery',
+			__( 'Block Username Discovery', 'choctaw-wp-security' ),
+			array( $this, 'render_username_discovery_section' ),
+			'choctaw-wp-security'
+		);
+
+		add_settings_field(
+			'block_user_rest_api_enabled',
+			__( 'Block Anonymous Access to User REST API', 'choctaw-wp-security' ),
+			array( $this, 'render_checkbox_field' ),
+			'choctaw-wp-security',
+			'choctaw_wp_security_username_discovery',
+			array(
+				'label_for'   => 'block_user_rest_api_enabled',
+				'option'      => 'block_user_rest_api_enabled',
+				'label'       => __( 'Block anonymous access to User REST API', 'choctaw-wp-security' ),
+				'description' => __( 'Block anonymous users from exploiting the user endpoint via REST API from obtaining a list of usernames.', 'choctaw-wp-security' ),
+			)
+		);
+
+		add_settings_field(
+			'block_author_query_enabled',
+			__( 'Block Anonymous Access to User Enumeration', 'choctaw-wp-security' ),
+			array( $this, 'render_checkbox_field' ),
+			'choctaw-wp-security',
+			'choctaw_wp_security_username_discovery',
+			array(
+				'label_for'   => 'block_author_query_enabled',
+				'option'      => 'block_author_query_enabled',
+				'label'            => __( 'Block anonymous access to user enumeration', 'choctaw-wp-security' ),
+				'description_html' => sprintf(
+					/* translators: %s: author query URL pattern */
+					__( 'Blocks anonymous users from seeing usernames when a user ID is requested from %s URL parameter.', 'choctaw-wp-security' ),
+					'<code>/?author=x</code>'
+				),
+			)
+		);
+
+		add_settings_field(
+			'block_author_archives_enabled',
+			__( 'Block Anonymous Access to Author Archive pages', 'choctaw-wp-security' ),
+			array( $this, 'render_checkbox_field' ),
+			'choctaw-wp-security',
+			'choctaw_wp_security_username_discovery',
+			array(
+				'label_for'   => 'block_author_archives_enabled',
+				'option'      => 'block_author_archives_enabled',
+				'label'       => __( 'Block anonymous access to author archive pages', 'choctaw-wp-security' ),
+				'description' => __( 'Blocks anonymous users from accessing author archive pages.', 'choctaw-wp-security' ),
+			)
+		);
+
+		add_settings_field(
+			'normalize_login_errors_enabled',
+			__( 'Normalize failed login error message', 'choctaw-wp-security' ),
+			array( $this, 'render_checkbox_field' ),
+			'choctaw-wp-security',
+			'choctaw_wp_security_username_discovery',
+			array(
+				'label_for'   => 'normalize_login_errors_enabled',
+				'option'      => 'normalize_login_errors_enabled',
+				'label'       => __( 'Normalize failed login error message', 'choctaw-wp-security' ),
+				'description' => __( 'Change the login error message to "Failed login, please try again." so attackers cannot tell whether a username exists.', 'choctaw-wp-security' ),
+			)
+		);
+
+		add_settings_section(
 			'choctaw_wp_security_policy',
 			__( 'Login Rate Limit Policy', 'choctaw-wp-security' ),
 			array( $this, 'render_policy_section' ),
@@ -186,6 +253,10 @@ class Choctaw_Wp_Security_Settings {
 			'xmlrpc_blocking_enabled'      => ! empty( $input['xmlrpc_blocking_enabled'] ),
 			'login_rate_limit_enabled'     => ! empty( $input['login_rate_limit_enabled'] ),
 			'uploads_php_lockdown_enabled' => ! empty( $input['uploads_php_lockdown_enabled'] ),
+			'block_user_rest_api_enabled' => ! empty( $input['block_user_rest_api_enabled'] ),
+			'block_author_query_enabled' => ! empty( $input['block_author_query_enabled'] ),
+			'block_author_archives_enabled' => ! empty( $input['block_author_archives_enabled'] ),
+			'normalize_login_errors_enabled' => ! empty( $input['normalize_login_errors_enabled'] ),
 			'allowed_failed_attempts'        => $this->clamp_int( $input, 'allowed_failed_attempts', 1, 100, $defaults['allowed_failed_attempts'] ),
 			'failure_window_minutes'   => $this->clamp_int( $input, 'failure_window_minutes', 1, 1440, $defaults['failure_window_minutes'] ),
 			'lockout_duration_minutes' => $this->clamp_int( $input, 'lockout_duration_minutes', 1, 1440, $defaults['lockout_duration_minutes'] ),
@@ -414,6 +485,10 @@ class Choctaw_Wp_Security_Settings {
 							<p class="description"><?php echo wp_kses( $uploads_status['note'], $this->get_allowed_file_path_markup() ); ?></p>
 						<?php endif; ?>
 					</td>
+				</tr>
+				<tr>
+					<th scope="row"><?php esc_html_e( 'Block Username Discovery', 'choctaw-wp-security' ); ?></th>
+					<td><?php echo esc_html( $this->username_discovery_status_label( $options ) ); ?></td>
 				</tr>
 				<tr>
 					<th scope="row"><?php esc_html_e( 'Current Policy', 'choctaw-wp-security' ); ?></th>
@@ -3239,6 +3314,15 @@ class Choctaw_Wp_Security_Settings {
 	}
 
 	/**
+	 * Render the username discovery section description.
+	 *
+	 * @return void
+	 */
+	public function render_username_discovery_section() {
+		echo '<p>' . esc_html__( 'These settings block the most common ways hackers and bots discover WordPress usernames. They do not block every possible discovery method.', 'choctaw-wp-security' ) . '</p>';
+	}
+
+	/**
 	 * Render a checkbox settings field.
 	 *
 	 * @param array<string, string> $args Field arguments.
@@ -3260,7 +3344,9 @@ class Choctaw_Wp_Security_Settings {
 			<?php echo esc_html( $args['label'] ); ?>
 		</label>
 		<?php
-		if ( ! empty( $args['description'] ) ) {
+		if ( ! empty( $args['description_html'] ) ) {
+			echo '<p class="description">' . wp_kses( $args['description_html'], $this->get_allowed_file_path_markup() ) . '</p>';
+		} elseif ( ! empty( $args['description'] ) ) {
 			echo '<p class="description">' . esc_html( $args['description'] ) . '</p>';
 		}
 	}
@@ -3341,6 +3427,46 @@ class Choctaw_Wp_Security_Settings {
 		return $enabled
 			? __( 'Enabled', 'choctaw-wp-security' )
 			: __( 'Disabled', 'choctaw-wp-security' );
+	}
+
+	/**
+	 * Build the status label for username discovery protections.
+	 *
+	 * @param array<string, mixed> $options Plugin options.
+	 * @return string
+	 */
+	private function username_discovery_status_label( $options ) {
+		$keys = array(
+			'block_user_rest_api_enabled',
+			'block_author_query_enabled',
+			'block_author_archives_enabled',
+			'normalize_login_errors_enabled',
+		);
+
+		$enabled_count = 0;
+
+		foreach ( $keys as $key ) {
+			if ( ! empty( $options[ $key ] ) ) {
+				++$enabled_count;
+			}
+		}
+
+		$total = count( $keys );
+
+		if ( 0 === $enabled_count ) {
+			return __( 'Disabled', 'choctaw-wp-security' );
+		}
+
+		if ( $enabled_count === $total ) {
+			return __( 'Enabled (4/4)', 'choctaw-wp-security' );
+		}
+
+		return sprintf(
+			/* translators: 1: enabled count, 2: total count */
+			__( 'Partial (%1$d/%2$d)', 'choctaw-wp-security' ),
+			$enabled_count,
+			$total
+		);
 	}
 
 	/**

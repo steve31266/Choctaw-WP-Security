@@ -48,6 +48,13 @@ class Choctaw_Wp_Security_Plugin {
 	private $uploads_php_lockdown;
 
 	/**
+	 * Username discovery protection module.
+	 *
+	 * @var Choctaw_Wp_Security_Username_Discovery_Protection
+	 */
+	private $username_discovery_protection;
+
+	/**
 	 * Retrieve the singleton instance.
 	 *
 	 * @return self
@@ -70,10 +77,12 @@ class Choctaw_Wp_Security_Plugin {
 		$this->xml_rpc_protection   = new Choctaw_Wp_Security_Xml_Rpc_Protection();
 		$this->login_rate_limiter   = new Choctaw_Wp_Security_Login_Rate_Limiter();
 		$this->uploads_php_lockdown = new Choctaw_Wp_Security_Uploads_Php_Lockdown();
+		$this->username_discovery_protection = new Choctaw_Wp_Security_Username_Discovery_Protection();
 
 		$this->settings->register_hooks();
 		$this->xml_rpc_protection->register_hooks();
 		$this->login_rate_limiter->register_hooks();
 		$this->uploads_php_lockdown->register_hooks();
+		$this->username_discovery_protection->register_hooks();
 	}
 }
