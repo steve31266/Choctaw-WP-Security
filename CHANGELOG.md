@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **wp_users View activity** now opens a three-tab forensic panel:
+  - **Database Activity** — existing posts/revisions/uploads/comments timeline
+  - **Usermeta Table** — all paired `*usermeta` rows for the selected user (`ID`, `Meta Key`, `Meta Value`)
+  - **File Activity** — greps WordPress root files, `wp-admin`, `wp-includes`, plugins, themes, and mu-plugins for the user's login and email (`Path`, `Filename`, `Line Number`, `Match`, `Contents`)
+
 ## [1.9.1] - 2026-07-07
 
 ### Changed

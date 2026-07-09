@@ -431,7 +431,7 @@
 		appendText(heading, section.title || '');
 		heading.appendChild(createElement('span', 'cws-database-scan-count', '(' + numberFormat(findings.length) + ')'));
 		sectionEl.appendChild(heading);
-		sectionEl.appendChild(createElement('p', '', section.guidance || ''));
+		sectionEl.appendChild(createElement('p', 'description', section.guidance || ''));
 
 		if (section.info_message) {
 			var info = createElement('div', 'cws-core-checksum-results is-success');

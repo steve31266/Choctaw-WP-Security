@@ -12,6 +12,8 @@
 	};
 	var activityState = {};
 	var activityCache = {};
+	var usermetaCache = {};
+	var fileActivityCache = {};
 	var expandedUserId = null;
 
 	function ready(callback) {
@@ -320,21 +322,50 @@
 		return th;
 	}
 
+	function createTabState(defaults) {
+		return {
+			page: defaults.page || 1,
+			sortKey: defaults.sortKey || '',
+			sortDirection: defaults.sortDirection || 'asc',
+			loading: false,
+			error: ''
+		};
+	}
+
 	function getActivityState(userId) {
 		if (!activityState[userId]) {
 			activityState[userId] = {
-				page: 1,
-				sortKey: 'date',
-				sortDirection: 'desc',
-				loading: false,
-				error: ''
+				activeTab: 'database',
+				database: createTabState({
+					page: 1,
+					sortKey: 'date',
+					sortDirection: 'desc'
+				}),
+				usermeta: createTabState({
+					page: 1,
+					sortKey: 'umeta_id',
+					sortDirection: 'asc'
+				}),
+				files: createTabState({
+					page: 1,
+					sortKey: 'path',
+					sortDirection: 'asc'
+				})
 			};
 		}
 
 		return activityState[userId];
 	}
 
-	function getActivitySortValue(item, key) {
+	function getTabState(userId, tabKey) {
+		return getActivityState(userId)[tabKey];
+	}
+
+	function getSortValue(item, key) {
+		if (key === 'umeta_id' || key === 'line_number' || key === 'ID') {
+			return parseInt(item[key], 10) || 0;
+		}
+
 		if (key === 'date') {
 			return text(item.date || '');
 		}
@@ -342,17 +373,16 @@
 		return text(item[key] || '').toLowerCase();
 	}
 
-	function sortedActivities(userId, activities) {
-		var state = getActivityState(userId);
-		var sorted = activities.slice();
+	function sortedItems(items, state) {
+		var sorted = items.slice();
 
 		if (!state.sortKey) {
 			return sorted;
 		}
 
 		sorted.sort(function (left, right) {
-			var leftValue = getActivitySortValue(left, state.sortKey);
-			var rightValue = getActivitySortValue(right, state.sortKey);
+			var leftValue = getSortValue(left, state.sortKey);
+			var rightValue = getSortValue(right, state.sortKey);
 			var result = 0;
 
 			if (leftValue < rightValue) {
@@ -367,8 +397,8 @@
 		return sorted;
 	}
 
-	function setActivitySort(userId, sortKey) {
-		var state = getActivityState(userId);
+	function setTabSort(userId, tabKey, sortKey) {
+		var state = getTabState(userId, tabKey);
 
 		if (state.sortKey === sortKey) {
 			state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
@@ -381,30 +411,62 @@
 		renderResult(resultState);
 	}
 
-	function renderActivityPanel(container, userId) {
-		var cache = activityCache[userId];
+	function setActiveTab(userId, tabKey) {
 		var state = getActivityState(userId);
-		var panel = createElement('div', 'cws-users-activity-panel');
-		var notice;
 
-		clearElement(container);
+		state.activeTab = tabKey;
+		ensureTabLoaded(userId, tabKey);
+		renderResult(resultState);
+	}
+
+	function renderActivityTabs(panel, userId) {
+		var state = getActivityState(userId);
+		var nav = createElement('nav', 'nav-tab-wrapper cws-users-activity-tabs');
+		var tabs = [
+			{ key: 'database', label: strings.tabDatabaseActivity || 'Database Activity' },
+			{ key: 'usermeta', label: strings.tabUsermeta || 'Usermeta Table' },
+			{ key: 'files', label: strings.tabFileActivity || 'File Activity' }
+		];
+
+		nav.setAttribute('aria-label', strings.viewActivity || 'View activity');
+
+		tabs.forEach(function (tab) {
+			var button = createElement(
+				'button',
+				'nav-tab' + (state.activeTab === tab.key ? ' nav-tab-active' : ''),
+				tab.label
+			);
+
+			button.type = 'button';
+			button.setAttribute('aria-selected', state.activeTab === tab.key ? 'true' : 'false');
+			button.addEventListener('click', function () {
+				setActiveTab(userId, tab.key);
+			});
+			nav.appendChild(button);
+		});
+
+		panel.appendChild(nav);
+	}
+
+	function renderDatabaseActivityTab(panel, userId) {
+		var cache = activityCache[userId];
+		var state = getTabState(userId, 'database');
+		var notice;
+		var sorted;
+		var pagination;
+		var table;
+		var thead;
+		var headerRow;
+		var tbody;
+
 		panel.appendChild(createElement('p', '', strings.activityLimitations || ''));
 
-		if (state.loading) {
-			panel.appendChild(createElement('p', 'cws-users-activity-loading', strings.activityLoading || ''));
-			container.appendChild(panel);
-			return;
-		}
-
-		if (state.error) {
-			panel.appendChild(createElement('p', '', state.error));
-			container.appendChild(panel);
-			return;
-		}
-
-		if (!cache || !cache.success) {
-			panel.appendChild(createElement('p', 'cws-users-activity-loading', strings.activityLoading || ''));
-			container.appendChild(panel);
+		if (state.loading || !cache || !cache.success) {
+			if (state.error) {
+				panel.appendChild(createElement('p', '', state.error));
+			} else {
+				panel.appendChild(createElement('p', 'cws-users-activity-loading', strings.activityLoading || ''));
+			}
 			return;
 		}
 
@@ -414,32 +476,31 @@
 		}
 
 		if (!cache.activities || !cache.activities.length) {
-			panel.appendChild(createElement('p', '', strings.noActivity || ''));
-			container.appendChild(panel);
+			panel.appendChild(createElement('p', 'cws-users-empty-result', strings.noActivity || ''));
 			return;
 		}
 
-		var sorted = sortedActivities(userId, cache.activities);
-		var pagination = paginateItems(sorted, state.page);
-		var table = createElement('table', 'widefat striped cws-core-checksum-table');
-		var thead = document.createElement('thead');
-		var headerRow = document.createElement('tr');
-		var tbody = document.createElement('tbody');
+		sorted = sortedItems(cache.activities, state);
+		pagination = paginateItems(sorted, state.page);
+		table = createElement('table', 'widefat striped cws-core-checksum-table');
+		thead = document.createElement('thead');
+		headerRow = document.createElement('tr');
+		tbody = document.createElement('tbody');
 
 		headerRow.appendChild(sortableHeader(strings.activityDate || 'Date', 'date', state, function (sortKey) {
-			setActivitySort(userId, sortKey);
+			setTabSort(userId, 'database', sortKey);
 		}));
 		headerRow.appendChild(sortableHeader(strings.activityLabel || 'Activity', 'activity_label', state, function (sortKey) {
-			setActivitySort(userId, sortKey);
+			setTabSort(userId, 'database', sortKey);
 		}));
 		headerRow.appendChild(sortableHeader(strings.activityType || 'Type', 'object_subtype', state, function (sortKey) {
-			setActivitySort(userId, sortKey);
+			setTabSort(userId, 'database', sortKey);
 		}));
 		headerRow.appendChild(sortableHeader(strings.activityTitle || 'Title', 'title', state, function (sortKey) {
-			setActivitySort(userId, sortKey);
+			setTabSort(userId, 'database', sortKey);
 		}));
 		headerRow.appendChild(sortableHeader(strings.activityDetail || 'Status/Detail', 'detail', state, function (sortKey) {
-			setActivitySort(userId, sortKey);
+			setTabSort(userId, 'database', sortKey);
 		}));
 
 		thead.appendChild(headerRow);
@@ -459,14 +520,191 @@
 		table.appendChild(tbody);
 		panel.appendChild(table);
 		renderPagination(panel, pagination, function (page) {
-			getActivityState(userId).page = page;
+			getTabState(userId, 'database').page = page;
 			renderResult(resultState);
 		});
+	}
+
+	function renderUsermetaTab(panel, userId) {
+		var cache = usermetaCache[userId];
+		var state = getTabState(userId, 'usermeta');
+		var notice;
+		var sorted;
+		var pagination;
+		var table;
+		var thead;
+		var headerRow;
+		var tbody;
+
+		panel.appendChild(createElement('p', '', strings.usermetaScope || ''));
+
+		if (state.loading || !cache || !cache.success) {
+			if (state.error) {
+				panel.appendChild(createElement('p', '', state.error));
+			} else {
+				panel.appendChild(createElement('p', 'cws-users-activity-loading', strings.usermetaLoading || ''));
+			}
+			return;
+		}
+
+		if (cache.capped) {
+			notice = createElement('p', '', format(strings.usermetaCapped || '', numberFormat(cache.cap || 500)));
+			panel.appendChild(notice);
+		}
+
+		if (!cache.meta_rows || !cache.meta_rows.length) {
+			panel.appendChild(createElement('p', 'cws-users-empty-result', strings.noUsermeta || ''));
+			return;
+		}
+
+		sorted = sortedItems(cache.meta_rows, state);
+		pagination = paginateItems(sorted, state.page);
+		table = createElement('table', 'widefat striped cws-core-checksum-table cws-users-usermeta-table');
+		thead = document.createElement('thead');
+		headerRow = document.createElement('tr');
+		tbody = document.createElement('tbody');
+
+		headerRow.appendChild(sortableHeader(strings.id || 'ID', 'umeta_id', state, function (sortKey) {
+			setTabSort(userId, 'usermeta', sortKey);
+		}));
+		headerRow.appendChild(sortableHeader(strings.metaKey || 'Meta Key', 'meta_key', state, function (sortKey) {
+			setTabSort(userId, 'usermeta', sortKey);
+		}));
+		headerRow.appendChild(sortableHeader(strings.metaValue || 'Meta Value', 'meta_value', state, function (sortKey) {
+			setTabSort(userId, 'usermeta', sortKey);
+		}));
+
+		thead.appendChild(headerRow);
+		table.appendChild(thead);
+
+		pagination.items.forEach(function (item) {
+			var row = document.createElement('tr');
+			var valueCell = createElement('td', 'cws-users-wrap-cell');
+
+			row.appendChild(createElement('td', '', item.umeta_id || ''));
+			row.appendChild(createElement('td', '', item.meta_key || ''));
+			appendText(valueCell, item.meta_value || '');
+			row.appendChild(valueCell);
+			tbody.appendChild(row);
+		});
+
+		table.appendChild(tbody);
+		panel.appendChild(table);
+		renderPagination(panel, pagination, function (page) {
+			getTabState(userId, 'usermeta').page = page;
+			renderResult(resultState);
+		});
+	}
+
+	function renderFileActivityTab(panel, userId) {
+		var cache = fileActivityCache[userId];
+		var state = getTabState(userId, 'files');
+		var notice;
+		var sorted;
+		var pagination;
+		var table;
+		var thead;
+		var headerRow;
+		var tbody;
+
+		panel.appendChild(createElement('p', '', strings.fileActivityScope || ''));
+
+		if (state.loading || !cache || !cache.success) {
+			if (state.error) {
+				panel.appendChild(createElement('p', '', state.error));
+			} else {
+				panel.appendChild(createElement('p', 'cws-users-activity-loading', strings.fileActivityLoading || ''));
+			}
+			return;
+		}
+
+		if (cache.scan_incomplete) {
+			panel.appendChild(createElement('p', '', strings.fileActivityIncomplete || ''));
+		}
+
+		if (cache.capped) {
+			notice = createElement('p', '', format(strings.fileActivityCapped || '', numberFormat(cache.cap || 100)));
+			panel.appendChild(notice);
+		}
+
+		if (!cache.matches || !cache.matches.length) {
+			panel.appendChild(createElement('p', 'cws-users-empty-result', strings.noFileActivity || ''));
+			return;
+		}
+
+		sorted = sortedItems(cache.matches, state);
+		pagination = paginateItems(sorted, state.page);
+		table = createElement('table', 'widefat striped cws-core-checksum-table cws-users-file-activity-table');
+		thead = document.createElement('thead');
+		headerRow = document.createElement('tr');
+		tbody = document.createElement('tbody');
+
+		headerRow.appendChild(sortableHeader(strings.filePath || 'Path', 'path', state, function (sortKey) {
+			setTabSort(userId, 'files', sortKey);
+		}));
+		headerRow.appendChild(sortableHeader(strings.fileFilename || 'Filename', 'filename', state, function (sortKey) {
+			setTabSort(userId, 'files', sortKey);
+		}));
+		headerRow.appendChild(sortableHeader(strings.fileLineNumber || 'Line Number', 'line_number', state, function (sortKey) {
+			setTabSort(userId, 'files', sortKey);
+		}));
+		headerRow.appendChild(sortableHeader(strings.fileMatch || 'Match', 'match', state, function (sortKey) {
+			setTabSort(userId, 'files', sortKey);
+		}));
+		headerRow.appendChild(sortableHeader(strings.fileContents || 'Contents', 'contents', state, function (sortKey) {
+			setTabSort(userId, 'files', sortKey);
+		}));
+
+		thead.appendChild(headerRow);
+		table.appendChild(thead);
+
+		pagination.items.forEach(function (item) {
+			var row = document.createElement('tr');
+			var pathCell = document.createElement('td');
+			var filenameCell = document.createElement('td');
+			var contentsCell = createElement('td', 'cws-users-wrap-cell');
+
+			pathCell.appendChild(createElement('code', 'cws-file-path', item.path || ''));
+			filenameCell.appendChild(createElement('code', 'cws-file-path', item.filename || ''));
+			row.appendChild(pathCell);
+			row.appendChild(filenameCell);
+			row.appendChild(createElement('td', '', item.line_number || ''));
+			row.appendChild(createElement('td', '', item.match || ''));
+			appendText(contentsCell, item.contents || '');
+			row.appendChild(contentsCell);
+			tbody.appendChild(row);
+		});
+
+		table.appendChild(tbody);
+		panel.appendChild(table);
+		renderPagination(panel, pagination, function (page) {
+			getTabState(userId, 'files').page = page;
+			renderResult(resultState);
+		});
+	}
+
+	function renderActivityPanel(container, userId) {
+		var state = getActivityState(userId);
+		var panel = createElement('div', 'cws-users-activity-panel');
+		var body = createElement('div', 'cws-users-activity-tab-body');
+
+		clearElement(container);
+		renderActivityTabs(panel, userId);
+
+		if (state.activeTab === 'usermeta') {
+			renderUsermetaTab(body, userId);
+		} else if (state.activeTab === 'files') {
+			renderFileActivityTab(body, userId);
+		} else {
+			renderDatabaseActivityTab(body, userId);
+		}
+
+		panel.appendChild(body);
 		container.appendChild(panel);
 	}
 
 	function loadUserActivity(userId) {
-		var state = getActivityState(userId);
+		var state = getTabState(userId, 'database');
 
 		if (activityCache[userId]) {
 			renderResult(resultState);
@@ -490,6 +728,68 @@
 		});
 	}
 
+	function loadUserUsermeta(userId) {
+		var state = getTabState(userId, 'usermeta');
+
+		if (usermetaCache[userId] || state.loading) {
+			return;
+		}
+
+		state.loading = true;
+		state.error = '';
+		renderResult(resultState);
+
+		request('choctaw_wp_security_user_usermeta_load', {
+			user_id: userId
+		}).then(function (data) {
+			usermetaCache[userId] = data;
+			state.loading = false;
+			renderResult(resultState);
+		}).catch(function (error) {
+			state.loading = false;
+			state.error = error.message || strings.usermetaError || '';
+			renderResult(resultState);
+		});
+	}
+
+	function loadUserFileActivity(userId) {
+		var state = getTabState(userId, 'files');
+
+		if (fileActivityCache[userId] || state.loading) {
+			return;
+		}
+
+		state.loading = true;
+		state.error = '';
+		renderResult(resultState);
+
+		request('choctaw_wp_security_user_file_activity_load', {
+			user_id: userId
+		}).then(function (data) {
+			fileActivityCache[userId] = data;
+			state.loading = false;
+			renderResult(resultState);
+		}).catch(function (error) {
+			state.loading = false;
+			state.error = error.message || strings.fileActivityError || '';
+			renderResult(resultState);
+		});
+	}
+
+	function ensureTabLoaded(userId, tabKey) {
+		if (tabKey === 'usermeta') {
+			loadUserUsermeta(userId);
+			return;
+		}
+
+		if (tabKey === 'files') {
+			loadUserFileActivity(userId);
+			return;
+		}
+
+		loadUserActivity(userId);
+	}
+
 	function toggleActivity(userId) {
 		if (expandedUserId === userId) {
 			expandedUserId = null;
@@ -498,7 +798,7 @@
 		}
 
 		expandedUserId = userId;
-		loadUserActivity(userId);
+		ensureTabLoaded(userId, getActivityState(userId).activeTab);
 	}
 
 	function renderSummary(resultsEl, result) {
@@ -648,6 +948,8 @@
 			listState.page = 1;
 			activityState = {};
 			activityCache = {};
+			usermetaCache = {};
+			fileActivityCache = {};
 			expandedUserId = null;
 			showNotice('', 'success');
 			renderResult(data.result);

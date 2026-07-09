@@ -10,7 +10,7 @@ A lightweight WordPress security plugin that hardens common attack paths:
 6. **Verify Checksums** — compares WordPress core files against official WordPress.org checksums
 7. **wp_options scan** — inspects the `wp_options` table for potentially compromised records
 8. **wp_posts scan** — inspects the `wp_posts` table for potentially malicious post content
-9. **wp_users review** — lists users from the `wp_users` table and reconstructs detectable per-user activity
+9. **wp_users review** — lists users from the `wp_users` table with per-user Database Activity, Usermeta, and File Activity drill-downs
 10. **Vulnerabilities** — checks WordPress core, active plugins, and active theme against the WPVulnerability API for known CVEs
 
 Built for standard WordPress installs. No Composer, build tools, or bundled PHP dependencies. The Vulnerabilities scan requires outbound HTTPS access to `wpvulnerability.net`.
@@ -118,10 +118,12 @@ Logged-in users are not affected by the three anonymous blocking options. These 
 - Shows table metadata (row count, data size, last updated) to help identify the correct table after staging copies or migrations
 - Lists every user with ID, login, email, registration date, role label, and display name
 - Sortable columns and client-side pagination (20 per page) through an AJAX/JSON interface
-- **View activity** on each user row loads a forensic activity report on demand
-- Detectable activity includes created or edited content, media uploads, and comments attributed to that user in the database
-- Does **not** detect who created another user account, changed site settings, installed plugins, or edited files on disk — WordPress core does not record those actions with a user ID
-- Read-only: does not modify users or content
+- **View activity** on each user row opens a three-tab forensic panel on demand:
+  - **Database Activity** — created or edited content, media uploads, and comments attributed to that user
+  - **Usermeta Table** — all meta rows for that user from the paired `*usermeta` table
+  - **File Activity** — greps WordPress root files, `wp-admin`, `wp-includes`, plugins, themes, and mu-plugins for the user's login and email (uploads excluded)
+- Does **not** detect who created another user account or changed site settings — WordPress core does not record those actions with a user ID
+- Read-only: does not modify users, usermeta, or files
 
 ## Requirements
 
@@ -172,7 +174,7 @@ The settings page under **Settings → Choctaw WP Security** includes:
 - **Vulnerabilities** — manual scan of WordPress core, active theme, and active plugins against the WPVulnerability API
 - **wp_options** — manual scan of a selected WordPress options table for potentially compromised records
 - **wp_posts** — manual scan of a selected WordPress posts table for potentially malicious content
-- **wp_users** — manual review of a selected WordPress users table with per-user activity drill-down
+- **wp_users** — manual review of a selected WordPress users table with per-user Database Activity, Usermeta, and File Activity drill-downs
 - Recent lockout log with timestamp, IP address, attempted username, scope, and lockout duration
 
 ## How It Works
@@ -272,7 +274,9 @@ After install or update, verify:
 - [ ] wp_posts discovers multiple posts tables when present and scans the selected table
 - [ ] wp_posts User ID hover shows display name from paired users table
 - [ ] wp_users discovers multiple users tables when present and loads the selected table
-- [ ] wp_users View activity shows detectable content, upload, and comment activity for a user
+- [ ] wp_users View activity Database Activity tab shows detectable content, upload, and comment activity for a user
+- [ ] wp_users View activity Usermeta Table tab lists all meta rows for the selected user
+- [ ] wp_users View activity File Activity tab finds login/email matches in code directories (including core files such as `wp-includes/functions.php`)
 - [ ] Disabling XML-RPC blocking from settings stops XML-RPC blocking through this plugin
 - [ ] Disabling login rate limiting from settings stops login blocking through this plugin
 
@@ -313,7 +317,9 @@ choctaw-wp-security/
     ├── class-posts-table-scanner.php # wp_posts database scanner
     ├── class-users-table-discovery.php # Users table discovery and metadata
     ├── class-users-table-reader.php # wp_users table reader
-    ├── class-user-activity-reader.php # Per-user forensic activity reader
+    ├── class-user-activity-reader.php # Per-user database activity reader
+    ├── class-user-usermeta-reader.php # Per-user usermeta reader
+    ├── class-user-file-activity-scanner.php # Per-user code-directory grep scanner
     ├── class-xml-rpc-protection.php # XML-RPC blocking
     └── class-login-rate-limiter.php # Login rate limiting
 ```

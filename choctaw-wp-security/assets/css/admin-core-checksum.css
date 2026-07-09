@@ -24,6 +24,87 @@
 	width: 100%;
 }
 
+.cws-checksum-verified-cell {
+	width: 140px;
+}
+
+.cws-directory-browsing-status-cell {
+	min-width: 120px;
+}
+
+.cws-directory-browsing-status {
+	gap: 0.35em;
+}
+
+.cws-directory-browsing-status-label {
+	color: inherit;
+}
+
+.cws-report-section .cws-directory-browsing-status.is-verified .cws-directory-browsing-status-label {
+	color: #00a32a;
+}
+
+.cws-report-section .cws-directory-browsing-status.is-failed .cws-directory-browsing-status-label {
+	color: #d63638;
+}
+
+.cws-report-section .cws-directory-browsing-status.is-unknown .cws-directory-browsing-status-label {
+	color: #646970;
+}
+
+.cws-checksum-status {
+	align-items: center;
+	display: inline-flex;
+	justify-content: center;
+	min-width: 24px;
+}
+
+.cws-checksum-status .dashicons {
+	font-size: 20px;
+	height: 20px;
+	width: 20px;
+}
+
+.cws-report-section .cws-checksum-status.is-verified,
+.cws-report-section .cws-checksum-status.is-verified .dashicons,
+.cws-report-section .cws-checksum-status.is-verified .dashicons::before {
+	color: #00a32a !important;
+}
+
+.cws-report-section .cws-checksum-status.is-failed,
+.cws-report-section .cws-checksum-status.is-failed .dashicons,
+.cws-report-section .cws-checksum-status.is-failed .dashicons::before {
+	color: #d63638 !important;
+}
+
+.cws-report-section .cws-checksum-status.is-unknown,
+.cws-report-section .cws-checksum-status.is-unknown .dashicons,
+.cws-report-section .cws-checksum-status.is-unknown .dashicons::before {
+	color: #646970 !important;
+}
+
+.cws-checksum-status.is-pending {
+	color: #646970;
+	font-style: italic;
+}
+
+.cws-checksum-status.is-not-applicable,
+.cws-checksum-status.is-unavailable {
+	color: #646970;
+}
+
+.cws-checksum-scan-status {
+	color: #8a1f1f;
+	margin-top: 12px;
+}
+
+.cws-checksum-scan-status.is-error {
+	background: #fff5f5;
+	border-left: 4px solid #d63638;
+	max-width: 960px;
+	padding: 12px 16px;
+}
+
 .cws-report-section textarea.large-text {
 	box-sizing: border-box;
 	max-width: 100%;
@@ -33,17 +114,6 @@
 .cws-file-path {
 	font-family: Consolas, Monaco, "Andale Mono", "DejaVu Sans Mono", monospace;
 	font-size: 13px;
-}
-
-.cws-exposed-folders-guidance {
-	margin-top: 32px;
-	max-width: 960px;
-}
-
-.cws-exposed-folders-guidance textarea.large-text {
-	box-sizing: border-box;
-	max-width: 100%;
-	width: 100%;
 }
 
 .cws-about-plugin {
@@ -251,6 +321,16 @@
 	margin-top: 8px;
 }
 
+.cws-core-checksum-category-report .cws-core-checksum-table th:nth-child(1),
+.cws-core-checksum-category-report .cws-core-checksum-table td:nth-child(1) {
+	width: 35%;
+}
+
+.cws-core-checksum-category-report .cws-core-checksum-table th:nth-child(2),
+.cws-core-checksum-category-report .cws-core-checksum-table td:nth-child(2) {
+	width: 65%;
+}
+
 .cws-report-pagination {
 	margin-top: 8px;
 	max-width: 960px;
@@ -288,8 +368,73 @@
 	border-top: 1px solid #dcdcde;
 }
 
+.cws-users-activity-tabs {
+	margin: 0 0 12px;
+	padding-top: 0;
+}
+
+.cws-users-activity-tabs .nav-tab {
+	cursor: pointer;
+	margin-left: 0;
+	margin-right: 0.5em;
+	float: none;
+	display: inline-block;
+	background: transparent;
+	border: 1px solid transparent;
+	border-bottom: none;
+	padding: 6px 10px;
+	font-size: 13px;
+	line-height: 1.4;
+	text-decoration: none;
+	color: #50575e;
+}
+
+.cws-users-activity-tabs .nav-tab:hover,
+.cws-users-activity-tabs .nav-tab:focus {
+	color: #1d2327;
+	background: #fff;
+	border-color: #c3c4c7 #c3c4c7 #f6f7f7;
+}
+
+.cws-users-activity-tabs .nav-tab-active,
+.cws-users-activity-tabs .nav-tab-active:hover,
+.cws-users-activity-tabs .nav-tab-active:focus {
+	color: #1d2327;
+	background: #fff;
+	border-color: #c3c4c7 #c3c4c7 #fff;
+	border-bottom: 1px solid #fff;
+	margin-bottom: -1px;
+}
+
+.cws-users-activity-tab-body {
+	padding-top: 4px;
+}
+
 .cws-users-activity-loading {
 	font-style: italic;
+}
+
+.cws-users-empty-result {
+	margin: 12px 0 0;
+	padding: 10px 14px;
+	background: rgba(0, 163, 42, 0.12);
+	border: 1px solid #00a32a;
+	border-radius: 6px;
+	color: #005c12;
+	font-weight: 600;
+}
+
+.cws-users-wrap-cell {
+	white-space: pre-wrap;
+	word-break: break-word;
+	overflow-wrap: anywhere;
+	max-width: 40em;
+}
+
+.cws-users-file-activity-table .cws-users-wrap-cell,
+.cws-users-usermeta-table .cws-users-wrap-cell {
+	font-family: Consolas, Monaco, monospace;
+	font-size: 12px;
 }
 
 .cws-database-scan-report-actions {
@@ -368,18 +513,6 @@
 .cws-component-status-body {
 	border-top: 1px solid #dcdcde;
 	padding: 12px 16px 16px;
-}
-
-.cws-core-checksum-instructions {
-	margin-top: 16px;
-}
-
-.cws-core-checksum-instructions .cws-component-status-body {
-	border-top: 0;
-}
-
-.cws-core-checksum-instructions h4 {
-	margin: 0 0 8px;
 }
 
 .cws-component-vulnerability-list {

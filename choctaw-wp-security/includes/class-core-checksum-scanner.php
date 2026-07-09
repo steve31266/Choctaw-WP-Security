@@ -129,6 +129,91 @@ class Choctaw_Wp_Security_Core_Checksum_Scanner {
 	}
 
 	/**
+	 * Verify checksum status for specific WordPress-relative paths.
+	 *
+	 * Uses the same WordPress.org checksum source and md5 comparison as scan().
+	 *
+	 * @param array<int, string> $relative_paths Relative file paths.
+	 * @return array<string, mixed>
+	 */
+	public function verify_paths( array $relative_paths ) {
+		global $wp_version;
+
+		$version = isset( $wp_version ) ? (string) $wp_version : '';
+		$locale  = get_locale();
+
+		if ( '' === $locale ) {
+			$locale = 'en_US';
+		}
+
+		$result = array(
+			'version' => $version,
+			'locale'  => $locale,
+			'paths'   => array(),
+			'errors'  => array(),
+		);
+
+		if ( '' === $version ) {
+			$result['errors'][] = __( 'Unable to determine the installed WordPress version.', 'choctaw-wp-security' );
+		}
+
+		$checksums = false;
+
+		if ( '' !== $version ) {
+			$checksums = $this->get_checksums( $version, $locale );
+		}
+
+		if ( false === $checksums ) {
+			if ( empty( $result['errors'] ) ) {
+				$result['errors'][] = sprintf(
+					/* translators: 1: WordPress version, 2: locale */
+					__( 'Unable to retrieve official checksums for WordPress %1$s (%2$s).', 'choctaw-wp-security' ),
+					$version,
+					$locale
+				);
+			}
+
+			foreach ( $relative_paths as $relative_path ) {
+				$result['paths'][ wp_normalize_path( (string) $relative_path ) ] = 'unavailable';
+			}
+
+			return $result;
+		}
+
+		foreach ( $relative_paths as $relative_path ) {
+			$relative_path = wp_normalize_path( (string) $relative_path );
+
+			if ( $this->should_skip_checksum_path( $relative_path ) ) {
+				$result['paths'][ $relative_path ] = 'not_applicable';
+				continue;
+			}
+
+			if ( ! isset( $checksums[ $relative_path ] ) ) {
+				$result['paths'][ $relative_path ] = 'not_applicable';
+				continue;
+			}
+
+			$absolute_path = $this->absolute_path_for_relative( $relative_path );
+
+			if ( ! is_file( $absolute_path ) ) {
+				$result['paths'][ $relative_path ] = 'missing';
+				continue;
+			}
+
+			$file_hash = @md5_file( $absolute_path );
+
+			if ( false === $file_hash ) {
+				$result['paths'][ $relative_path ] = 'unavailable';
+				continue;
+			}
+
+			$result['paths'][ $relative_path ] = hash_equals( (string) $checksums[ $relative_path ], $file_hash ) ? 'verified' : 'failed';
+		}
+
+		return $result;
+	}
+
+	/**
 	 * Retrieve official checksums for a WordPress version and locale.
 	 *
 	 * @param string $version WordPress version.

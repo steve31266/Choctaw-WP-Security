@@ -23,6 +23,9 @@ define( 'CHOCTAW_WP_SECURITY_URL', plugin_dir_url( __FILE__ ) );
 
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-utils.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-plugin.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-directory-browsing-scanner.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-admin-help-content.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-admin-help.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-settings.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-xml-rpc-protection.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-login-rate-limiter.php';
@@ -39,6 +42,8 @@ require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-posts-table-scanner.php'
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-users-table-discovery.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-users-table-reader.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-user-activity-reader.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-user-usermeta-reader.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-user-file-activity-scanner.php';
 
 // Block xmlrpc.php as early as possible, matching legacy plugin behavior.
 Choctaw_Wp_Security_Xml_Rpc_Protection::block_xmlrpc_request_if_needed();

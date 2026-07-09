@@ -236,7 +236,7 @@ class Choctaw_Wp_Security_Uploads_Php_Lockdown {
 			return array(
 				'key'   => self::STATUS_NGINX_MANUAL,
 				'label' => __( 'Manual Nginx configuration required', 'choctaw-wp-security' ),
-				'note'  => __( 'This plugin cannot enforce uploads PHP blocking on Nginx. Add the server configuration snippet below to your site block.', 'choctaw-wp-security' ),
+				'note'  => __( 'This plugin cannot enforce uploads PHP blocking on Nginx.', 'choctaw-wp-security' ),
 			);
 		}
 
