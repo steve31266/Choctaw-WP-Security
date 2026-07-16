@@ -1,0 +1,99 @@
+.cws-exposed-files-toolbar {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75em;
+	margin: 1em 0;
+}
+
+.cws-exposed-files-toolbar select,
+.cws-exposed-files-toolbar input[type="search"] {
+	max-width: 220px;
+}
+
+.cws-exposed-files-toolbar label {
+	align-items: center;
+	display: inline-flex;
+	gap: 0.35em;
+	margin: 0;
+}
+
+.cws-exposed-files-table {
+	font-size: 13px;
+	table-layout: fixed;
+	width: 100%;
+}
+
+.cws-exposed-files-table th,
+.cws-exposed-files-table td {
+	vertical-align: top;
+}
+
+/* Risk | Status | Category | Filename | Actions */
+.cws-exposed-files-table th:nth-child(1),
+.cws-exposed-files-table td:nth-child(1) {
+	width: 9em;
+}
+
+.cws-exposed-files-table th:nth-child(2),
+.cws-exposed-files-table td:nth-child(2) {
+	width: 7.5em;
+}
+
+.cws-exposed-files-table th:nth-child(3),
+.cws-exposed-files-table td:nth-child(3) {
+	width: 11em;
+}
+
+.cws-exposed-files-table th:nth-child(5),
+.cws-exposed-files-table td:nth-child(5) {
+	width: 3em;
+	text-align: center;
+}
+
+.cws-exposed-files-table td:nth-child(4) .cws-file-path {
+	display: inline-block;
+	max-width: 100%;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+
+.cws-exposed-files-detail-grid {
+	display: grid;
+	gap: 1.25em;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.cws-exposed-files-detail-left,
+.cws-exposed-files-detail-right {
+	display: flex;
+	flex-direction: column;
+	gap: 1.25em;
+	min-width: 0;
+}
+
+.cws-exposed-files-info-panel dl {
+	display: grid;
+	gap: 0.35em 0.75em;
+	grid-template-columns: auto 1fr;
+	margin: 0;
+}
+
+.cws-exposed-files-info-panel dt {
+	color: #646970;
+	font-weight: 600;
+	margin: 0;
+}
+
+.cws-exposed-files-info-panel dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+	white-space: pre-line;
+}
+
+@media (max-width: 782px) {
+	.cws-exposed-files-detail-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}

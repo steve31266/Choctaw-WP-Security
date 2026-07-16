@@ -1,0 +1,238 @@
+.cws-scheduled-tasks-toolbar {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75em;
+	margin: 1em 0;
+}
+
+.cws-scheduled-tasks-toolbar select,
+.cws-scheduled-tasks-toolbar input[type="search"] {
+	max-width: 220px;
+}
+
+.cws-scheduled-tasks-toolbar label {
+	align-items: center;
+	display: inline-flex;
+	gap: 0.35em;
+	margin: 0;
+}
+
+.cws-scheduled-tasks-table {
+	font-size: 13px;
+	table-layout: fixed;
+	width: 100%;
+}
+
+.cws-scheduled-tasks-table th,
+.cws-scheduled-tasks-table td {
+	vertical-align: top;
+}
+
+/* Risk | Status | Category | Hook | Actions */
+.cws-scheduled-tasks-table th:nth-child(1),
+.cws-scheduled-tasks-table td:nth-child(1) {
+	width: 9em;
+}
+
+.cws-scheduled-tasks-table th:nth-child(2),
+.cws-scheduled-tasks-table td:nth-child(2) {
+	width: 7.5em;
+}
+
+.cws-scheduled-tasks-table th:nth-child(3),
+.cws-scheduled-tasks-table td:nth-child(3) {
+	width: 12em;
+}
+
+.cws-scheduled-tasks-table th:nth-child(5),
+.cws-scheduled-tasks-table td:nth-child(5) {
+	width: 3em;
+	text-align: center;
+}
+
+.cws-scheduled-tasks-table td:nth-child(4) .cws-file-path {
+	display: inline-block;
+	max-width: 100%;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+
+.cws-scheduled-tasks-risk {
+	align-items: flex-start;
+	display: flex;
+	flex-direction: column;
+	gap: 0.15em;
+	min-width: 0;
+}
+
+.cws-scheduled-tasks-risk-label {
+	align-items: center;
+	display: inline-flex;
+	font-weight: 600;
+	gap: 0.25em;
+}
+
+.cws-scheduled-tasks-risk.is-critical .cws-scheduled-tasks-risk-label,
+.cws-scheduled-tasks-risk.is-critical .dashicons,
+.cws-scheduled-tasks-risk.is-critical .cws-coreguard-mark {
+	color: #d63638;
+}
+
+.cws-scheduled-tasks-risk.is-suspicious .cws-scheduled-tasks-risk-label,
+.cws-scheduled-tasks-risk.is-suspicious .dashicons,
+.cws-scheduled-tasks-risk.is-suspicious .cws-coreguard-mark {
+	color: #dba617;
+}
+
+.cws-scheduled-tasks-risk.is-review .cws-scheduled-tasks-risk-label,
+.cws-scheduled-tasks-risk.is-review .dashicons,
+.cws-scheduled-tasks-risk.is-review .cws-coreguard-mark {
+	color: #2271b1;
+}
+
+.cws-scheduled-tasks-risk.is-info .cws-scheduled-tasks-risk-label,
+.cws-scheduled-tasks-risk.is-info .dashicons,
+.cws-scheduled-tasks-risk.is-info .cws-coreguard-mark {
+	color: #646970;
+}
+
+.cws-scheduled-tasks-confidence {
+	color: #646970;
+	font-size: 12px;
+}
+
+.cws-scheduled-tasks-confidence.is-medium {
+	color: #50575e;
+}
+
+.cws-scheduled-tasks-confidence.is-high,
+.cws-scheduled-tasks-confidence.is-very-high {
+	color: #00a32a;
+}
+
+.cws-scheduled-tasks-pills {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.35em;
+}
+
+.cws-scheduled-tasks-pill {
+	border: 1px solid #c3c4c7;
+	border-radius: 999px;
+	color: #50575e;
+	display: inline-block;
+	font-size: 11px;
+	line-height: 1.3;
+	padding: 0.15em 0.55em;
+	white-space: nowrap;
+}
+
+.cws-scheduled-tasks-pill.is-critical,
+.cws-scheduled-tasks-pill.is-suspicious_arguments,
+.cws-scheduled-tasks-pill.is-suspicious_hook_name,
+.cws-scheduled-tasks-pill.is-unknown_hook {
+	border-color: #d63638;
+	color: #d63638;
+}
+
+.cws-scheduled-tasks-pill.is-unusual_frequency,
+.cws-scheduled-tasks-pill.is-stale_task,
+.cws-scheduled-tasks-pill.is-duplicate_task,
+.cws-scheduled-tasks-pill.is-missing_source,
+.cws-scheduled-tasks-pill.is-unregistered_handler {
+	border-color: #dba617;
+	color: #996800;
+}
+
+.cws-scheduled-tasks-next-run-relative {
+	color: #646970;
+	display: block;
+	font-size: 12px;
+	margin-top: 0.15em;
+}
+
+.cws-scheduled-tasks-next-run-relative.is-overdue {
+	color: #d63638;
+	font-weight: 600;
+}
+
+.cws-scheduled-tasks-eye {
+	background: transparent;
+	border: 0;
+	color: #2271b1;
+	cursor: pointer;
+	padding: 0;
+}
+
+.cws-scheduled-tasks-eye .dashicons {
+	font-size: 20px;
+	height: 20px;
+	width: 20px;
+}
+
+.cws-scheduled-tasks-eye:hover,
+.cws-scheduled-tasks-eye:focus {
+	color: #135e96;
+}
+
+/* Two-column expand: Info + Raw Args | Summary + Recommendation */
+.cws-scheduled-tasks-detail-grid {
+	display: grid;
+	gap: 1.25em;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.cws-scheduled-tasks-detail-left,
+.cws-scheduled-tasks-detail-right {
+	display: flex;
+	flex-direction: column;
+	gap: 1.25em;
+	min-width: 0;
+}
+
+.cws-scheduled-tasks-info-panel dl {
+	display: grid;
+	gap: 0.35em 0.75em;
+	grid-template-columns: auto 1fr;
+	margin: 0;
+}
+
+.cws-scheduled-tasks-info-panel dt {
+	color: #646970;
+	font-weight: 600;
+	margin: 0;
+}
+
+.cws-scheduled-tasks-info-panel dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+	white-space: pre-line;
+}
+
+.cws-scheduled-tasks-raw-args pre,
+.cws-scheduled-tasks-raw-args .cws-file-contents-textarea {
+	max-height: 240px;
+}
+
+@media screen and (max-width: 782px) {
+	.cws-scheduled-tasks-detail-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.cws-scheduled-tasks-table {
+		table-layout: auto;
+	}
+
+	.cws-scheduled-tasks-table th:nth-child(1),
+	.cws-scheduled-tasks-table td:nth-child(1),
+	.cws-scheduled-tasks-table th:nth-child(2),
+	.cws-scheduled-tasks-table td:nth-child(2),
+	.cws-scheduled-tasks-table th:nth-child(3),
+	.cws-scheduled-tasks-table td:nth-child(3),
+	.cws-scheduled-tasks-table th:nth-child(5),
+	.cws-scheduled-tasks-table td:nth-child(5) {
+		width: auto;
+	}
+}

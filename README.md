@@ -1,4 +1,4 @@
-# Choctaw WP Security
+# CoreGuard
 
 A lightweight WordPress security plugin that hardens common attack paths:
 
@@ -8,10 +8,11 @@ A lightweight WordPress security plugin that hardens common attack paths:
 4. **Username discovery** — blocks common ways bots enumerate WordPress usernames
 5. **Exposed folders** — scans plugin and theme folders for missing directory index files
 6. **Verify Checksums** — compares WordPress core files against official WordPress.org checksums
-7. **wp_options scan** — inspects the `wp_options` table for potentially compromised records
-8. **wp_posts scan** — inspects the `wp_posts` table for potentially malicious post content
-9. **wp_users review** — lists users from the `wp_users` table with per-user Database Activity, Usermeta, and File Activity drill-downs
-10. **Vulnerabilities** — checks WordPress core, active plugins, and active theme against the WPVulnerability API for known CVEs
+7. **WP-Cron** — security-focused review of WP-Cron events stored in the `cron` option
+8. **wp_options scan** — unified Risk/Category findings table for potentially compromised option records
+9. **wp_posts scan** — unified Risk/Category findings table for potentially malicious post content
+10. **wp_users review** — lists users from the `wp_users` table with per-user Database Activity, Usermeta, and File Activity drill-downs (eye expand)
+11. **Vulnerabilities** — checks WordPress core, themes (active and inactive), and plugins (active and inactive) against the WPVulnerability API for known CVEs
 
 Built for standard WordPress installs. No Composer, build tools, or bundled PHP dependencies. The Vulnerabilities scan requires outbound HTTPS access to `wpvulnerability.net`.
 
@@ -29,7 +30,7 @@ Built for standard WordPress installs. No Composer, build tools, or bundled PHP 
 
 ### Block Username Discovery
 
-Four independently toggled protections on the **Main** tab (all enabled by default):
+Four independently toggled protections on the **Settings** tab (all enabled by default):
 
 - **Block Anonymous Access to User REST API** — returns HTTP **403** for anonymous requests to `/wp-json/wp/v2/users` and `/wp-json/wp/v2/users/{id}`
 - **Block Anonymous Access to User Enumeration** — returns HTTP **403** for anonymous `/?author={id}` requests (uses the theme 403 template when available)
@@ -65,10 +66,10 @@ Logged-in users are not affected by the three anonymous blocking options. These 
 
 - Manual **Scan Now** action on the **Vulnerabilities** admin tab
 - Queries the public [WPVulnerability](https://www.wpvulnerability.com/) API at `wpvulnerability.net` for known vulnerabilities
-- Scans WordPress core, the active theme, and active plugins (API-recognized components only)
-- Reports four sections: WordPress Core, Active Theme, Active Plugins, and Unrecognized Components
+- Scans WordPress core, themes (active and inactive), and plugins (active and inactive) for API-recognized components
+- Reports six sections: WordPress Core, Active Theme, Inactive Themes, Active Plugins, Inactive Plugins, and Unrecognized Components
 - Expandable green/red rows per scanned component with inline vulnerability detail, severity, CWE, and external reference links
-- Lists all installed plugins and themes not recognized by the API (active or inactive)
+- Lists all installed plugins and themes not recognized by the API (active or inactive) in a standard report table (Risk, Status, Category, Name, State, Action) with eye-expand guidance and dismiss controls
 - Per-slug API responses cached in transients for 12 hours during scans
 - Credits WPVulnerability on the tab and in About This Plugin
 - Detection-only: does not update, deactivate, or modify components
@@ -82,40 +83,47 @@ Logged-in users are not affected by the three anonymous blocking options. These 
 - Provides Apache/LiteSpeed, Nginx, and folder-level remediation guidance
 - Detection-only: does not add files, edit `.htaccess`, or change server configuration
 
+### WP-Cron
+
+- Manual **Scan Now** action on the **WP-Cron** admin tab
+- Inspects WP-Cron events stored in the WordPress `cron` option (does not cover Action Scheduler or OS/server cron)
+- Uses the WordPress Tables prefix from **Settings** (defaults to the live `$wpdb->prefix`)
+- Fact-only detection engine: rules and signals → weighted score → confidence → **Risk** level
+- Default Risk filter is **Needs review** (non-recognized events); choose **All Risk** or a specific level (including Info) to include recognized maintenance jobs
+- Multi-category pills (Unknown Hook, Unregistered Handler, Unusual Frequency, Suspicious Arguments, and more)
+- Compact findings table (Risk, Category, Hook, Actions) within the standard 960px report width
+- Filterable by Risk, Category, and Source; searchable by hook or source; sortable columns with pagination
+- Eye-icon expand: left Info panel (Schedule, Next Run, Source, Size, Details) + Raw Arguments; right Summary + Recommendation
+- Key to Categories info box and How to Remove a WP-Cron Event guidance (WP-CLI / trusted plugins; no in-plugin deletion)
+- Detection-only: does not delete, edit, or repair cron events
+
 ### wp_options
 
 - Manual **Scan Now** action on the **wp_options** admin tab
-- Discovers all `*options` tables in the database and lets you choose which one to scan
-- Shows table metadata (row count, data size, `siteurl`/`home` hosts, last updated) to help identify the correct table after staging copies or migrations
-- Marks the WordPress configured table and tables whose URLs match the current site
-- Warns when the configured table URL does not match the site but another discovered table does
+- Uses the WordPress Tables prefix from **Settings** (defaults to the live WordPress-configured `*options` table)
 - Reports potentially compromised or malicious records for investigation
-- Checks site URL and security settings, active plugin consistency, cron events, large autoload options, PHP/execution patterns, known-malware option names, and scripts outside widget/theme options
-- Classifies stored cron events as **WP Core**, **Plugin/Theme**, **Investigate**, or **Suspicious** while keeping the `option_id` for the underlying `cron` row visible
+- Checks site URL and security settings, active plugin consistency, large autoload options, PHP/execution patterns, known-malware option names, and scripts outside widget/theme options
 - Displays scan reports through an AJAX/JSON interface with client-side pagination and sortable columns
-- Establishes a per-table baseline on the first scan of each selected table and reports new/changed/removed options on subsequent scans of that same table
-- Includes **Reset Baseline** to snapshot the current selected options table after cleanup
+- Establishes a per-table baseline on the first scan of each options table and reports new/changed/removed options on subsequent scans of that same table
+- Includes **Reset Baseline** to snapshot the current options table after cleanup
 - Detection-only: does not delete, edit, or quarantine database rows
 
 ### wp_posts
 
 - Manual **Scan Now** action on the **wp_posts** admin tab
-- Discovers all `*posts` tables in the database and lets you choose which one to scan
-- Shows table metadata (row count, data size, last updated) to help identify the correct table after staging copies or migrations
-- Marks the WordPress configured table
+- Uses the WordPress Tables prefix from **Settings** (defaults to the live WordPress-configured `*posts` table)
 - Reports potentially compromised or malicious post content for investigation
 - Checks PHP and execution patterns, script and iframe injections, high-confidence script patterns, SEO spam titles, large post content, and baseline change tracking
 - Resolves author display names from the paired `*users` table; shows **User ID** in the report with display name on hover
 - Displays scan reports through an AJAX/JSON interface with client-side pagination and sortable columns
-- Establishes a per-table baseline on the first scan of each selected table and reports new/changed/removed posts on subsequent scans
-- Includes **Reset Baseline** to snapshot the current selected posts table after cleanup
+- Establishes a per-table baseline on the first scan of each posts table and reports new/changed/removed posts on subsequent scans
+- Includes **Reset Baseline** to snapshot the current posts table after cleanup
 - Detection-only: does not delete, edit, or quarantine database rows
 
 ### wp_users
 
 - Manual **Load Users** action on the **wp_users** admin tab
-- Discovers all `*users` tables in the database and lets you choose which one to load
-- Shows table metadata (row count, data size, last updated) to help identify the correct table after staging copies or migrations
+- Uses the WordPress Tables prefix from **Settings** (defaults to the live WordPress-configured `*users` table)
 - Lists every user with ID, login, email, registration date, role label, and display name
 - Sortable columns and client-side pagination (20 per page) through an AJAX/JSON interface
 - **View activity** on each user row opens a three-tab forensic panel on demand:
@@ -132,23 +140,23 @@ Logged-in users are not affected by the three anonymous blocking options. These 
 
 ## Installation
 
-1. Copy the `choctaw-wp-security` folder from this repository into your WordPress plugins directory:
+1. Copy the `coreguard` folder from this repository into your WordPress plugins directory:
 
    ```
-   wp-content/plugins/choctaw-wp-security/
+   wp-content/plugins/coreguard/
    ```
 
-   Or clone this repository and copy the `choctaw-wp-security` folder to that location.
+   Or clone this repository and copy the `coreguard` folder to that location.
 
-2. In WordPress admin, go to **Plugins** and activate **Choctaw WP Security**.
+2. In WordPress admin, go to **Plugins** and activate **CoreGuard**.
 
-3. Configure settings at **Settings → Choctaw WP Security**.
+3. Configure settings at **CoreGuard → Settings**.
 
 ### Updating
 
 Replace the plugin folder on the server with the latest version, then verify settings in admin. No build step is required.
 
-If you previously used a standalone **Disable XML-RPC** plugin, deactivate and remove it after confirming XML-RPC blocking is enabled in Choctaw WP Security.
+If you previously used a standalone **Disable XML-RPC** plugin, deactivate and remove it after confirming XML-RPC blocking is enabled in CoreGuard.
 
 ## Configuration
 
@@ -162,20 +170,24 @@ Default settings (recommended for most sites):
 | Failure window | 15 minutes |
 | Lockout duration | 30 minutes |
 
-### Admin page
+### Admin pages
 
-The settings page under **Settings → Choctaw WP Security** includes:
+CoreGuard appears as a top-level admin menu with four submenus:
 
-- Feature toggles for XML-RPC blocking and login rate limiting
-- Rate limit policy fields (attempts, window, lockout duration)
-- Read-only status section showing feature state, current policy, and plugin version
-- **Exposed Folders** — manual scan that identifies top-level plugin and theme folders missing common directory index files
-- **WP Core Verify-Checksums** — manual scan that compares installed WordPress core files against official WordPress.org checksums; findings are shown in separate Modified, Missing, and Unknown sections with remediation guidance
-- **Vulnerabilities** — manual scan of WordPress core, active theme, and active plugins against the WPVulnerability API
-- **wp_options** — manual scan of a selected WordPress options table for potentially compromised records
-- **wp_posts** — manual scan of a selected WordPress posts table for potentially malicious content
-- **wp_users** — manual review of a selected WordPress users table with per-user Database Activity, Usermeta, and File Activity drill-downs
-- Recent lockout log with timestamp, IP address, attempted username, scope, and lockout duration
+- **Home** — read-only status section showing feature state, WordPress Tables prefix, current policy, and plugin version, plus the recent lockout log
+- **Settings** — feature toggles for XML-RPC blocking, login rate limiting, uploads PHP lockdown, and username discovery; rate limit policy fields; **WordPress Tables** prefix picker for leftover staging/migration installs. Uploads PHP lockdown is server-aware: Apache/LiteSpeed shows an Active/Disabled status with automatic `.htaccess` protection; Nginx shows Manual configuration required with a disclosable config snippet; unknown servers show an unconfirmed-server banner while still offering the `.htaccess` checkbox and Nginx snippet.
+- **Scans** — tabbed scan tools:
+  - **File Changes** — recent high-value core file watchlist with checksum verification
+  - **Uploads Folder** — Scan Now inventory of PHP executable files under uploads (Critical / PHP Executable)
+  - **MU-Plugins** — Scan Now inventory of must-use plugin PHP files (Alert / MU-Plugin) with header metadata
+  - **Directory Browsing** — Scan Now report for site-root `.htaccess` posture plus HTTP tests of the `plugins`, `themes`, and `uploads` folder roots (Risk / Status / Path / Blocked|Not Blocked|Unknown)
+  - **Verify Checksums** — manual scan that compares installed WordPress core files against official WordPress.org checksums; findings are shown with Risk/Category filters and remediation guidance
+  - **Vulnerabilities** — manual scan of WordPress core, themes (active and inactive), and plugins (active and inactive) against the WPVulnerability API
+  - **WP-Cron** — security-focused WP-Cron review with risk scoring; recognized maintenance jobs hidden by default
+  - **wp_options** — manual scan of the configured WordPress options table for potentially compromised records
+  - **wp_posts** — manual scan of the configured WordPress posts table for potentially malicious content
+  - **wp_users** — browse the configured WordPress users table with activity and usermeta helpers
+- **About** — plugin purpose, usage guidance, and attribution
 
 ## How It Works
 
@@ -267,13 +279,14 @@ After install or update, verify:
 - [ ] Failed login shows `Failed login, please try again.` when login error normalization is enabled
 - [ ] REST API (`/wp-json/`) still works for non-users routes
 - [ ] Settings save and persist correctly
+- [ ] CoreGuard → Settings → WordPress Tables shows the live prefix and is grayed out when only one prefix exists
+- [ ] CoreGuard → Settings → WordPress Tables allows overriding the prefix when multiple leftover installs exist
+- [ ] Home Status shows the WordPress Tables prefix with Auto or Override
 - [ ] Exposed Folders scan runs manually and reports top-level plugin/theme folders missing common index files
-- [ ] Vulnerabilities scan runs manually and reports core, active theme, and active plugin vulnerability status
-- [ ] Vulnerabilities scan lists unrecognized installed plugins/themes in the fourth report section
-- [ ] wp_options discovers multiple options tables when present and scans the selected table
-- [ ] wp_posts discovers multiple posts tables when present and scans the selected table
+- [ ] Vulnerabilities scan runs manually and reports core, active/inactive theme, and active/inactive plugin vulnerability status
+- [ ] Vulnerabilities scan lists unrecognized installed plugins/themes in the Unrecognized Components section
+- [ ] WP-Cron / wp_options / wp_posts / wp_users use the Settings prefix and no longer show per-tab table pickers
 - [ ] wp_posts User ID hover shows display name from paired users table
-- [ ] wp_users discovers multiple users tables when present and loads the selected table
 - [ ] wp_users View activity Database Activity tab shows detectable content, upload, and comment activity for a user
 - [ ] wp_users View activity Usermeta Table tab lists all meta rows for the selected user
 - [ ] wp_users View activity File Activity tab finds login/email matches in code directories (including core files such as `wp-includes/functions.php`)
@@ -284,23 +297,26 @@ After install or update, verify:
 
 This repository contains a standalone WordPress plugin. It is not a full WordPress installation.
 
-The plugin source lives in the `choctaw-wp-security/` folder at the repository root. Copy that folder into your site:
+The plugin source lives in the `coreguard/` folder at the repository root. Copy that folder into your site:
 
 ```
-wp-content/plugins/choctaw-wp-security/
+wp-content/plugins/coreguard/
 ```
 
 ## Project Structure
 
 ```
-choctaw-wp-security/
-├── choctaw-wp-security.php          # Bootstrap, constants, activation hook
+coreguard/
+├── coreguard.php          # Bootstrap, constants, activation hook
 ├── assets/
 │   ├── css/
 │   │   ├── login-lockout.css        # Login lockout styling
-│   │   └── admin-core-checksum.css  # Admin report styling
+│   │   ├── admin-core-checksum.css  # Admin report styling
+│   │   ├── admin-help.css           # Help panels, guidance/info boxes
+│   │   └── admin-scheduled-tasks.css # WP-Cron report UI
 │   └── js/
 │       ├── admin-database-scan.js   # AJAX wp_options report UI
+│       ├── admin-scheduled-tasks.js # AJAX WP-Cron report UI
 │       ├── admin-posts-scan.js      # AJAX wp_posts report UI
 │       └── admin-users-table.js     # AJAX wp_users report UI
 └── includes/
@@ -309,9 +325,13 @@ choctaw-wp-security/
     ├── class-settings.php           # Admin settings page
     ├── class-core-checksum-scanner.php # WordPress core checksum scanner
     ├── class-component-vulnerability-scanner.php # WPVulnerability API component scanner
+    ├── class-table-prefix-discovery.php # Shared WordPress table-prefix discovery
     ├── class-options-scan-patterns.php # Database scan patterns and thresholds
     ├── class-options-table-discovery.php # Options table discovery and metadata
     ├── class-options-table-scanner.php # wp_options database scanner
+    ├── class-scheduled-tasks-patterns.php # WP-Cron detection weights and thresholds
+    ├── class-scheduled-tasks-scanner.php # Fact-only WP-Cron scanner
+    ├── class-scheduled-tasks-presenter.php # WP-Cron UI presentation layer
     ├── class-posts-scan-patterns.php # Posts scan patterns and thresholds
     ├── class-posts-table-discovery.php # Posts table discovery and metadata
     ├── class-posts-table-scanner.php # wp_posts database scanner
@@ -328,9 +348,23 @@ choctaw-wp-security/
 
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
 
+### 1.9.2
+
+- Renamed product identity to **CoreGuard** (plugin folder `coreguard`) with top-level admin menu (Home, Settings, Scans, About)
+- Expanded Scans reporting architecture across File Changes, Exposed Files, Uploads Folder, MU-Plugins, Directory Browsing, Verify Checksums, WP-Cron, wp_options, wp_posts, and Unrecognized Components
+- **Vulnerabilities** now scans inactive themes/plugins and resolves child-theme parents as active for CVE checks
+- Added WordPress Tables prefix setting and shared report Status / dismiss controls
+
+### 1.9.1
+
+- Added **Home** admin tab (default) with Status and Recent Lockouts
+- Renamed **Main** tab label to **Settings**
+- **wp_users View activity** now includes Usermeta Table and File Activity tabs alongside Database Activity
+- About This Plugin: Important Please Read First section, Credits heading, and smaller logo
+
 ### 1.8.1
 
-- **Verify Checksums** report shows three separate sections (Modified, Missing, Unknown) with file lists and category-specific remediation steps, or "No files reported." when a category is clear
+- **Verify Checksums** report shows one unified table (Modified, Missing, Not Part of Core) with Risk/Category filters and eye-expand remediation guidance, or an empty investigation list when clean
 
 ### 1.8.0
 
@@ -406,4 +440,4 @@ GPL-3.0-or-later
 
 ## Author
 
-Choctaw Websites
+Sashtastic, LLC

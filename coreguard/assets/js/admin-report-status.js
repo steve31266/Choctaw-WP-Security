@@ -1,0 +1,318 @@
+/**
+ * Shared report Status helpers (Needs Review / No Action Needed / Dismissed).
+ *
+ * Expects window.choctawWpSecurityFindingStatus from wp_localize_script.
+ */
+(function (window, document) {
+	'use strict';
+
+	var config = window.choctawWpSecurityFindingStatus || {};
+	var strings = config.strings || {};
+
+	function text(value) {
+		if (value === null || typeof value === 'undefined') {
+			return '';
+		}
+		return String(value);
+	}
+
+	function createElement(tag, className, content) {
+		var el = document.createElement(tag);
+		if (className) {
+			el.className = className;
+		}
+		if (typeof content !== 'undefined' && content !== null && content !== '') {
+			el.appendChild(document.createTextNode(text(content)));
+		}
+		return el;
+	}
+
+	function findingFingerprint(finding) {
+		if (!finding || typeof finding !== 'object') {
+			return '';
+		}
+		if (finding.fingerprint) {
+			return text(finding.fingerprint);
+		}
+		return text(finding.id);
+	}
+
+	function openStatusForFinding(finding) {
+		var risk = finding && finding.risk ? text(finding.risk) : '';
+		if (risk === 'safe') {
+			return 'no_action_needed';
+		}
+		return 'needs_review';
+	}
+
+	function statusLabelFor(status) {
+		if (status === 'dismissed') {
+			return strings.dismissed || 'Dismissed';
+		}
+		if (status === 'no_action_needed') {
+			return strings.noActionNeeded || 'No Action Needed';
+		}
+		return strings.needsReview || 'Needs Review';
+	}
+
+	function findingStatus(finding) {
+		if (finding && finding.status === 'dismissed') {
+			return 'dismissed';
+		}
+		if (finding && finding.status) {
+			return text(finding.status);
+		}
+		return openStatusForFinding(finding);
+	}
+
+	/**
+	 * Status filter matching.
+	 */
+	function matchesStatusFilter(finding, statusFilter) {
+		var status = findingStatus(finding);
+
+		if (statusFilter === 'dismissed') {
+			return status === 'dismissed';
+		}
+
+		if (statusFilter === 'no_action_needed') {
+			return status === 'no_action_needed';
+		}
+
+		if (statusFilter === 'needs_review') {
+			return status === 'needs_review';
+		}
+
+		// All statuses.
+		return true;
+	}
+
+	function renderStatusCell(finding) {
+		var status = findingStatus(finding);
+		var label = finding && finding.status_label
+			? text(finding.status_label)
+			: statusLabelFor(status);
+
+		return createElement('span', 'cws-status-text', label);
+	}
+
+	function appendStatusFilter(toolbar, uiState, onChange) {
+		var select = document.createElement('select');
+		var options = [
+			{ value: 'needs_review', label: strings.needsReview || 'Needs Review' },
+			{ value: 'no_action_needed', label: strings.noActionNeeded || 'No Action Needed' },
+			{ value: 'dismissed', label: strings.dismissed || 'Dismissed' },
+			{ value: '', label: strings.allStatuses || 'All statuses' }
+		];
+
+		select.setAttribute('aria-label', strings.status || 'Status');
+		options.forEach(function (option) {
+			var el = createElement('option', '', option.label);
+			el.value = option.value;
+			if (uiState.status === option.value) {
+				el.selected = true;
+			}
+			select.appendChild(el);
+		});
+		select.addEventListener('change', function () {
+			uiState.status = select.value;
+			if (typeof onChange === 'function') {
+				onChange();
+			}
+		});
+		toolbar.appendChild(select);
+		return select;
+	}
+
+	function postStatusAction(action, scanType, fingerprint) {
+		var body = new window.FormData();
+		body.append('action', action);
+		body.append('nonce', config.nonce || '');
+		body.append('scan_type', scanType);
+		if (fingerprint) {
+			body.append('fingerprint', fingerprint);
+		}
+
+		return window.fetch(config.ajaxUrl || '', {
+			method: 'POST',
+			credentials: 'same-origin',
+			body: body
+		}).then(function (response) {
+			return response.json();
+		}).then(function (payload) {
+			if (!payload || !payload.success) {
+				var message = payload && payload.data && payload.data.message
+					? text(payload.data.message)
+					: (strings.statusError || 'The status could not be updated.');
+				throw new Error(message);
+			}
+			return payload.data || {};
+		});
+	}
+
+	/**
+	 * Append dismiss checkbox + Submit under How to proceed / Recommendations.
+	 *
+	 * @param {HTMLElement} parent
+	 * @param {Object} finding
+	 * @param {string} scanType
+	 * @param {Function} onUpdated function(updatedFinding)
+	 */
+	function appendDismissControls(parent, finding, scanType, onUpdated) {
+		var block = createElement('div', 'cws-report-dismiss');
+		var label = createElement('label', 'cws-report-dismiss-label');
+		var checkbox = document.createElement('input');
+		var submit = createElement('button', 'button button-secondary cws-report-dismiss-submit', strings.submit || 'Submit');
+		var error = createElement('p', 'cws-report-dismiss-error');
+		var current = findingStatus(finding);
+
+		checkbox.type = 'checkbox';
+		checkbox.className = 'cws-report-dismiss-checkbox';
+		checkbox.checked = current === 'dismissed';
+
+		label.appendChild(checkbox);
+		label.appendChild(document.createTextNode(' ' + (strings.dismissThisItem || 'Dismiss this item')));
+
+		submit.type = 'button';
+		error.hidden = true;
+
+		submit.addEventListener('click', function () {
+			var fingerprint = findingFingerprint(finding);
+			var wantDismissed = checkbox.checked;
+			var action = wantDismissed
+				? 'choctaw_wp_security_finding_dismiss'
+				: 'choctaw_wp_security_finding_undismiss';
+
+			error.hidden = true;
+			submit.disabled = true;
+
+			postStatusAction(action, scanType, fingerprint)
+				.then(function (data) {
+					var nextStatus = wantDismissed
+						? 'dismissed'
+						: (data && data.status ? text(data.status) : openStatusForFinding(finding));
+					finding.status = nextStatus;
+					finding.status_label = statusLabelFor(nextStatus);
+					finding.fingerprint = fingerprint;
+					if (typeof onUpdated === 'function') {
+						onUpdated(finding);
+					}
+				})
+				.catch(function (err) {
+					error.textContent = err && err.message ? err.message : (strings.statusError || 'The status could not be updated.');
+					error.hidden = false;
+					checkbox.checked = findingStatus(finding) === 'dismissed';
+				})
+				.then(function () {
+					submit.disabled = false;
+				});
+		});
+
+		block.appendChild(label);
+		block.appendChild(submit);
+		block.appendChild(error);
+		parent.appendChild(block);
+		return block;
+	}
+
+	function bindClearHistoryButtons(root) {
+		var scope = root || document;
+		var buttons = scope.querySelectorAll('[data-cws-clear-history]');
+
+		Array.prototype.forEach.call(buttons, function (button) {
+			if (button.getAttribute('data-cws-clear-bound') === '1') {
+				return;
+			}
+			button.setAttribute('data-cws-clear-bound', '1');
+			button.addEventListener('click', function () {
+				var scanType = button.getAttribute('data-cws-clear-history') || '';
+				button.disabled = true;
+				postStatusAction('choctaw_wp_security_finding_clear_history', scanType, '')
+					.then(function () {
+						window.location.reload();
+					})
+					.catch(function () {
+						button.disabled = false;
+						window.alert(strings.clearHistoryError || 'History could not be cleared.');
+					});
+			});
+		});
+	}
+
+	/**
+	 * Bind dismiss controls rendered by PHP (checksum fallback tables).
+	 */
+	function bindPhpDismissControls(root) {
+		var scope = root || document;
+		var blocks = scope.querySelectorAll('[data-cws-dismiss-block]');
+
+		Array.prototype.forEach.call(blocks, function (block) {
+			if (block.getAttribute('data-cws-dismiss-bound') === '1') {
+				return;
+			}
+			block.setAttribute('data-cws-dismiss-bound', '1');
+
+			var checkbox = block.querySelector('.cws-report-dismiss-checkbox');
+			var submit = block.querySelector('.cws-report-dismiss-submit');
+			var error = block.querySelector('.cws-report-dismiss-error');
+			var scanType = block.getAttribute('data-scan-type') || '';
+			var fingerprint = block.getAttribute('data-fingerprint') || '';
+			var currentStatus = block.getAttribute('data-status') || 'needs_review';
+
+			if (!checkbox || !submit) {
+				return;
+			}
+
+			submit.addEventListener('click', function () {
+				var wantDismissed = checkbox.checked;
+				var action = wantDismissed
+					? 'choctaw_wp_security_finding_dismiss'
+					: 'choctaw_wp_security_finding_undismiss';
+
+				if (error) {
+					error.hidden = true;
+				}
+				submit.disabled = true;
+
+				postStatusAction(action, scanType, fingerprint)
+					.then(function () {
+						window.location.reload();
+					})
+					.catch(function (err) {
+						if (error) {
+							error.textContent = err && err.message ? err.message : (strings.statusError || 'The status could not be updated.');
+							error.hidden = false;
+						}
+						checkbox.checked = currentStatus === 'dismissed';
+						submit.disabled = false;
+					});
+			});
+		});
+	}
+
+	function ready(callback) {
+		if (document.readyState === 'loading') {
+			document.addEventListener('DOMContentLoaded', callback);
+			return;
+		}
+		callback();
+	}
+
+	ready(function () {
+		bindClearHistoryButtons(document);
+		bindPhpDismissControls(document);
+	});
+
+	window.CwsReportStatus = {
+		matchesStatusFilter: matchesStatusFilter,
+		renderStatusCell: renderStatusCell,
+		appendStatusFilter: appendStatusFilter,
+		appendDismissControls: appendDismissControls,
+		findingStatus: findingStatus,
+		findingFingerprint: findingFingerprint,
+		openStatusForFinding: openStatusForFinding,
+		bindClearHistoryButtons: bindClearHistoryButtons,
+		bindPhpDismissControls: bindPhpDismissControls,
+		strings: strings
+	};
+}(window, document));

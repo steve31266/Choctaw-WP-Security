@@ -1,0 +1,114 @@
+.cws-unrecognized-components-heading {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75em 1em;
+	justify-content: space-between;
+}
+
+.cws-unrecognized-components-heading h3 {
+	margin: 0;
+}
+
+.cws-unrecognized-components-toolbar {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75em;
+	margin: 1em 0;
+}
+
+.cws-unrecognized-components-toolbar select,
+.cws-unrecognized-components-toolbar input[type="search"] {
+	max-width: 220px;
+}
+
+.cws-unrecognized-components-toolbar label {
+	align-items: center;
+	display: inline-flex;
+	gap: 0.35em;
+	margin: 0;
+}
+
+.cws-unrecognized-components-table {
+	font-size: 13px;
+	table-layout: fixed;
+	width: 100%;
+}
+
+.cws-unrecognized-components-table th,
+.cws-unrecognized-components-table td {
+	vertical-align: top;
+}
+
+/* Risk | Status | Category | Name | State | Action */
+.cws-unrecognized-components-table th:nth-child(1),
+.cws-unrecognized-components-table td:nth-child(1) {
+	width: 7.5em;
+}
+
+.cws-unrecognized-components-table th:nth-child(2),
+.cws-unrecognized-components-table td:nth-child(2) {
+	width: 7.5em;
+}
+
+.cws-unrecognized-components-table th:nth-child(3),
+.cws-unrecognized-components-table td:nth-child(3) {
+	width: 6.5em;
+}
+
+.cws-unrecognized-components-table th:nth-child(5),
+.cws-unrecognized-components-table td:nth-child(5) {
+	width: 5.5em;
+}
+
+.cws-unrecognized-components-table th:nth-child(6),
+.cws-unrecognized-components-table td:nth-child(6) {
+	width: 3em;
+	text-align: center;
+}
+
+.cws-unrecognized-components-table td:nth-child(4) {
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+
+.cws-unrecognized-components-detail-grid {
+	display: grid;
+	gap: 1.25em;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.cws-unrecognized-components-detail-left,
+.cws-unrecognized-components-detail-right {
+	display: flex;
+	flex-direction: column;
+	gap: 1.25em;
+	min-width: 0;
+}
+
+.cws-unrecognized-components-info-panel dl {
+	display: grid;
+	gap: 0.35em 0.75em;
+	grid-template-columns: auto 1fr;
+	margin: 0;
+}
+
+.cws-unrecognized-components-info-panel dt {
+	color: #646970;
+	font-weight: 600;
+	margin: 0;
+}
+
+.cws-unrecognized-components-info-panel dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+	white-space: pre-line;
+}
+
+@media (max-width: 782px) {
+	.cws-unrecognized-components-detail-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}

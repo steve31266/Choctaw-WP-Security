@@ -7,17 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-07-16
+
+### Changed
+
+- **Vulnerabilities** scan now includes inactive themes and inactive plugins (in addition to core, active theme, and active plugins). Report order: WordPress Core, Active Theme, Inactive Themes, Active Plugins, Inactive Plugins, Unrecognized Components.
+- **Vulnerabilities** Active Theme now resolves parent themes when a child theme is selected (parent reported as active for CVE scanning; child remains listed under Unrecognized Components when the API has no record).
+- **Unrecognized Components** migrated to the standard report architecture (Risk, Status, Category, Name, State, Action with eye-expand Info/Contents | Why/How, dismiss controls, Name search, Status filter, Clear History).
+- **Directory Browsing** migrated to the standard report architecture (Risk, Status, Path, Directory Browsing Blocked/Not Blocked/Unknown, eye-expand Info/Contents | Why/How, dismiss controls, AJAX Scan Now). Findings cover site-root `.htaccess` (Apache/LiteSpeed always; Nginx only when present as Info) plus HTTP tests of the `wp-content/plugins`, `themes`, and `uploads` roots.
+- Finding **Status** now includes **No Action Needed** (auto-assigned when Risk is Safe). Needs Review remains for Critical/Review/Info and other non-Safe open items; Dismissed is unchanged.
+
 ### Added
 
+- **Exposed Files** Scans tab (immediately after File Changes) that non-recursively scans the WordPress document root for sensitive leftover files (wp-config backups, `.env*`, SQL dumps, backup archives, diagnostic PHP, logs, Composer/npm metadata, `.git`/`.svn`). Report columns: Risk, Category, Filename, Actions; eye expand shows Info (Modified Date/Time, File Size, Permissions, Owner) + Contents (first 16K) | Why / How guidance, plus a **Key to Categories** Info Box.
+- **Uploads Folder** and **MU-Plugins** Scans tabs (split from the former Files Changes/Uploads combined report), each with Scan Now, Risk/Category filters, and redesigned eye-expand panels.
+- **Uploads Folder** findings use Risk=Critical and Category=PHP Executable; expand shows Last Modified, File Size, and the first 16K of file contents plus Why / How guidance.
+- **MU-Plugins** findings use Risk=Alert and Category=MU-Plugin; expand shows plugin headers (Version, Author, Plugin URI, Update URI, Description), file size, last modified, and SHA-256 hash plus Why / How guidance.
+- Shared report Risk styling (`admin-report-risk.css`) with standard colors: Critical (red), Suspicious/Alert/Missing (yellow), Warning (dark amber), Safe (green), Info/Review/N/A (gray); zebra striping that ignores expand rows; nested eye-expand child panels (border, radius, left accent). Risk filter uses Needs review / All risks (no separate recognized/safe checkbox).
+- Unified **wp_options** findings table at 960px: Risk, Category, Option ID, Option, Actions; eye expand uses two columns — Info (Size, Detail) + Option Value | Why you are seeing this + How to proceed (preliminary copy varies by category and risk).
+- Unified **wp_posts** findings table at 960px: Risk, Category, Post ID, Title, Type, Actions; eye expand uses two columns — Info (User ID, User Display Name, Status, Size, Detail) + Matched Snippet | Why you are seeing this + How to proceed (preliminary copy varies by category and risk).
+- **WP-Cron** compact table (Risk, Category, Hook, Actions) at 960px width; eye expand uses two columns — Info (Schedule, Next Run, Source, Size, Details) + Raw Arguments | Summary + Recommendation.
+- **Recent File Changes** Risk column (Safe/Critical/Missing/N/A) with eye expand (Risk explanation | Why this matters); always shows the fixed core-file watchlist (optional Risk filter only).
+- Unified **Verify Checksums** table (Modified / Missing / Not Part of Core) with Risk/Category filters and eye expand; per-category Guidance Boxes removed.
+- **Recent Lockouts** Risk=Info column with sortable headers (Time descending default).
+- **wp_users** User Status filter, eye-icon activity expand, far-right pagination chrome.
+
+### Changed
+
+- Renamed the Scans tab **Files Changes/Uploads** to **File Changes** (Recent File Changes only) and ordered tabs: File Changes, Exposed Files, Uploads Folder, MU-Plugins, then the remaining existing tabs.
+- Moved CoreGuard from **Settings → CoreGuard** to a top-level admin menu with **Home**, **Settings**, **Scans**, and **About** submenus (menu icon `coreguard-20.svg` via base64 data URI so WordPress can recolor it like Dashicons). Scan tools remain tabbed under **Scans**; Home, Settings, and About render without the scan tab bar.
+- Branded **Scans** tab bar: light blue inactive tabs (`#eaf0f9`), dark blue active tab (`#0a3a7e`) with white text, top-only radius, bottom rule, and Dashicons per scan.
+- Risk badges in scan reports use the CoreGuard SVG mark (with `currentColor`) instead of the Dashicons shield.
+- wp_options and wp_posts scans map legacy Severity to Risk (`warning` → Suspicious); small autoload inventory maps to Safe.
+- Shorter row excerpts on options/posts scans; detail panels carry the longer value/snippet.
+
+### Removed
+
+- Combined **PHP Files in Uploads and Must-Use Plugins** report (replaced by separate Uploads Folder and MU-Plugins tabs).
+- **Plugins Found Inside Uploads Folder** report (security concern covered by PHP Files in Uploads).
+
+### Added
+
+- **WordPress Tables** on the Settings tab — discovers leftover table prefixes in the connected database, defaults to the live `$wpdb->prefix`, and allows an admin override when migration leftovers exist.
+- Home Status row for **WordPress Tables** showing the selected prefix plus Auto/Override.
+
+- **WP-Cron** admin tab — security-focused review of WP-Cron events moved out of wp_options.
+  - Fact-only scanner with weighted scoring: Detection Rules → Score → Confidence → **Risk**
+  - Default Risk filter is **Needs review** (non-recognized events); **All Risk** / Info include recognized maintenance jobs (no separate checkbox)
+  - Recognized-only events report High / Very High confidence (certainty of classification); High and Very High confidence render in green
+  - Multi-category pills, Risk/Category/Source filters, search, sortable columns, and eye-icon detail panels (Summary / Recommendation / Raw Arguments)
+  - Gray **Key to Categories** Info Box and blue **How to Remove a WP-Cron Event** Guidance Box
+  - Detection-only: does not delete or repair cron events
+  - Recognized Core classification uses the core cron allowlist (including `wp_update_user_counts`) plus callbacks resolving under `wp-includes` / `wp-admin/includes`
+  - Recognized Core hooks are not flagged as Unregistered Handler / Missing Source (handlers may only load during wp-cron execution)
+  - Recognized Core hooks are not flagged as Duplicate Task based on hook name alone; only identical hook + args hashes count
+  - Recommendation panel now shows one focused primary tip (plus at most one secondary for higher-risk findings) instead of stacked generic advice
+  - Admin tab label and page heading use **WP-Cron** (internal keys remain `scheduled-tasks`)
+  - Tab order places **WP-Cron** immediately before **wp_options**
+
+### Changed
+
+- Renamed the public product identity to **CoreGuard** (plugin folder/slug `coreguard`, Settings menu title, About copy, uploads `.htaccess` markers). Internal class names, option keys, AJAX actions, text domain, and `cws_*` prefixes are unchanged. Author is now Sashtastic, LLC. GitHub repository URL unchanged.
+- Removed the Cron Events inventory section from the **wp_options** scan (use the **WP-Cron** tab). Stored wp_options reports drop the obsolete `cron_events` section on load so stale caches no longer show it.
+- WP-Cron, wp_options, wp_posts, and wp_users no longer ask for a table on each scan; they use the shared WordPress Tables prefix from Settings.
+- Settings form sanitization now preserves non-Settings option keys when saving.
+- Split the former **Security Features** Settings group into two left-aligned sections: **Disable XML-RPC** and **Disable PHP Execution in Uploads**.
+- **Disable XML-RPC** — section intro with **Why this matters**, indented **Block XML-RPC requests** checkbox, and live green/red **Active (Automatic)** / **Disabled (at Risk)** status banner.
+- **Disable PHP Execution in Uploads** Settings UI is now explicitly three-way by detected server type:
+  - **Apache / LiteSpeed** — feature summary, live **Active (Automatic)** / **Disabled (at Risk)** status banner, and **Enable protection (Recommended)** checkbox that manages uploads `.htaccess`
+  - **Nginx** — **Manual configuration required** banner (no checkbox), explanation, and **Display Nginx code snippet** disclosure that expands a Guidance Box
+  - **Unknown** — **Server type could not be confirmed** banner, dual-path guidance, interactive checkbox for `.htaccess` attempts, and the same Nginx snippet disclosure
+
+## [1.9.1] - 2026-07-09
+
+### Added
+
+- **Home** admin tab — default landing tab with the Status section and Recent Lockouts log.
 - **wp_users View activity** now opens a three-tab forensic panel:
   - **Database Activity** — existing posts/revisions/uploads/comments timeline
   - **Usermeta Table** — all paired `*usermeta` rows for the selected user (`ID`, `Meta Key`, `Meta Value`)
   - **File Activity** — greps WordPress root files, `wp-admin`, `wp-includes`, plugins, themes, and mu-plugins for the user's login and email (`Path`, `Filename`, `Line Number`, `Match`, `Contents`)
 
-## [1.9.1] - 2026-07-07
-
 ### Changed
 
+- Renamed the **Main** admin tab label to **Settings** (internal slug `main` unchanged for URL compatibility).
+- Moved Status and Recent Lockouts from Settings onto the new Home tab.
 - **About This Plugin** tab — added an **Important: Please Read First!** section explaining the plugin's active-administration intent, with a bulleted list of recommended security practices; reorganized attribution under a **Credits** heading.
 - Reduced the About tab Choctaw Websites logo size by 25%.
 
