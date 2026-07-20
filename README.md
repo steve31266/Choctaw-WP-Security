@@ -348,6 +348,10 @@ coreguard/
 
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
 
+### 1.9.3.2
+
+- **Findings Phase 3.2:** Exposed Files on Sassh Findings (`exposed-files`; canonical risk mapping; related-on-expand with Verify Checksums); dismiss status rehydrated from Findings so cached reports stay in sync
+
 ### 1.9.3.1
 
 - **Findings Phase 3.1:** Verify Checksums on Sassh Findings (`verify-checksums`; Critical/Suspicious core rules), AJAX/JS report with dismiss/undismiss and related-on-expand; incomplete-run and locale handling; Status/Path display fixes for Sassh-backed reports

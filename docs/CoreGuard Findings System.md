@@ -2,13 +2,13 @@
 
 ## Project Requirements Document
 
-**Document status:** Finalized requirements — Phase 1/2, Phase **3.0**, and Phase **3.1** (Verify Checksums) complete (2026-07-19); Phase **3.2+** scanner migrations next; Phase 4/5 pending  
+**Document status:** Finalized requirements — Phase 1/2, Phase **3.0**, **3.1**, and **3.2** (Exposed Files) complete (2026-07-19); Phase **3.3+** scanner migrations next; Phase 4/5 pending  
 **Product scope:** Sassh WordPress Plugin (historical “CoreGuard” docs filenames), Sassh CLI, and future Sassh Desktop  
 **Primary purpose:** Define a shared, persistent system for recording scan findings, presenting items for human review, preserving dismissals, and reopening findings when their relevant state changes.
 
 **Scope of this document:** The Findings System — persistence, dismissals, effective status, object correlation, audit retention, scan-run attribution needed by future consumers, and the contract used by WordPress reports and future Desktop via CLI/JSON.
 
-**Implementation status:** Phase 1, 2, **3.0**, and **3.1** are implemented in the plugin: persistence; Uploads + MU-Plugins + Verify Checksums Findings producers; Multisite Network Admin shell; centralized auth on all Sassh admin AJAX; network-option settings (Multisite fresh start); related-findings detail UI (hidden when empty). Remaining Store-backed scanners migrate as Phase **3.2–3.7**; prototype store wind-down is Phase **3.8**.
+**Implementation status:** Phase 1, 2, **3.0**, **3.1**, and **3.2** are implemented in the plugin: persistence; Uploads + MU-Plugins + Verify Checksums + Exposed Files Findings producers; Multisite Network Admin shell; centralized auth on all Sassh admin AJAX; network-option settings (Multisite fresh start); related-findings detail UI (hidden when empty). Remaining Store-backed scanners migrate as Phase **3.3–3.7**; prototype store wind-down is Phase **3.8**.
 
 **Future consumers (architecture must accommodate; not Phase 1/2/3.x delivery):** Scan Site aggregate runs, scheduled scans, email notifications, Home tab summary, Desktop orchestration, and new scanners such as Shell Scan. Early Findings phases must not expand into building those products.
 
@@ -441,7 +441,9 @@ Each scanner integrated with the system shall document its object-key normalizat
 
 **Phase 2 (Uploads-only):** Related-findings UI not required. Correlation keys and object fingerprints are still stored.
 
-**Phase 3.0:** Detail-panel related UI ships (load on row expand; cap 10; hidden when empty). Uploads and MU-Plugins directory scopes are mutually exclusive, so they do not naturally populate related context; the UI is ready for later overlapping file scanners (e.g. Phase 3.2 Exposed files). Related list excludes the current finding.
+**Phase 3.0:** Detail-panel related UI ships (load on row expand; cap 10; hidden when empty). Uploads and MU-Plugins directory scopes are mutually exclusive, so they do not naturally populate related context.
+
+**Phase 3.2:** Exposed Files (`exposed-files`) is the first practical related-findings peer with Verify Checksums on shared ABSPATH-root file paths (same `object_type=file` + normalized `object_key`). Uploads does not share paths with Exposed Files on standard layouts. Related list excludes the current finding; dismissals never inherit across scanners.
 
 **CLI/JSON (Phase 4):** Include related context on `findings get`. Do not include related findings in list responses by default.
 
@@ -784,7 +786,7 @@ After the Uploads integration is proven, remaining existing scans migrate onto t
 
 1. **3.0 (done):** MU-Plugins (and Network Admin / related UI).
 2. **3.1 (done):** Core checksum findings (`verify-checksums`).
-3. **3.2:** Exposed sensitive-file findings (likely first natural related-findings peer with Uploads / checksums).
+3. **3.2:** Exposed sensitive-file findings (practical related-findings peer with Verify Checksums on ABSPATH-root files).
 4. **3.3:** Database options findings (`object_type` registry: `option`).
 5. **3.4:** WP-Cron findings (`cron_event`).
 6. **3.5:** Vulnerability / unrecognized-component findings.
@@ -1145,14 +1147,24 @@ At minimum, automated tests shall cover:
 - Missing-file fingerprint `sha256:missing`; reappearance after `not_detected` invalidates prior dismissal (Needs Review).
 - AJAX/JS report parity with Uploads/MU; Clear History removed for this tab; fresh start (no prototype `core:` import).
 
-### Phase 3.2–3.8: Remaining scanner migrations and closeout — **pending**
+### Phase 3.2: Exposed Files Findings — **complete (2026-07-19)**
 
-Narrowly scoped plans, one phase at a time (same pattern as 3.0/3.1). Registry expansion travels with the first consumer. See §11.
+- Migrate **Exposed Files** onto Findings: `scanner_id=exposed-files`; kebab-case `rule_id`s from pattern ids (e.g. `wp-config-backup`, `env-file`, `phpinfo-script`, `git-dir`).
+- `object_type=file`; ABSPATH-relative `object_key`; `blog_id=null`; scope `exposed-files:wordpress-root`.
+- Canonical risk mapping (no legacy `alert`): critical / warning / suspicious / info per pattern; §3.5 classification defaults (including `.git` → Info / Review Not Needed — existence only, not public accessibility).
+- File fingerprints = whole-file SHA-256; directories use sentinel `sha256:directory` (presence-only).
+- Incomplete coverage (`failed` / `partial`, including `FILE_LIMIT` overflow or fingerprint failure) never reconciles absence; report surfaces incomplete coverage + `confirmed_this_run`.
+- AJAX/JS report parity (`choctaw_wp_security_exposed_files_scan` retained); Sassh dismiss/undismiss; related-on-expand; Clear History removed; fresh start (no prototype `exposed:` import).
+- Related Findings QA peer: Verify Checksums on shared ABSPATH-root files (no dismissal inheritance). Uploads path overlap not required.
+
+### Phase 3.3–3.8: Remaining scanner migrations and closeout — **pending**
+
+Narrowly scoped plans, one phase at a time (same pattern as 3.0–3.2). Registry expansion travels with the first consumer. See §11.
 
 | Phase | Scope | Status |
 | --- | --- | --- |
 | **3.1** | Core checksums (`verify-checksums`) | complete (2026-07-19) |
-| **3.2** | Exposed sensitive files (`exposed-files`) | pending |
+| **3.2** | Exposed sensitive files (`exposed-files`) | complete (2026-07-19) |
 | **3.3** | Database options (`database-scan`); register `option` | pending |
 | **3.4** | WP-Cron (`scheduled-tasks`); register `cron_event` | pending |
 | **3.5** | Vulnerabilities / unrecognized components | pending |
@@ -1181,7 +1193,7 @@ Prefer migrating at least **3.1** and **3.2** before freezing the public CLI sur
 
 - Scan Site aggregate orchestration, scheduled scans, email notifications, Home summary (§12).
 
-**Next deliverable:** Phase **3.2** implementation plan (Exposed sensitive files → Findings), then implementation after approval.
+**Next deliverable:** Phase **3.3** implementation plan (Database options → Findings), then implementation after approval.
 
 ---
 

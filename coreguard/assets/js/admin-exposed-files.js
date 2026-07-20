@@ -18,10 +18,11 @@
 	};
 
 	var riskOrder = {
-		critical: 4,
-		alert: 3,
-		warning: 2,
-		info: 1
+		critical: 5,
+		warning: 4,
+		suspicious: 3,
+		info: 2,
+		safe: 1
 	};
 
 	function ready(callback) {
@@ -159,11 +160,15 @@
 	function riskLabel(risk) {
 		var map = {
 			critical: strings.riskCritical || 'Critical',
-			alert: strings.riskAlert || 'Alert',
 			warning: strings.riskWarning || 'Warning',
+			suspicious: strings.riskSuspicious || 'Suspicious',
 			info: strings.riskInfo || 'Info'
 		};
 		return map[risk] || risk || 'Info';
+	}
+
+	function findingRowKey(finding) {
+		return text(finding.finding_id || finding.id || finding.fingerprint || '');
 	}
 
 	function collectFindings(result) {
@@ -287,8 +292,8 @@
 		riskLabelEl.appendChild(createElement('span', 'screen-reader-text', strings.risk || 'Risk'));
 		riskSelect.appendChild(new Option(strings.allRisks || 'All risks', ''));
 		riskSelect.appendChild(new Option(strings.riskCritical || 'Critical', 'critical'));
-		riskSelect.appendChild(new Option(strings.riskAlert || 'Alert', 'alert'));
 		riskSelect.appendChild(new Option(strings.riskWarning || 'Warning', 'warning'));
+		riskSelect.appendChild(new Option(strings.riskSuspicious || 'Suspicious', 'suspicious'));
 		riskSelect.appendChild(new Option(strings.riskInfo || 'Info', 'info'));
 		riskSelect.value = uiState.risk;
 		riskSelect.addEventListener('change', function () {
@@ -398,6 +403,10 @@
 			});
 		}
 
+		if (window.CwsReportRelatedFindings) {
+			window.CwsReportRelatedFindings.appendRelatedFindings(right, finding);
+		}
+
 		grid.appendChild(left);
 		grid.appendChild(right);
 		return grid;
@@ -410,13 +419,17 @@
 		var categoryTd = document.createElement('td');
 		var pathTd = document.createElement('td');
 		var actionsTd = document.createElement('td');
+		var rowKey = findingRowKey(finding);
 		var pathCode = createElement('code', 'cws-file-path', finding.filename || finding.path || '');
 		var eye = createElement('button', 'cws-report-eye');
 		var eyeIcon = createElement('span', 'dashicons dashicons-visibility');
-		var isExpanded = uiState.expandedId === finding.id;
+		var isExpanded = uiState.expandedId === rowKey;
 
 		if (isExpanded) {
 			row.className = 'is-expanded';
+		}
+		if (finding.confirmed_this_run === false) {
+			row.className = (row.className ? row.className + ' ' : '') + 'cws-finding-not-confirmed';
 		}
 
 		riskTd.appendChild(renderRiskCell(finding));
@@ -428,6 +441,9 @@
 		categoryTd.appendChild(createElement('span', 'cws-report-pill', finding.category_label || finding.category || ''));
 		row.appendChild(categoryTd);
 		pathTd.appendChild(pathCode);
+		if (finding.confirmed_this_run === false) {
+			pathTd.appendChild(createElement('p', 'description', strings.notConfirmedThisRun || 'Not reconfirmed by this incomplete scan'));
+		}
 		row.appendChild(pathTd);
 
 		eye.type = 'button';
@@ -436,7 +452,7 @@
 		eyeIcon.setAttribute('aria-hidden', 'true');
 		eye.appendChild(eyeIcon);
 		eye.addEventListener('click', function () {
-			uiState.expandedId = isExpanded ? '' : finding.id;
+			uiState.expandedId = isExpanded ? '' : rowKey;
 			renderResult(resultState);
 		});
 		actionsTd.appendChild(eye);
@@ -493,28 +509,46 @@
 	function renderSummary(resultsEl, result) {
 		var summary = result.summary || {};
 		var critical = parseInt(summary.critical, 10) || 0;
-		var alert = parseInt(summary.alert, 10) || 0;
 		var warning = parseInt(summary.warning, 10) || 0;
+		var suspicious = parseInt(summary.suspicious, 10) || 0;
 		var info = parseInt(summary.info, 10) || 0;
 		var total = parseInt(summary.total, 10) || 0;
-		var className = critical > 0 ? 'cws-core-checksum-results is-error' : ((alert + warning) > 0 ? 'cws-core-checksum-results is-warning' : 'cws-core-checksum-results is-success');
+		var incomplete = !!result.scan_incomplete || result.coverage_complete === false || (result.completion_status && result.completion_status !== 'success');
+		var className = incomplete
+			? 'cws-core-checksum-results is-warning'
+			: (critical > 0
+				? 'cws-core-checksum-results is-error'
+				: ((warning + suspicious) > 0 ? 'cws-core-checksum-results is-warning' : 'cws-core-checksum-results is-success'));
 		var panel = createElement('div', className);
 		var message;
 
-		if (total === 0) {
+		if (incomplete) {
+			message = strings.scanIncomplete || 'Scan coverage was incomplete. Previously detected findings were not cleared.';
+		} else if (total === 0) {
 			message = strings.scanCompleteClean || 'Scan complete. No exposed sensitive files were found in the WordPress root.';
 		} else {
 			message = format(
-				strings.scanCompleteIssues || 'Scan complete. %1$s critical, %2$s alert, %3$s warning, and %4$s informational finding(s) among %5$s exposed file(s).',
+				strings.scanCompleteIssues || 'Scan complete. %1$s critical, %2$s warning, %3$s suspicious, and %4$s informational finding(s) among %5$s exposed file(s).',
 				numberFormat(critical),
-				numberFormat(alert),
 				numberFormat(warning),
+				numberFormat(suspicious),
 				numberFormat(info),
 				numberFormat(total)
 			);
 		}
 
 		panel.appendChild(createElement('p', 'cws-core-checksum-summary', message));
+
+		if (incomplete && result.prior_findings_only) {
+			panel.appendChild(createElement('p', 'description', strings.priorFindingsNote || 'Active findings below are from earlier successful scans and were not reconfirmed by this run.'));
+		}
+
+		if (Array.isArray(result.errors) && result.errors.length) {
+			result.errors.forEach(function (errorMessage) {
+				panel.appendChild(createElement('p', 'description', errorMessage));
+			});
+		}
+
 		resultsEl.appendChild(panel);
 	}
 

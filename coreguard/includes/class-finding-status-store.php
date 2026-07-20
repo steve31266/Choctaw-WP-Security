@@ -25,7 +25,6 @@ class Choctaw_Wp_Security_Finding_Status_Store {
 		'database-scan',
 		'wp-posts',
 		'scheduled-tasks',
-		'exposed-files',
 		'directory-browsing',
 		'unrecognized-components',
 	);

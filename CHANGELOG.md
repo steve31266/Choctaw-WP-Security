@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.3.2] - 2026-07-20
+
+### Added
+
+- **Findings Phase 3.2:** Exposed Files migrated to Sassh Findings (`exposed-files`; kebab-case pattern `rule_id`s; canonical Critical / Warning / Suspicious / Info mapping). Sassh dismiss/undismiss and related-on-expand; Clear History removed on that tab. Directory findings use `sha256:directory`; practical Related Findings peer with Verify Checksums on shared ABSPATH-root files.
+
+### Changed
+
+- Exposed Files incomplete/failed runs (including `FILE_LIMIT` overflow or fingerprint failure) surface coverage gaps and do not reconcile absence. Legacy `alert` risk values are no longer emitted; composer/package findings are Suspicious; `.git` remains Info / Review Not Needed.
+
+### Fixed
+
+- Sassh Findings-backed report caches now rehydrate live dismiss/undismiss status on load, and dismiss/undismiss patches cached reports immediately — so Verify Checksums (and other Findings tabs) no longer keep showing Needs Review after a dismissal that Related Findings already reflects.
+
 ## [1.9.3.1] - 2026-07-19
 
 ### Added

@@ -1395,7 +1395,6 @@ class Choctaw_Wp_Security_Settings {
 					<?php wp_nonce_field( 'choctaw_wp_security_exposed_files_scan_form' ); ?>
 					<input type="hidden" name="cws_tab" value="exposed-files" />
 					<?php submit_button( __( 'Scan Now', 'choctaw-wp-security' ), 'secondary', 'choctaw_wp_security_exposed_files_scan', false ); ?>
-					<?php $this->render_clear_history_button( 'exposed-files' ); ?>
 				</form>
 
 				<div id="cws-exposed-files-js-notices" aria-live="polite"></div>
@@ -1426,17 +1425,22 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	private function render_exposed_files_results( $result ) {
-		$findings = isset( $result['findings'] ) && is_array( $result['findings'] ) ? $result['findings'] : array();
-		$summary  = isset( $result['summary'] ) && is_array( $result['summary'] ) ? $result['summary'] : array();
-		$critical = isset( $summary['critical'] ) ? (int) $summary['critical'] : 0;
-		$alert    = isset( $summary['alert'] ) ? (int) $summary['alert'] : 0;
-		$warning  = isset( $summary['warning'] ) ? (int) $summary['warning'] : 0;
-		$info     = isset( $summary['info'] ) ? (int) $summary['info'] : 0;
-		$total    = isset( $summary['total'] ) ? (int) $summary['total'] : count( $findings );
+		$findings    = isset( $result['findings'] ) && is_array( $result['findings'] ) ? $result['findings'] : array();
+		$summary     = isset( $result['summary'] ) && is_array( $result['summary'] ) ? $result['summary'] : array();
+		$critical    = isset( $summary['critical'] ) ? (int) $summary['critical'] : 0;
+		$warning     = isset( $summary['warning'] ) ? (int) $summary['warning'] : 0;
+		$suspicious  = isset( $summary['suspicious'] ) ? (int) $summary['suspicious'] : 0;
+		$info        = isset( $summary['info'] ) ? (int) $summary['info'] : 0;
+		$total       = isset( $summary['total'] ) ? (int) $summary['total'] : count( $findings );
+		$incomplete  = ! empty( $result['scan_incomplete'] )
+			|| ( isset( $result['coverage_complete'] ) && ! $result['coverage_complete'] )
+			|| ( isset( $result['completion_status'] ) && 'success' !== (string) $result['completion_status'] );
 
-		if ( $critical > 0 ) {
+		if ( $incomplete ) {
+			$panel = 'cws-core-checksum-results is-warning';
+		} elseif ( $critical > 0 ) {
 			$panel = 'cws-core-checksum-results is-error';
-		} elseif ( ( $alert + $warning ) > 0 ) {
+		} elseif ( ( $warning + $suspicious ) > 0 ) {
 			$panel = 'cws-core-checksum-results is-warning';
 		} else {
 			$panel = 'cws-core-checksum-results is-success';
@@ -1445,16 +1449,18 @@ class Choctaw_Wp_Security_Settings {
 		<div class="<?php echo esc_attr( $panel ); ?>">
 			<p class="cws-core-checksum-summary">
 				<?php
-				if ( 0 === $total ) {
+				if ( $incomplete ) {
+					esc_html_e( 'Scan coverage was incomplete. Previously detected findings were not cleared.', 'choctaw-wp-security' );
+				} elseif ( 0 === $total ) {
 					esc_html_e( 'Scan complete. No exposed sensitive files were found in the WordPress root.', 'choctaw-wp-security' );
 				} else {
 					echo esc_html(
 						sprintf(
-							/* translators: 1: critical count, 2: alert count, 3: warning count, 4: info count, 5: total findings */
-							__( 'Scan complete. %1$s critical, %2$s alert, %3$s warning, and %4$s informational finding(s) among %5$s exposed file(s).', 'choctaw-wp-security' ),
+							/* translators: 1: critical count, 2: warning count, 3: suspicious count, 4: info count, 5: total findings */
+							__( 'Scan complete. %1$s critical, %2$s warning, %3$s suspicious, and %4$s informational finding(s) among %5$s exposed file(s).', 'choctaw-wp-security' ),
 							number_format_i18n( $critical ),
-							number_format_i18n( $alert ),
 							number_format_i18n( $warning ),
+							number_format_i18n( $suspicious ),
 							number_format_i18n( $info ),
 							number_format_i18n( $total )
 						)
@@ -2801,7 +2807,7 @@ class Choctaw_Wp_Security_Settings {
 					'relatedSameFp'     => __( 'Same file contents fingerprint', 'choctaw-wp-security' ),
 					'relatedDiffFp'     => __( 'Different file contents fingerprint', 'choctaw-wp-security' ),
 					'relatedUnknownFp'  => __( 'Object fingerprint comparison unavailable', 'choctaw-wp-security' ),
-					'relatedDismissedHint' => __( 'This file was previously reported by another scanner and dismissed while its contents had the same fingerprint.', 'choctaw-wp-security' ),
+					'relatedDismissedHint' => __( 'This file was previously reported by %s and dismissed while its contents had the same fingerprint.', 'choctaw-wp-security' ),
 					'relatedLoadError'  => __( 'Related findings could not be loaded.', 'choctaw-wp-security' ),
 					'notDetected'       => __( 'No Longer Detected', 'choctaw-wp-security' ),
 				),
@@ -3163,7 +3169,7 @@ class Choctaw_Wp_Security_Settings {
 			wp_enqueue_script(
 				'choctaw-wp-security-exposed-files',
 				CHOCTAW_WP_SECURITY_URL . 'assets/js/admin-exposed-files.js',
-				array( 'choctaw-wp-security-admin-help', 'choctaw-wp-security-report-status', 'choctaw-wp-security-report-pagination' ),
+				array( 'choctaw-wp-security-admin-help', 'choctaw-wp-security-report-status', 'choctaw-wp-security-report-related-findings', 'choctaw-wp-security-report-pagination' ),
 				(string) filemtime( CHOCTAW_WP_SECURITY_PATH . 'assets/js/admin-exposed-files.js' ),
 				true
 			);
@@ -3193,8 +3199,8 @@ class Choctaw_Wp_Security_Settings {
 						'allRisks'              => __( 'All risks', 'choctaw-wp-security' ),
 						'allCategories'         => __( 'All categories', 'choctaw-wp-security' ),
 						'riskCritical'          => __( 'Critical', 'choctaw-wp-security' ),
-						'riskAlert'             => __( 'Alert', 'choctaw-wp-security' ),
 						'riskWarning'           => __( 'Warning', 'choctaw-wp-security' ),
+						'riskSuspicious'        => __( 'Suspicious', 'choctaw-wp-security' ),
 						'riskInfo'              => __( 'Info', 'choctaw-wp-security' ),
 						'filename'              => __( 'Filename', 'choctaw-wp-security' ),
 						'actions'               => __( 'Action', 'choctaw-wp-security' ),
@@ -3213,7 +3219,10 @@ class Choctaw_Wp_Security_Settings {
 						'search'                => __( 'Search', 'choctaw-wp-security' ),
 						'searchPlaceholder'     => __( 'Search files…', 'choctaw-wp-security' ),
 						'refresh'               => __( 'Refresh', 'choctaw-wp-security' ),
-						'scanCompleteIssues'    => __( 'Scan complete. %1$s critical, %2$s alert, %3$s warning, and %4$s informational finding(s) among %5$s exposed file(s).', 'choctaw-wp-security' ),
+						'scanIncomplete'        => __( 'Scan coverage was incomplete. Previously detected findings were not cleared.', 'choctaw-wp-security' ),
+						'priorFindingsNote'     => __( 'Active findings below are from earlier successful scans and were not reconfirmed by this run.', 'choctaw-wp-security' ),
+						'notConfirmedThisRun'   => __( 'Not reconfirmed by this incomplete scan', 'choctaw-wp-security' ),
+						'scanCompleteIssues'    => __( 'Scan complete. %1$s critical, %2$s warning, %3$s suspicious, and %4$s informational finding(s) among %5$s exposed file(s).', 'choctaw-wp-security' ),
 						'scanCompleteClean'     => __( 'Scan complete. No exposed sensitive files were found in the WordPress root.', 'choctaw-wp-security' ),
 					),
 				)
@@ -3697,11 +3706,127 @@ class Choctaw_Wp_Security_Settings {
 
 		if ( '' !== $scan_type && ! $this->report_uses_sassh_findings( $scan_type, $result ) ) {
 			$result = Choctaw_Wp_Security_Finding_Status_Store::apply_to_result( $scan_type, $result );
+		} elseif ( $this->report_uses_sassh_findings( $scan_type, $result ) ) {
+			// Cached reports freeze status at scan time; dismissals live in Findings — rehydrate.
+			$result = $this->rehydrate_sassh_report_statuses( $result );
 		}
 
 		set_transient( $transient_key, $result, $this->get_report_result_ttl() );
 
 		return $result;
+	}
+
+	/**
+	 * Refresh effective status fields on a Sassh Findings-backed report from the live service.
+	 *
+	 * @param array<string, mixed> $result Report payload.
+	 * @return array<string, mixed>
+	 */
+	private function rehydrate_sassh_report_statuses( array $result ) {
+		if ( empty( $result['findings'] ) || ! is_array( $result['findings'] ) ) {
+			return $result;
+		}
+
+		$service = new Sassh_Findings_Service();
+
+		foreach ( $result['findings'] as $index => $finding ) {
+			if ( ! is_array( $finding ) ) {
+				continue;
+			}
+
+			$finding_id = isset( $finding['finding_id'] ) ? (string) $finding['finding_id'] : '';
+
+			if ( '' === $finding_id ) {
+				continue;
+			}
+
+			$live = $service->get_enriched_finding( $finding_id );
+
+			if ( ! is_array( $live ) ) {
+				continue;
+			}
+
+			$result['findings'][ $index ]['status']              = $live['effective_status'];
+			$result['findings'][ $index ]['effective_status']    = $live['effective_status'];
+			$result['findings'][ $index ]['status_label']        = $live['status_label'];
+			$result['findings'][ $index ]['content_fingerprint'] = $live['content_fingerprint'];
+			$result['findings'][ $index ]['fingerprint']         = $live['content_fingerprint'];
+			$result['findings'][ $index ]['object_fingerprint']  = $live['object_fingerprint'];
+			$result['findings'][ $index ]['risk']                = $live['risk_level'];
+			$result['findings'][ $index ]['risk_level']          = $live['risk_level'];
+			$result['findings'][ $index ]['risk_label']          = $live['risk_label'];
+			$result['findings'][ $index ]['detection_state']     = $live['detection_state'];
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Patch Sassh Findings status into any cached reports that contain the finding.
+	 *
+	 * @param string $finding_id          Finding id.
+	 * @param string $status              Effective status.
+	 * @param string $status_label        Status label.
+	 * @param string $content_fingerprint Reviewed content fingerprint.
+	 * @return void
+	 */
+	private function sync_sassh_finding_status_into_cached_reports( $finding_id, $status, $status_label, $content_fingerprint = '' ) {
+		$finding_id = (string) $finding_id;
+		$status     = (string) $status;
+
+		if ( '' === $finding_id ) {
+			return;
+		}
+
+		$scan_types = array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files' );
+
+		foreach ( $scan_types as $scan_type ) {
+			$storage = $this->get_report_storage_for_scan_type( $scan_type );
+
+			if ( ! is_array( $storage ) ) {
+				continue;
+			}
+
+			$result = get_transient( $storage['transient'] );
+
+			if ( false === $result ) {
+				$result = get_user_meta( get_current_user_id(), $storage['user_meta'], true );
+			}
+
+			if ( ! is_array( $result ) || empty( $result['findings'] ) || ! is_array( $result['findings'] ) ) {
+				continue;
+			}
+
+			$changed = false;
+
+			foreach ( $result['findings'] as $index => $finding ) {
+				if ( ! is_array( $finding ) ) {
+					continue;
+				}
+
+				$row_id = isset( $finding['finding_id'] ) ? (string) $finding['finding_id'] : '';
+
+				if ( $row_id !== $finding_id ) {
+					continue;
+				}
+
+				$result['findings'][ $index ]['status']           = $status;
+				$result['findings'][ $index ]['effective_status'] = $status;
+				$result['findings'][ $index ]['status_label']     = (string) $status_label;
+
+				if ( '' !== $content_fingerprint ) {
+					$result['findings'][ $index ]['fingerprint']         = $content_fingerprint;
+					$result['findings'][ $index ]['content_fingerprint'] = $content_fingerprint;
+				}
+
+				$changed = true;
+			}
+
+			if ( $changed ) {
+				set_transient( $storage['transient'], $result, $this->get_report_result_ttl() );
+				update_user_meta( get_current_user_id(), $storage['user_meta'], $result );
+			}
+		}
 	}
 
 	/**
@@ -3722,6 +3847,7 @@ class Choctaw_Wp_Security_Settings {
 				'uploads-folder',
 				'mu-plugins',
 				'verify-checksums',
+				'exposed-files',
 			),
 			true
 		);
@@ -3860,7 +3986,7 @@ class Choctaw_Wp_Security_Settings {
 
 		$scan_type = isset( $_POST['scan_type'] ) ? sanitize_key( wp_unslash( $_POST['scan_type'] ) ) : '';
 
-		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins', 'verify-checksums' ), true ) ) {
+		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files' ), true ) ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'Clear History is not available for Sassh Findings-backed scans.', 'choctaw-wp-security' ),
@@ -3910,7 +4036,7 @@ class Choctaw_Wp_Security_Settings {
 		$scan_type   = isset( $_POST['scan_type'] ) ? sanitize_text_field( wp_unslash( $_POST['scan_type'] ) ) : '';
 		$fingerprint = isset( $_POST['fingerprint'] ) ? sanitize_text_field( wp_unslash( $_POST['fingerprint'] ) ) : '';
 
-		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins' ), true ) ) {
+		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files' ), true ) ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'These findings must be dismissed through Sassh Findings.', 'choctaw-wp-security' ),
@@ -4057,7 +4183,10 @@ class Choctaw_Wp_Security_Settings {
 		check_ajax_referer( 'sassh_finding_status', 'nonce' );
 
 		$finding_id  = isset( $_POST['finding_id'] ) ? sanitize_text_field( wp_unslash( $_POST['finding_id'] ) ) : '';
-		$fingerprint = isset( $_POST['fingerprint'] ) ? sanitize_text_field( wp_unslash( $_POST['fingerprint'] ) ) : '';
+		// Do not use sanitize_text_field() — it can alter fingerprint material.
+		$fingerprint = isset( $_POST['fingerprint'] )
+			? Sassh_Findings_Service::normalize_fingerprint( wp_unslash( $_POST['fingerprint'] ) )
+			: '';
 
 		if ( '' === $finding_id ) {
 			wp_send_json_error(
@@ -4082,15 +4211,19 @@ class Choctaw_Wp_Security_Settings {
 			);
 		}
 
-		$status = isset( $result['effective_status'] ) ? (string) $result['effective_status'] : 'needs_review';
+		$status        = isset( $result['effective_status'] ) ? (string) $result['effective_status'] : 'needs_review';
+		$status_label  = Sassh_Findings_Service::status_label( $status );
+		$content_fp    = isset( $result['content_fingerprint'] ) ? (string) $result['content_fingerprint'] : $fingerprint;
+
+		$this->sync_sassh_finding_status_into_cached_reports( $finding_id, $status, $status_label, $content_fp );
 
 		wp_send_json_success(
 			array(
 				'finding_id'          => $finding_id,
-				'fingerprint'         => isset( $result['content_fingerprint'] ) ? (string) $result['content_fingerprint'] : $fingerprint,
-				'content_fingerprint' => isset( $result['content_fingerprint'] ) ? (string) $result['content_fingerprint'] : $fingerprint,
+				'fingerprint'         => $content_fp,
+				'content_fingerprint' => $content_fp,
 				'status'              => $status,
-				'status_label'        => Sassh_Findings_Service::status_label( $status ),
+				'status_label'        => $status_label,
 				'effective_status'    => $status,
 			)
 		);

@@ -55,6 +55,12 @@
 		if (id === 'mu-plugins') {
 			return 'MU-Plugins';
 		}
+		if (id === 'verify-checksums') {
+			return 'Verify Checksums';
+		}
+		if (id === 'exposed-files') {
+			return 'Exposed Files';
+		}
 		return id || '—';
 	}
 
@@ -102,7 +108,11 @@
 			li.appendChild(createElement('span', 'cws-related-findings-fp', comparisonLabel(item.object_fingerprint_comparison)));
 
 			if (item.effective_status === 'dismissed' && item.object_fingerprint_comparison === 'same') {
-				li.appendChild(createElement('p', 'cws-related-findings-hint', strings.relatedDismissedHint || ''));
+				var hintTemplate = strings.relatedDismissedHint || 'This file was previously reported by %s and dismissed while its contents had the same fingerprint.';
+				var hint = hintTemplate.indexOf('%s') !== -1
+					? hintTemplate.replace('%s', scannerLabel(item.scanner_id))
+					: hintTemplate;
+				li.appendChild(createElement('p', 'cws-related-findings-hint', hint));
 			}
 
 			list.appendChild(li);

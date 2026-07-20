@@ -65,3 +65,4 @@ require_once $root . '/coreguard/includes/class-sassh-capabilities.php';
 require_once $root . '/coreguard/includes/class-sassh-object-path-normalizer.php';
 require_once $root . '/coreguard/includes/class-sassh-object-type-registry.php';
 require_once $root . '/coreguard/includes/class-sassh-findings-service.php';
+require_once $root . '/coreguard/includes/class-exposed-files-patterns.php';

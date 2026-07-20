@@ -20,7 +20,9 @@ class Sassh_Findings_Service {
 	const RULE_CORE_FILE_MODIFIED    = 'core-file-modified';
 	const RULE_CORE_FILE_MISSING     = 'core-file-missing';
 	const RULE_CORE_FILE_UNKNOWN     = 'core-file-unknown';
+	const SCANNER_EXPOSED_FILES      = 'exposed-files';
 	const FINGERPRINT_MISSING        = 'sha256:missing';
+	const FINGERPRINT_DIRECTORY      = 'sha256:directory';
 
 	/**
 	 * Risk severity order (low to high).
@@ -187,7 +189,10 @@ class Sassh_Findings_Service {
 			return new WP_Error( 'sassh_not_dismissible', __( 'This finding cannot be dismissed.', 'choctaw-wp-security' ) );
 		}
 
-		if ( (string) $reviewed_fingerprint !== (string) $finding['content_fingerprint'] ) {
+		$reviewed_fingerprint = self::normalize_fingerprint( $reviewed_fingerprint );
+		$current_fingerprint  = self::normalize_fingerprint( $finding['content_fingerprint'] );
+
+		if ( '' === $reviewed_fingerprint || $reviewed_fingerprint !== $current_fingerprint ) {
 			return new WP_Error( 'sassh_stale_fingerprint', __( 'This finding changed and must be reviewed again.', 'choctaw-wp-security' ) );
 		}
 
@@ -204,7 +209,7 @@ class Sassh_Findings_Service {
 			$table,
 			array(
 				'finding_id'           => $finding_id,
-				'reviewed_fingerprint' => (string) $reviewed_fingerprint,
+				'reviewed_fingerprint' => $reviewed_fingerprint,
 				'dismissed_at'         => $now,
 				'actor_type'           => isset( $actor['actor_type'] ) ? (string) $actor['actor_type'] : 'wordpress_user',
 				'actor_identifier'     => isset( $actor['actor_identifier'] ) ? (string) $actor['actor_identifier'] : (string) get_current_user_id(),
@@ -289,6 +294,16 @@ class Sassh_Findings_Service {
 		);
 
 		return is_array( $row ) ? $row : null;
+	}
+
+	/**
+	 * Get one finding with effective status / labels applied.
+	 *
+	 * @param string $finding_id Finding id.
+	 * @return array<string, mixed>|null
+	 */
+	public function get_enriched_finding( $finding_id ) {
+		return $this->enrich_finding_row( $this->get_finding( $finding_id ) );
 	}
 
 	/**
@@ -451,6 +466,31 @@ class Sassh_Findings_Service {
 	 */
 	public static function verify_checksums_scope_key() {
 		return 'verify-checksums:wordpress-core';
+	}
+
+	/**
+	 * Stable Exposed Files scope (non-recursive WordPress document root).
+	 *
+	 * @return string
+	 */
+	public static function exposed_files_scope_key() {
+		return 'exposed-files:wordpress-root';
+	}
+
+	/**
+	 * Map an Exposed Files pattern id to a kebab-case Sassh rule_id.
+	 *
+	 * @param string $pattern Pattern id (snake_case).
+	 * @return string
+	 */
+	public static function exposed_files_rule_id( $pattern ) {
+		$pattern = (string) $pattern;
+
+		if ( '' === $pattern ) {
+			return '';
+		}
+
+		return str_replace( '_', '-', $pattern );
 	}
 
 	/**
@@ -724,7 +764,7 @@ class Sassh_Findings_Service {
 			}
 		}
 
-		if ( $prev_fp !== $content_fp ) {
+		if ( self::normalize_fingerprint( $prev_fp ) !== self::normalize_fingerprint( $content_fp ) ) {
 			$this->record_event( $finding_id, 'fingerprint_changed', $prev_fp, $content_fp, $execution_id, $execution['scan_run_id'], null );
 			$this->invalidate_dismissal( $finding_id, 'fingerprint_changed', $execution_id, $execution['scan_run_id'] );
 		}
@@ -946,7 +986,11 @@ class Sassh_Findings_Service {
 		if ( 'needs_review' === $classification ) {
 			$dismissal = $this->get_valid_dismissal( (string) $row['finding_id'] );
 
-			if ( $dismissal && (string) $dismissal['reviewed_fingerprint'] === (string) $row['content_fingerprint'] ) {
+			if (
+				$dismissal
+				&& self::normalize_fingerprint( $dismissal['reviewed_fingerprint'] )
+					=== self::normalize_fingerprint( $row['content_fingerprint'] )
+			) {
 				$effective = 'dismissed';
 				$row['dismissal'] = array(
 					'dismissed_at'         => $dismissal['dismissed_at'],
@@ -991,5 +1035,15 @@ class Sassh_Findings_Service {
 		);
 
 		return isset( $map[ $risk ] ) ? $map[ $risk ] : $risk;
+	}
+
+	/**
+	 * Normalize a fingerprint string for equality checks.
+	 *
+	 * @param mixed $fingerprint Raw fingerprint.
+	 * @return string
+	 */
+	public static function normalize_fingerprint( $fingerprint ) {
+		return trim( (string) $fingerprint );
 	}
 }

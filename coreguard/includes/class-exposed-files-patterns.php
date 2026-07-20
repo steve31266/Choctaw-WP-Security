@@ -42,11 +42,22 @@ class Choctaw_Wp_Security_Exposed_Files_Patterns {
 	 */
 	public static function get_risk_labels() {
 		return array(
-			'critical' => __( 'Critical', 'choctaw-wp-security' ),
-			'alert'    => __( 'Alert', 'choctaw-wp-security' ),
-			'warning'  => __( 'Warning', 'choctaw-wp-security' ),
-			'info'     => __( 'Info', 'choctaw-wp-security' ),
+			'critical'   => __( 'Critical', 'choctaw-wp-security' ),
+			'warning'    => __( 'Warning', 'choctaw-wp-security' ),
+			'suspicious' => __( 'Suspicious', 'choctaw-wp-security' ),
+			'info'       => __( 'Info', 'choctaw-wp-security' ),
+			'safe'       => __( 'Safe', 'choctaw-wp-security' ),
 		);
+	}
+
+	/**
+	 * Map a legacy pattern id to the Sassh kebab-case rule_id.
+	 *
+	 * @param string $pattern Pattern id.
+	 * @return string
+	 */
+	public static function rule_id_for_pattern( $pattern ) {
+		return Sassh_Findings_Service::exposed_files_rule_id( $pattern );
 	}
 
 	/**
@@ -153,7 +164,7 @@ class Choctaw_Wp_Security_Exposed_Files_Patterns {
 			),
 			'phpinfo_script'   => array(
 				'category' => self::CATEGORY_SERVER_DIAGNOSTIC,
-				'risk'     => 'alert',
+				'risk'     => 'warning',
 				'why'      => __( 'A PHP script appears to expose PHP configuration information. Attackers use this information to fingerprint server versions, extensions, filesystem paths, and enabled features.', 'choctaw-wp-security' ),
 				'how'      => __( 'If this file is only used for troubleshooting, delete it after use. Diagnostic scripts should not remain on production websites.', 'choctaw-wp-security' ),
 			),
@@ -165,37 +176,37 @@ class Choctaw_Wp_Security_Exposed_Files_Patterns {
 			),
 			'error_log'        => array(
 				'category' => self::CATEGORY_LOG,
-				'risk'     => 'alert',
+				'risk'     => 'warning',
 				'why'      => __( 'Application logs may expose filesystem paths, SQL errors, stack traces, plugin names, and other information useful to attackers.', 'choctaw-wp-security' ),
 				'how'      => __( 'Review the log for unexpected activity. Remove or relocate it if it is publicly accessible. Empty logs may simply be monitored.', 'choctaw-wp-security' ),
 			),
 			'debug_log'        => array(
 				'category' => self::CATEGORY_LOG,
-				'risk'     => 'alert',
+				'risk'     => 'warning',
 				'why'      => __( 'WordPress debug logs frequently contain PHP notices, warnings, plugin paths, and configuration details.', 'choctaw-wp-security' ),
 				'how'      => __( 'Disable debugging on production sites when no longer needed. Remove or relocate exposed logs.', 'choctaw-wp-security' ),
 			),
 			'composer_json'    => array(
 				'category' => self::CATEGORY_DEV_METADATA,
-				'risk'     => 'alert',
+				'risk'     => 'suspicious',
 				'why'      => __( 'This file reveals project dependencies and package information that may help attackers identify vulnerable software.', 'choctaw-wp-security' ),
 				'how'      => __( 'If Composer is not used on the production server, remove the file. Otherwise, determine whether it needs to remain publicly accessible.', 'choctaw-wp-security' ),
 			),
 			'composer_lock'    => array(
 				'category' => self::CATEGORY_DEV_METADATA,
-				'risk'     => 'alert',
+				'risk'     => 'suspicious',
 				'why'      => __( 'This file contains exact dependency versions, making vulnerability fingerprinting much easier.', 'choctaw-wp-security' ),
 				'how'      => __( 'Review whether the file is required in production. Remove it if unnecessary.', 'choctaw-wp-security' ),
 			),
 			'package_json'     => array(
 				'category' => self::CATEGORY_DEV_METADATA,
-				'risk'     => 'alert',
+				'risk'     => 'suspicious',
 				'why'      => __( 'These files disclose JavaScript dependencies and development tooling.', 'choctaw-wp-security' ),
 				'how'      => __( 'Review whether frontend build metadata is needed on the production server.', 'choctaw-wp-security' ),
 			),
 			'package_lock'     => array(
 				'category' => self::CATEGORY_DEV_METADATA,
-				'risk'     => 'alert',
+				'risk'     => 'suspicious',
 				'why'      => __( 'These files disclose JavaScript dependencies and development tooling.', 'choctaw-wp-security' ),
 				'how'      => __( 'Review whether frontend build metadata is needed on the production server.', 'choctaw-wp-security' ),
 			),

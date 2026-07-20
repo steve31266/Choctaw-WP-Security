@@ -3,7 +3,7 @@
  * Plugin Name:       Sassh Security
  * Plugin URI:        https://github.com/steve31266/Choctaw-WP-Security
  * Description:       Cleans core files from malware infections, makes it extremely difficult for hackers and malware to get in, scans your website for infected files and database records.
- * Version:           1.9.3.1
+ * Version:           1.9.3.2
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Sashtastic, LLC
@@ -16,7 +16,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'CHOCTAW_WP_SECURITY_VERSION', '1.9.3.1' );
+define( 'CHOCTAW_WP_SECURITY_VERSION', '1.9.3.2' );
 define( 'CHOCTAW_WP_SECURITY_FILE', __FILE__ );
 define( 'CHOCTAW_WP_SECURITY_PATH', plugin_dir_path( __FILE__ ) );
 define( 'CHOCTAW_WP_SECURITY_URL', plugin_dir_url( __FILE__ ) );

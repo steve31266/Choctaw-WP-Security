@@ -19,6 +19,27 @@ Newest entries first.
 
 ---
 
+## 2026-07-20 00:20 CDT
+
+**Summary:** Plugin version set to **1.9.3.2** for the Findings Phase 3.2 release (Exposed Files → Sassh Findings), including dismiss-status cache rehydration fix.
+
+**Documents:**
+- `coreguard/sassh.php` — updated — `Version` / `CHOCTAW_WP_SECURITY_VERSION` → `1.9.3.2`
+- `CHANGELOG.md` — updated — `[1.9.3.2] - 2026-07-20` release notes
+- `README.md` — updated — 1.9.3.2 changelog summary
+
+## 2026-07-19 23:50 CDT
+
+**Summary:** Locked and shipped Findings Phase **3.2** (Exposed Files → Sassh Findings): kebab-case pattern `rule_id`s, canonical risk mapping (no `alert`; composer/package → Suspicious; `.git` → Info / Review Not Needed), directory sentinel `sha256:directory`, scope-bounded absence, AJAX/JS Findings parity with related-on-expand vs Verify Checksums, Clear History removed, fresh start.
+
+**Documents:**
+- `docs/CoreGuard Findings System.md` — updated — §5.7 / §11 / §18 Phase 3.2 complete; next = 3.3
+- `.cursor/plans/CoreGuard-Findings-System.md` — aligned with formal PRD
+- `.cursor/plans/findings_phase_3_2_exposed_files.plan.md` — updated — approved + implemented
+- `.cursor/plans/findings_phase_3x_index.plan.md` — updated — 3.2 complete
+- `CHANGELOG.md` — updated — Unreleased Phase 3.2 notes
+- `docs/README.md` — updated — Findings status through Phase 3.2
+
 ## 2026-07-19 23:30 CDT
 
 **Summary:** Plugin version set to **1.9.3.1** for the Findings Phase 3.1 release (Verify Checksums → Sassh Findings), including post-QA Status/Path display fixes.

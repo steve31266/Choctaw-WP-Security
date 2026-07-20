@@ -57,6 +57,7 @@
 		return scanType === 'uploads-folder'
 			|| scanType === 'mu-plugins'
 			|| scanType === 'verify-checksums'
+			|| scanType === 'exposed-files'
 			|| (finding && finding.findings_backend === 'sassh');
 	}
 

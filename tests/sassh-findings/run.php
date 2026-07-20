@@ -121,6 +121,49 @@ sassh_assert(
 	! Sassh_Findings_Service::should_invalidate_dismissal_on_reappearance( 'core-file-modified', 'sha256:abc' )
 );
 
+sassh_assert(
+	'exposed-files scope key',
+	'exposed-files:wordpress-root' === Sassh_Findings_Service::exposed_files_scope_key()
+);
+sassh_assert(
+	'exposed-files scanner id',
+	'exposed-files' === Sassh_Findings_Service::SCANNER_EXPOSED_FILES
+);
+sassh_assert(
+	'directory fingerprint sentinel',
+	'sha256:directory' === Sassh_Findings_Service::FINGERPRINT_DIRECTORY
+);
+sassh_assert(
+	'exposed-files rule_id kebab',
+	'wp-config-backup' === Sassh_Findings_Service::exposed_files_rule_id( 'wp_config_backup' )
+);
+sassh_assert(
+	'exposed-files pattern helper rule_id',
+	'phpinfo-script' === Choctaw_Wp_Security_Exposed_Files_Patterns::rule_id_for_pattern( 'phpinfo_script' )
+);
+
+$composer_match = Choctaw_Wp_Security_Exposed_Files_Patterns::match_entry( 'composer.json', false, 12, '' );
+sassh_assert( 'composer.json matches', null !== $composer_match && 'composer_json' === $composer_match['pattern'] );
+sassh_assert( 'composer.json risk suspicious', null !== $composer_match && 'suspicious' === $composer_match['risk'] );
+
+$phpinfo_match = Choctaw_Wp_Security_Exposed_Files_Patterns::match_entry( 'info.php', false, 40, '<?php phpinfo();' );
+sassh_assert( 'phpinfo script matches', null !== $phpinfo_match && 'phpinfo_script' === $phpinfo_match['pattern'] );
+sassh_assert( 'phpinfo script risk warning', null !== $phpinfo_match && 'warning' === $phpinfo_match['risk'] );
+
+$empty_log = Choctaw_Wp_Security_Exposed_Files_Patterns::match_entry( 'error_log', false, 0, '' );
+sassh_assert( 'empty error_log is info', null !== $empty_log && 'info' === $empty_log['risk'] );
+
+$git_match = Choctaw_Wp_Security_Exposed_Files_Patterns::match_entry( '.git', true, 0, '' );
+sassh_assert( 'git_dir is info', null !== $git_match && 'git_dir' === $git_match['pattern'] && 'info' === $git_match['risk'] );
+sassh_assert(
+	'git_dir classification Review Not Needed',
+	'no_action_needed' === Sassh_Findings_Service::default_classification( 'info' )
+);
+sassh_assert(
+	'normalize_fingerprint trims',
+	'sha256:abc' === Sassh_Findings_Service::normalize_fingerprint( " sha256:abc\n" )
+);
+
 // Report DTO incomplete flags (shape contract used by admin-core-checksum.js).
 $incomplete_dto = array(
 	'success'            => false,
