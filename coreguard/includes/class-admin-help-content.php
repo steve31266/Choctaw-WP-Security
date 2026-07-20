@@ -181,7 +181,7 @@ class Choctaw_Wp_Security_Admin_Help_Content {
 				'detail_html' => self::posts_scan_about_html(),
 			),
 			'users_table'      => array(
-				'visible'     => __( 'This scan displays every user account stored in the WordPress users table (configured under CoreGuard → Settings → WordPress Tables), allowing you to see unexpected accounts and review existing user assignments and activities.', 'choctaw-wp-security' ),
+				'visible'     => __( 'This scan displays every user account stored in the WordPress users table (configured under Sassh → Settings → WordPress Tables), allowing you to see unexpected accounts and review existing user assignments and activities.', 'choctaw-wp-security' ),
 				'detail_html' => self::users_table_detail_html(),
 			),
 			'component_scan'   => array(

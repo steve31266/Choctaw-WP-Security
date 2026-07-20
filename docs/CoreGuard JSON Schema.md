@@ -108,23 +108,35 @@ Expected direction for `scan run`:
 
 ---
 
-## Finding object
+## Finding object (common public envelope)
 
-CLI-ready fields (aligned with shared heuristics architecture):
+There is **one** public finding shape for all scanners. Heuristic fields belong inside this envelope; they do not define a second finding type. Product rules: [CoreGuard Findings System.md](CoreGuard%20Findings%20System.md).
+
+Illustrative shape (not yet frozen as formal JSON Schema files):
 
 ```json
 {
-  "fingerprint": "stable-scanner-owned-id",
-  "scan_id": "posts",
+  "schema_version": "1.0",
+  "finding_id": "cgf_...",
+  "site_id": "cgs_...",
+  "scanner_id": "uploads",
+  "rule_id": "php-file-in-uploads",
+  "object": {
+    "type": "file",
+    "key": "wp-content/uploads/2026/07/example.php"
+  },
+  "risk_level": "critical",
+  "coreguard_classification": "needs_review",
+  "effective_status": "needs_review",
+  "content_fingerprint": "sha256:...",
+  "object_fingerprint": "sha256:...",
+  "title": "Optional short label",
+  "why_seeing_this": "…",
+  "how_to_proceed": "…",
   "family": "iframe",
   "pack_id": "coreguard.iframe",
   "pack_version": "1.0.0",
   "profile_ids": ["unsafe_src_http"],
-  "risk": "critical",
-  "status": "needs_review",
-  "title": "Optional short label",
-  "why_seeing_this": "…",
-  "how_to_proceed": "…",
   "evidence": [
     {
       "type": "field_snippet",
@@ -133,19 +145,32 @@ CLI-ready fields (aligned with shared heuristics architecture):
       "snippet": "…"
     }
   ],
-  "detected_at": "2026-07-12T12:00:00Z",
-  "updated_at": "2026-07-12T12:00:00Z"
+  "scanner_metadata": {},
+  "first_seen_at": "2026-07-10T14:30:00Z",
+  "last_seen_at": "2026-07-16T20:15:00Z",
+  "detection_state": "active",
+  "dismissal": null,
+  "related_findings": []
 }
 ```
 
 | Field | Notes |
 |---|---|
-| `fingerprint` | Stable; **must not** include pack/profile versions |
-| `risk` | Engine v1: `critical` \| `suspicious` only; permanent published enum frozen under CLI `api_version` before Desktop ship; additive thereafter |
-| `evidence` | Structured records, not free-form only |
-| Pack files | **Not** exposed; metadata on the finding is sufficient |
+| `finding_id` | Stable opaque id for the logical finding |
+| `content_fingerprint` | Rule-specific finding fingerprint; used for dismissal validity; **must not** include pack/profile versions |
+| `object_fingerprint` | Whole-object version for related-finding context (files: normally entire-file SHA-256) |
+| `coreguard_classification` | Machine: `needs_review` \| `no_action_needed` (label: Review Not Needed) — assigned by CoreGuard only |
+| `effective_status` | `needs_review` \| `no_action_needed` \| `dismissed` — `dismissed` is a human override, not a scanner classification |
+| `risk_level` | Canonical: `critical` \| `warning` \| `suspicious` \| `info` \| `safe`. Public field name is `risk_level`. Legacy `risk` may be adapted during migration. Independent of classification (default mapping in Findings System §3.5) |
+| `evidence` | **Array** of structured evidence entries (heuristic-compatible); final allowed shapes and CLI-safe exposure TBD |
+| `related_findings` | Present on `findings get`; omitted from list by default; bounded summary, not full payloads |
+| Pack files | **Not** exposed; pack metadata on the finding is sufficient |
 
-Alternate naming (`why` / `how`) may be normalized before freeze—pick one public name and document aliases if needed.
+**Severity order:** `safe < info < suspicious < warning < critical`. Semantic colors are UI concerns; never color-only.
+
+**v1 deferred:** `accepted` as a status. Alternate naming (`why` / `how`) may be normalized before freeze.
+
+Legacy note: older drafts used a single `fingerprint` + `status` field and non-canonical risks (`alert`, `review`). Map those during scanner migration; do not keep a parallel heuristic-only finding type.
 
 ---
 
@@ -201,16 +226,19 @@ Plugin validates and may return warnings when configuration cannot be fully appl
 - Additive fields are preferred within a major API version.
 - See [CoreGuard Version Compatibility.md](CoreGuard%20Version%20Compatibility.md).
 
-## Related Plans
+## Related Docs and Plans
 
-Heuristic findings produced by the shared engine must remain compatible with the **Finding object** above so CLI/Desktop can expose them without reading pack files. See [shared_heuristics_architecture.plan.md](../.cursor/plans/shared_heuristics_architecture.plan.md).
+- [CoreGuard Findings System.md](CoreGuard%20Findings%20System.md) — persistence, dismissal, correlation, migration
+- [CoreGuard CLI API.md](CoreGuard%20CLI%20API.md) — list / get / dismiss / undismiss
+- Heuristic engine plans must align with this envelope: [shared_heuristics_architecture.plan.md](../.cursor/plans/shared_heuristics_architecture.plan.md)
 
 Schema and enum freezes are recorded here and in [Version Compatibility](CoreGuard%20Version%20Compatibility.md)—not only in Cursor plans.
 
 ## Open Items
 
 - Formal JSON Schema (Draft 2020-12) files under `docs/schema/` or shipped with the plugin.
-- Canonical risk enum freeze date and values beyond v1.
-- Finding status enum names.
+- Allowed `evidence[]` entry shapes and CLI-safe redaction rules.
 - Whether `errors` live only on the envelope or also inside scan `data`.
 - Pagination / cursor model.
+- Exact public representation of `installation_id` / `site_id` on the wire (Site Identity specification).
+- Optional scan-run attribution fields on list/get once Scan Site exists.

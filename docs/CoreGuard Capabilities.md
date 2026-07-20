@@ -47,15 +47,18 @@ Use stable, lowercase, dotted IDs. Adding a capability is additive within an `ap
 
 Scan IDs above are illustrative of current plugin feature areas; normalize IDs when the CLI ships.
 
-Heuristic-backed scans return CLI-ready finding fields (`family`, `pack_id`, `pack_version`, `profile_ids`, `evidence`, `risk`, why/how). Pack files remain private.
+Heuristic-backed scans return fields compatible with the **common public finding envelope** (`family`, `pack_id`, `pack_version`, `profile_ids`, `evidence[]`, `risk_level` / risk, why/how, fingerprints). Pack files remain private. See [JSON Schema](CoreGuard%20JSON%20Schema.md) and [Findings System](CoreGuard%20Findings%20System.md).
 
 ### Findings
 
 | Capability ID | Description | CLI access (expected) |
 |---|---|---|
 | `findings.list` | List/filter findings | `wp coreguard findings list` |
-| `findings.get` | Fetch one finding | `wp coreguard findings get` |
-| `findings.set_status` | Set accepted / dismissed / needs review (etc.) | `wp coreguard findings set-status` |
+| `findings.get` | Fetch one finding (includes related summary) | `wp coreguard findings get` |
+| `findings.dismiss` | Dismiss with reviewed finding fingerprint | `wp coreguard findings dismiss` |
+| `findings.undismiss` | Undo / return to Needs Review (append-only history) | `wp coreguard findings undismiss` |
+
+**Deferred for v1:** `findings.set_status` / free-form status assignment, including any `accepted` status. Classification (`needs_review` / `no_action_needed`) is assigned by CoreGuard only.
 
 ### Settings / hardening
 

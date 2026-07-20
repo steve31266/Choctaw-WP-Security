@@ -1,5 +1,5 @@
 /**
- * Shared report Status helpers (Needs Review / No Action Needed / Dismissed).
+ * Shared report Status helpers (Needs Review / Review Not Needed / Dismissed).
  *
  * Expects window.choctawWpSecurityFindingStatus from wp_localize_script.
  */
@@ -31,15 +31,35 @@
 		if (!finding || typeof finding !== 'object') {
 			return '';
 		}
+		if (finding.content_fingerprint) {
+			return text(finding.content_fingerprint);
+		}
 		if (finding.fingerprint) {
 			return text(finding.fingerprint);
 		}
 		return text(finding.id);
 	}
 
+	function findingId(finding) {
+		if (!finding || typeof finding !== 'object') {
+			return '';
+		}
+		if (finding.finding_id) {
+			return text(finding.finding_id);
+		}
+		return '';
+	}
+
+	function usesSasshFindings(finding, scanType) {
+		if (findingId(finding)) {
+			return true;
+		}
+		return scanType === 'uploads-folder' || (finding && finding.findings_backend === 'sassh');
+	}
+
 	function openStatusForFinding(finding) {
 		var risk = finding && finding.risk ? text(finding.risk) : '';
-		if (risk === 'safe') {
+		if (risk === 'safe' || risk === 'info') {
 			return 'no_action_needed';
 		}
 		return 'needs_review';
@@ -50,7 +70,7 @@
 			return strings.dismissed || 'Dismissed';
 		}
 		if (status === 'no_action_needed') {
-			return strings.noActionNeeded || 'No Action Needed';
+			return strings.noActionNeeded || 'Review Not Needed';
 		}
 		return strings.needsReview || 'Needs Review';
 	}
@@ -58,6 +78,9 @@
 	function findingStatus(finding) {
 		if (finding && finding.status === 'dismissed') {
 			return 'dismissed';
+		}
+		if (finding && finding.effective_status) {
+			return text(finding.effective_status);
 		}
 		if (finding && finding.status) {
 			return text(finding.status);
@@ -100,7 +123,7 @@
 		var select = document.createElement('select');
 		var options = [
 			{ value: 'needs_review', label: strings.needsReview || 'Needs Review' },
-			{ value: 'no_action_needed', label: strings.noActionNeeded || 'No Action Needed' },
+			{ value: 'no_action_needed', label: strings.noActionNeeded || 'Review Not Needed' },
 			{ value: 'dismissed', label: strings.dismissed || 'Dismissed' },
 			{ value: '', label: strings.allStatuses || 'All statuses' }
 		];
@@ -150,6 +173,32 @@
 		});
 	}
 
+	function postSasshFindingAction(action, id, fingerprint) {
+		var body = new window.FormData();
+		body.append('action', action);
+		body.append('nonce', config.sasshNonce || '');
+		body.append('finding_id', id);
+		if (fingerprint) {
+			body.append('fingerprint', fingerprint);
+		}
+
+		return window.fetch(config.ajaxUrl || '', {
+			method: 'POST',
+			credentials: 'same-origin',
+			body: body
+		}).then(function (response) {
+			return response.json();
+		}).then(function (payload) {
+			if (!payload || !payload.success) {
+				var message = payload && payload.data && payload.data.message
+					? text(payload.data.message)
+					: (strings.statusError || 'The status could not be updated.');
+				throw new Error(message);
+			}
+			return payload.data || {};
+		});
+	}
+
 	/**
 	 * Append dismiss checkbox + Submit under How to proceed / Recommendations.
 	 *
@@ -178,22 +227,49 @@
 
 		submit.addEventListener('click', function () {
 			var fingerprint = findingFingerprint(finding);
+			var id = findingId(finding);
 			var wantDismissed = checkbox.checked;
-			var action = wantDismissed
-				? 'choctaw_wp_security_finding_dismiss'
-				: 'choctaw_wp_security_finding_undismiss';
+			var request;
 
 			error.hidden = true;
 			submit.disabled = true;
 
-			postStatusAction(action, scanType, fingerprint)
+			if (usesSasshFindings(finding, scanType)) {
+				if (!id) {
+					error.textContent = strings.statusError || 'The status could not be updated.';
+					error.hidden = false;
+					submit.disabled = false;
+					checkbox.checked = findingStatus(finding) === 'dismissed';
+					return;
+				}
+				request = postSasshFindingAction(
+					wantDismissed ? 'sassh_finding_dismiss' : 'sassh_finding_undismiss',
+					id,
+					fingerprint
+				);
+			} else {
+				request = postStatusAction(
+					wantDismissed
+						? 'choctaw_wp_security_finding_dismiss'
+						: 'choctaw_wp_security_finding_undismiss',
+					scanType,
+					fingerprint
+				);
+			}
+
+			request
 				.then(function (data) {
 					var nextStatus = wantDismissed
 						? 'dismissed'
 						: (data && data.status ? text(data.status) : openStatusForFinding(finding));
 					finding.status = nextStatus;
-					finding.status_label = statusLabelFor(nextStatus);
+					finding.effective_status = nextStatus;
+					finding.status_label = (data && data.status_label) ? text(data.status_label) : statusLabelFor(nextStatus);
 					finding.fingerprint = fingerprint;
+					finding.content_fingerprint = fingerprint;
+					if (id) {
+						finding.finding_id = id;
+					}
 					if (typeof onUpdated === 'function') {
 						onUpdated(finding);
 					}
@@ -310,6 +386,7 @@
 		appendDismissControls: appendDismissControls,
 		findingStatus: findingStatus,
 		findingFingerprint: findingFingerprint,
+		findingId: findingId,
 		openStatusForFinding: openStatusForFinding,
 		bindClearHistoryButtons: bindClearHistoryButtons,
 		bindPhpDismissControls: bindPhpDismissControls,

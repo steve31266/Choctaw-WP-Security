@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.3] - 2026-07-19
+
+### Added
+
+- **Sassh Findings System (Phase 1/2):** network-wide persistence tables (`{base_prefix}sassh_scanner_executions`, `sassh_findings`, `sassh_dismissal_decisions`, `sassh_finding_events`), provisional `sassh_installation_id`, shared `Sassh_Findings_Service` (begin → record → finalize-with-absence, fingerprint-gated dismiss/undismiss, related findings query), and Uploads Folder as the first Findings producer (`php-file-in-uploads` → **Warning** + Needs Review).
+- Centralized **Sassh authorization** (`Sassh_Capabilities`): single-site `manage_options`; Multisite `manage_network_options` (Super Admins); nonces on state-changing Findings admin actions. AJAX: `sassh_finding_dismiss` / `sassh_finding_undismiss`.
+
+### Changed
+
+- **Public product name** is **Sassh Security** (Site Audit over SSH): main bootstrap `sassh.php`, admin menu **Sassh Security**, page slugs `sassh*`, header uses `sassh-logo.png`. Text Domain, option keys, AJAX actions, and PHP class names unchanged.
+- **Uploads Folder** no longer uses the prototype `Finding_Status_Store`; Clear History removed on that tab; status chrome label **Review Not Needed** (was “No Action Needed”).
+- **Admin navigation** is a single WordPress menu item (**Sassh Security**). Home, Settings, About, and grouped Scans tabs live in an in-plugin sidebar on desktop; below 1100px a **Menu** hamburger opens the same navigation as a slide-over drawer.
+- **Report tables** on viewports below 1100px use horizontal scrolling (min-width preserved) and slightly smaller type for emergency mobile/tablet viewing.
+
 ## [1.9.2] - 2026-07-16
 
 ### Changed

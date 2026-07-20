@@ -16,7 +16,7 @@
 | `status` | Plugin presence, versions, health summary |
 | `capabilities` | List what this install supports |
 | `scan` | Run or inspect scans |
-| `findings` | List / filter / update finding status |
+| `findings` | List / get findings; dismiss / undismiss with fingerprint validation |
 | `settings` | Read and update plugin settings |
 | `report` | Aggregate or export report data (future) |
 | `actions` | One-shot remediation or hardening actions (future) |
@@ -101,9 +101,14 @@ wp coreguard scan status [<job-id>] [--format=json]
 
 ## `wp coreguard findings`
 
+Canonical product requirements: [CoreGuard Findings System.md](CoreGuard%20Findings%20System.md).
+
+**v1 status values (effective status filter):** `needs_review`, `no_action_needed`, `dismissed`.  
+**Deferred / non-goal for v1:** an `accepted` status. Free-form `findings set-status` that can assign CoreGuard classifications is **not** part of v1.
+
 ### `findings list`
 
-**Purpose:** List findings with filters.
+**Purpose:** List findings with filters. Does **not** expand `related_findings` by default.
 
 ```text
 wp coreguard findings list [--format=json] [--scan=<id>] [--status=<status>] [--risk=<risk>] [--limit=<n>] [--offset=<n>]
@@ -111,25 +116,34 @@ wp coreguard findings list [--format=json] [--scan=<id>] [--status=<status>] [--
 
 | Option | Expected values |
 |---|---|
-| `--status` | e.g. `needs_review`, `accepted`, `dismissed` (exact enum TBD) |
-| `--risk` | Engine v1: `critical`, `suspicious`; permanent enum frozen before Desktop ship |
+| `--status` | Effective status: `needs_review`, `no_action_needed`, `dismissed` |
+| `--risk` | Canonical `risk_level`: `critical`, `warning`, `suspicious`, `info`, `safe` |
 
-**Finding fields (CLI-ready, locked direction):**  
-`family`, `pack_id`, `pack_version`, `profile_ids`, structured `evidence`, `risk`, `why_seeing_this` / `how_to_proceed` (or `why` / `how`), fingerprint, status. Fingerprints stay scanner-owned and must **not** embed pack/profile versions.
+**Finding fields:** Use the **common public finding envelope** in [JSON Schema](CoreGuard%20JSON%20Schema.md). Heuristic metadata (`family`, `pack_id`, `pack_version`, `profile_ids`, `evidence[]`) lives inside that envelope (e.g. top-level optional fields and/or `scanner_metadata`), not as a second finding type. Finding fingerprint (`content_fingerprint`) and object fingerprint are separate; fingerprints must **not** embed pack/profile versions.
 
 ### `findings get`
 
 ```text
-wp coreguard findings get <fingerprint-or-id> [--format=json]
+wp coreguard findings get <finding-id> [--format=json]
 ```
 
-### `findings set-status`
+Returns one finding in the common envelope, including a bounded `related_findings` summary when applicable (see Findings System PRD §5.7). Identifier is the stable `finding_id` (opaque); legacy fingerprint-or-id lookup may be considered during migration but is not the long-term public key.
+
+### `findings dismiss`
 
 ```text
-wp coreguard findings set-status <fingerprint-or-id> <status> [--format=json] [--note=...]
+wp coreguard findings dismiss <finding-id> --fingerprint=<reviewed-finding-fingerprint> [--format=json] [--source=desktop] [--note=...]
 ```
 
-Plugin validates transitions and persists; Desktop never writes status tables directly.
+Creates a new append-only dismissal decision for the reviewed **finding** fingerprint. Rejects when the fingerprint does not match the current finding version. Desktop never writes findings tables directly.
+
+### `findings undismiss`
+
+```text
+wp coreguard findings undismiss <finding-id> [--format=json] [--source=desktop]
+```
+
+Terminates the currently valid dismissal (history retained); effective status returns to Needs Review when classification is still `needs_review`.
 
 ---
 

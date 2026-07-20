@@ -27,10 +27,17 @@ Breaking changes (rename/remove fields, change enums incompatibly, change comman
 
 ## Risk Enum Policy
 
-- Engine / packs v1 emit only `critical` and `suspicious`.
-- Before Plugin + Desktop ship together, freeze a **permanent published risk enum** under the CLI `api_version`.
+Canonical published `risk_level` values (Findings System / CLI):
+
+`critical` | `warning` | `suspicious` | `info` | `safe`
+
+Severity order: `safe < info < suspicious < warning < critical`.
+
+- Heuristic engine / packs may initially emit a subset (historically `critical` and `suspicious`); consumers must accept the full five-value enum on the public contract.
+- Freeze these five values under CLI `api_version` before Plugin + Desktop ship together.
 - After freeze: additive only (new values require API bump or documented additive policy).
-- Do not silently reinterpret existing risk strings.
+- Do not silently reinterpret existing risk strings (map legacy `alert` / `review` during scanner migration, not by changing historical API meaning without a bump).
+- Public field name is `risk_level`; legacy scanner field `risk` is a temporary adapter.
 
 ## Deprecation Policy (expected)
 

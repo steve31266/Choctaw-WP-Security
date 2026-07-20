@@ -1,6 +1,6 @@
 <?php
 /**
- * Site-wide finding status registry (Needs Review / No Action Needed / Dismissed).
+ * Site-wide finding status registry (Needs Review / Review Not Needed / Dismissed).
  *
  * @package Choctaw_Wp_Security
  */
@@ -26,7 +26,6 @@ class Choctaw_Wp_Security_Finding_Status_Store {
 		'wp-posts',
 		'scheduled-tasks',
 		'exposed-files',
-		'uploads-folder',
 		'mu-plugins',
 		'verify-checksums',
 		'directory-browsing',
@@ -79,7 +78,7 @@ class Choctaw_Wp_Security_Finding_Status_Store {
 			case self::STATUS_DISMISSED:
 				return __( 'Dismissed', 'choctaw-wp-security' );
 			case self::STATUS_NO_ACTION_NEEDED:
-				return __( 'No Action Needed', 'choctaw-wp-security' );
+				return __( 'Review Not Needed', 'choctaw-wp-security' );
 			default:
 				return __( 'Needs Review', 'choctaw-wp-security' );
 		}
@@ -88,7 +87,7 @@ class Choctaw_Wp_Security_Finding_Status_Store {
 	/**
 	 * Default open status for a finding from its risk (when not dismissed).
 	 *
-	 * Safe findings are No Action Needed; all other risks remain Needs Review
+	 * Safe findings are Review Not Needed; all other risks remain Needs Review
 	 * (including Info soft-gap items).
 	 *
 	 * @param array<string, mixed> $finding Finding row.

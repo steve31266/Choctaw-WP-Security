@@ -331,7 +331,7 @@ class Choctaw_Wp_Security_Options_Scan_Patterns {
 		}
 
 		if ( '' === $how ) {
-			$how = __( 'Confirm whether the value is expected for your site. If it is not, restore or remove it using a trusted backup or admin workflow, then rescan. CoreGuard reports findings only — it does not modify options automatically.', 'choctaw-wp-security' );
+			$how = __( 'Confirm whether the value is expected for your site. If it is not, restore or remove it using a trusted backup or admin workflow, then rescan. Sassh reports findings only — it does not modify options automatically.', 'choctaw-wp-security' );
 		}
 
 		return array(

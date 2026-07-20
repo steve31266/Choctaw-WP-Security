@@ -291,7 +291,7 @@ class Choctaw_Wp_Security_Posts_Scan_Patterns {
 		}
 
 		if ( '' === $how ) {
-			$how = __( 'Confirm whether the post content is expected. If it is not, clean or trash it using the editor or a trusted backup, then rescan. CoreGuard reports findings only — it does not modify posts automatically.', 'choctaw-wp-security' );
+			$how = __( 'Confirm whether the post content is expected. If it is not, clean or trash it using the editor or a trusted backup, then rescan. Sassh reports findings only — it does not modify posts automatically.', 'choctaw-wp-security' );
 		}
 
 		return array(

@@ -1,6 +1,6 @@
 <?php
 /**
- * Shared helpers for CoreGuard.
+ * Shared helpers for Sassh.
  *
  * @package Choctaw_Wp_Security
  */
@@ -269,7 +269,7 @@ class Choctaw_Wp_Security_Utils {
 	 * @return string
 	 */
 	public static function get_coreguard_mark_html() {
-		$svg_path = CHOCTAW_WP_SECURITY_PATH . 'assets/images/coreguard-20.svg';
+		$svg_path = CHOCTAW_WP_SECURITY_PATH . 'assets/images/sassh-20.svg';
 
 		if ( ! is_readable( $svg_path ) ) {
 			return '<span class="dashicons dashicons-shield" aria-hidden="true"></span>';
@@ -297,7 +297,7 @@ class Choctaw_Wp_Security_Utils {
 	}
 
 	/**
-	 * Echo the CoreGuard mark SVG.
+	 * Echo the Sassh mark SVG.
 	 *
 	 * @return void
 	 */

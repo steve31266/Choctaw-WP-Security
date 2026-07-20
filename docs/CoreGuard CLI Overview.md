@@ -39,7 +39,7 @@ Typical flow:
 1. Discover whether CoreGuard is installed and which API version it speaks (`status` / capability probe).
 2. Invoke versioned commands for scans, findings, settings, and actions.
 3. Parse the JSON envelope; respect `success`, errors, and incomplete-scan signals.
-4. Never bypass the CLI for remote configuration or finding status changes.
+4. Never bypass the CLI for remote configuration or finding dismiss / undismiss actions.
 
 ## Source of Truth
 

@@ -1,4 +1,4 @@
-# CoreGuard
+# Sassh Security
 
 A lightweight WordPress security plugin that hardens common attack paths:
 
@@ -148,15 +148,15 @@ Logged-in users are not affected by the three anonymous blocking options. These 
 
    Or clone this repository and copy the `coreguard` folder to that location.
 
-2. In WordPress admin, go to **Plugins** and activate **CoreGuard**.
+2. In WordPress admin, go to **Plugins** and activate **Sassh Security**.
 
-3. Configure settings at **CoreGuard → Settings**.
+3. Configure settings at **Sassh → Settings**.
 
 ### Updating
 
 Replace the plugin folder on the server with the latest version, then verify settings in admin. No build step is required.
 
-If you previously used a standalone **Disable XML-RPC** plugin, deactivate and remove it after confirming XML-RPC blocking is enabled in CoreGuard.
+If you previously used a standalone **Disable XML-RPC** plugin, deactivate and remove it after confirming XML-RPC blocking is enabled in Sassh.
 
 ## Configuration
 
@@ -172,7 +172,7 @@ Default settings (recommended for most sites):
 
 ### Admin pages
 
-CoreGuard appears as a top-level admin menu with four submenus:
+Sassh Security appears as a top-level admin menu with four submenus:
 
 - **Home** — read-only status section showing feature state, WordPress Tables prefix, current policy, and plugin version, plus the recent lockout log
 - **Settings** — feature toggles for XML-RPC blocking, login rate limiting, uploads PHP lockdown, and username discovery; rate limit policy fields; **WordPress Tables** prefix picker for leftover staging/migration installs. Uploads PHP lockdown is server-aware: Apache/LiteSpeed shows an Active/Disabled status with automatic `.htaccess` protection; Nginx shows Manual configuration required with a disclosable config snippet; unknown servers show an unconfirmed-server banner while still offering the `.htaccess` checkbox and Nginx snippet.
@@ -279,8 +279,8 @@ After install or update, verify:
 - [ ] Failed login shows `Failed login, please try again.` when login error normalization is enabled
 - [ ] REST API (`/wp-json/`) still works for non-users routes
 - [ ] Settings save and persist correctly
-- [ ] CoreGuard → Settings → WordPress Tables shows the live prefix and is grayed out when only one prefix exists
-- [ ] CoreGuard → Settings → WordPress Tables allows overriding the prefix when multiple leftover installs exist
+- [ ] Sassh → Settings → WordPress Tables shows the live prefix and is grayed out when only one prefix exists
+- [ ] Sassh → Settings → WordPress Tables allows overriding the prefix when multiple leftover installs exist
 - [ ] Home Status shows the WordPress Tables prefix with Auto or Override
 - [ ] Exposed Folders scan runs manually and reports top-level plugin/theme folders missing common index files
 - [ ] Vulnerabilities scan runs manually and reports core, active/inactive theme, and active/inactive plugin vulnerability status
@@ -307,7 +307,7 @@ wp-content/plugins/coreguard/
 
 ```
 coreguard/
-├── coreguard.php          # Bootstrap, constants, activation hook
+├── sassh.php               # Bootstrap, constants, activation hook
 ├── assets/
 │   ├── css/
 │   │   ├── login-lockout.css        # Login lockout styling
@@ -348,9 +348,15 @@ coreguard/
 
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
 
+### 1.9.3
+
+- **Sassh Findings System (Phase 1/2):** persistent findings tables, Uploads Folder as first producer (Warning + Needs Review), fingerprint-gated dismiss/undismiss, Multisite Super Admin authorization
+- Public product name is **Sassh Security** (Site Audit over SSH); main bootstrap file is `sassh.php`; admin pages use `page=sassh*`
+- In-plugin sidebar / mobile drawer navigation; report tables scroll horizontally on narrow viewports
+
 ### 1.9.2
 
-- Renamed product identity to **CoreGuard** (plugin folder `coreguard`) with top-level admin menu (Home, Settings, Scans, About)
+- Renamed product identity to **CoreGuard** (plugin folder still `coreguard`) with top-level admin menu (Home, Settings, Scans, About)
 - Expanded Scans reporting architecture across File Changes, Exposed Files, Uploads Folder, MU-Plugins, Directory Browsing, Verify Checksums, WP-Cron, wp_options, wp_posts, and Unrecognized Components
 - **Vulnerabilities** now scans inactive themes/plugins and resolves child-theme parents as active for CVE checks
 - Added WordPress Tables prefix setting and shared report Status / dismiss controls

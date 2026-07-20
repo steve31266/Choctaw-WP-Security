@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name:       CoreGuard
+ * Plugin Name:       Sassh Security
  * Plugin URI:        https://github.com/steve31266/Choctaw-WP-Security
- * Description:       XML-RPC protection, login rate limiting, uploads PHP lockdown, username discovery blocking, core checksum scanning, known vulnerability scanning, wp_options scan, wp_posts scan, and other tools.
- * Version:           1.9.2
+ * Description:       Cleans core files from malware infections, makes it extremely difficult for hackers and malware to get in, scans your website for infected files and database records.
+ * Version:           1.9.3
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Sashtastic, LLC
@@ -16,13 +16,19 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'CHOCTAW_WP_SECURITY_VERSION', '1.9.2' );
+define( 'CHOCTAW_WP_SECURITY_VERSION', '1.9.3' );
 define( 'CHOCTAW_WP_SECURITY_FILE', __FILE__ );
 define( 'CHOCTAW_WP_SECURITY_PATH', plugin_dir_path( __FILE__ ) );
 define( 'CHOCTAW_WP_SECURITY_URL', plugin_dir_url( __FILE__ ) );
 
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-utils.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-finding-status-store.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-sassh-capabilities.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-sassh-installation-identity.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-sassh-object-path-normalizer.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-sassh-object-type-registry.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-sassh-findings-schema.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-sassh-findings-service.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-plugin.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-directory-browsing-scanner.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-admin-help-content.php';
@@ -63,6 +69,7 @@ Choctaw_Wp_Security_Xml_Rpc_Protection::block_xmlrpc_request_if_needed();
  * @return void
  */
 function choctaw_wp_security_bootstrap() {
+	Sassh_Findings_Schema::maybe_upgrade();
 	Choctaw_Wp_Security_Plugin::instance()->init();
 }
 add_action( 'plugins_loaded', 'choctaw_wp_security_bootstrap' );
@@ -76,7 +83,7 @@ add_action( 'plugins_loaded', 'choctaw_wp_security_bootstrap' );
 function choctaw_wp_security_plugin_action_links( $links ) {
 	$settings_link = sprintf(
 		'<a href="%s">%s</a>',
-		esc_url( admin_url( 'admin.php?page=coreguard-settings' ) ),
+		esc_url( admin_url( 'admin.php?page=sassh-settings' ) ),
 		esc_html__( 'Settings', 'choctaw-wp-security' )
 	);
 
@@ -111,6 +118,8 @@ function choctaw_wp_security_activate() {
 	if ( ! is_array( $existing ) ) {
 		add_option( Choctaw_Wp_Security_Utils::OPTION_KEY, Choctaw_Wp_Security_Utils::default_options() );
 	}
+
+	Sassh_Findings_Schema::maybe_upgrade();
 
 	$lockdown = new Choctaw_Wp_Security_Uploads_Php_Lockdown();
 	$lockdown->apply_policy();

@@ -18,7 +18,8 @@
 	};
 
 	var riskOrder = {
-		critical: 4,
+		critical: 5,
+		warning: 4,
 		suspicious: 3,
 		alert: 3,
 		safe: 2,
@@ -160,12 +161,13 @@
 	function riskLabel(risk) {
 		var map = {
 			critical: strings.riskCritical || 'Critical',
+			warning: strings.riskWarning || 'Warning',
 			suspicious: strings.riskSuspicious || 'Suspicious',
 			alert: strings.riskAlert || 'Alert',
 			safe: strings.riskSafe || 'Safe',
 			info: strings.riskInfo || 'Info'
 		};
-		return map[risk] || risk || 'Info';
+		return map[risk] || risk || 'Warning';
 	}
 
 	function collectFindings(result) {
@@ -284,6 +286,7 @@
 
 		riskLabelEl.appendChild(createElement('span', 'screen-reader-text', strings.risk || 'Risk'));
 		riskSelect.appendChild(new Option(strings.allRisks || 'All risks', ''));
+		riskSelect.appendChild(new Option(strings.riskWarning || 'Warning', 'warning'));
 		riskSelect.appendChild(new Option(strings.riskCritical || 'Critical', 'critical'));
 		riskSelect.value = uiState.risk;
 		riskSelect.addEventListener('change', function () {
@@ -402,7 +405,8 @@
 		var pathCode = createElement('code', 'cws-file-path', finding.path || '');
 		var eye = createElement('button', 'cws-report-eye');
 		var eyeIcon = createElement('span', 'dashicons dashicons-visibility');
-		var isExpanded = uiState.expandedId === finding.id;
+		var rowKey = finding.finding_id || finding.id || finding.fingerprint || '';
+		var isExpanded = uiState.expandedId === rowKey;
 
 		if (isExpanded) {
 			row.className = 'is-expanded';
@@ -425,7 +429,7 @@
 		eyeIcon.setAttribute('aria-hidden', 'true');
 		eye.appendChild(eyeIcon);
 		eye.addEventListener('click', function () {
-			uiState.expandedId = isExpanded ? '' : finding.id;
+			uiState.expandedId = isExpanded ? '' : rowKey;
 			renderResult(resultState);
 		});
 		actionsTd.appendChild(eye);
@@ -481,11 +485,11 @@
 
 	function renderSummary(resultsEl, result) {
 		var summary = result.summary || {};
-		var critical = parseInt(summary.critical, 10) || 0;
-		var className = critical > 0 ? 'cws-core-checksum-results is-error' : 'cws-core-checksum-results is-success';
+		var warning = parseInt(summary.warning, 10) || 0;
+		var className = warning > 0 ? 'cws-core-checksum-results is-error' : 'cws-core-checksum-results is-success';
 		var panel = createElement('div', className);
-		var message = critical > 0 ?
-			format(strings.scanCompleteIssues || 'Scan complete. %1$s critical finding(s) in the uploads folder.', numberFormat(critical)) :
+		var message = warning > 0 ?
+			format(strings.scanCompleteIssues || 'Scan complete. %1$s warning finding(s) in the uploads folder.', numberFormat(warning)) :
 			format(strings.scanCompleteClean || 'Scan complete. No PHP executable files were found in the uploads folder.');
 		panel.appendChild(createElement('p', 'cws-core-checksum-summary', message));
 		resultsEl.appendChild(panel);

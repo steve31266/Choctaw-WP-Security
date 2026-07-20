@@ -752,3 +752,45 @@ mark.cws-search-hit {
 	}
 }
 
+/*
+ * Tablet / phone emergency viewing: keep desktop column widths and scroll
+ * horizontally instead of crushing cells into unreadable wrapped columns.
+ */
+.cws-report-table-scroll {
+	max-width: 100%;
+}
+
+@media screen and (max-width: 1099px) {
+	.cws-report-table-scroll {
+		-webkit-overflow-scrolling: touch;
+		margin: 0 0 1em;
+		overflow-x: auto;
+		overflow-y: hidden;
+	}
+
+	.cws-report-table-scroll > table.cws-core-checksum-table {
+		font-size: 12px;
+		min-width: 1100px;
+		width: 100%;
+	}
+
+	.cws-report-table-scroll > table.cws-core-checksum-table > thead > tr > th,
+	.cws-report-table-scroll > table.cws-core-checksum-table > tbody > tr:not(.cws-report-detail-row):not(.cws-scheduled-tasks-detail-row) > th,
+	.cws-report-table-scroll > table.cws-core-checksum-table > tbody > tr:not(.cws-report-detail-row):not(.cws-scheduled-tasks-detail-row) > td {
+		white-space: nowrap;
+	}
+
+	.cws-report-toolbar,
+	.cws-scheduled-tasks-toolbar {
+		font-size: 12px;
+	}
+
+	.cws-report-toolbar select,
+	.cws-report-toolbar input[type="search"],
+	.cws-scheduled-tasks-toolbar select,
+	.cws-scheduled-tasks-toolbar input[type="search"] {
+		font-size: 12px;
+		max-width: 100%;
+	}
+}
+
