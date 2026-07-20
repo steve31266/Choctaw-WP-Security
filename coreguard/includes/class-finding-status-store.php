@@ -22,7 +22,6 @@ class Choctaw_Wp_Security_Finding_Status_Store {
 	 * @var array<int, string>
 	 */
 	public static $supported_scan_types = array(
-		'database-scan',
 		'wp-posts',
 		'scheduled-tasks',
 		'directory-browsing',

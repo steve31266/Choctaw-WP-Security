@@ -348,6 +348,10 @@ coreguard/
 
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
 
+### 1.9.3.3
+
+- **Findings Phase 3.3:** wp_options / database-scan on Sassh Findings (`object_type=option`; registered-site `blog_id`; rule-based risk); Clear History and Reset Baseline removed; foreign/orphaned tables rejected before Findings execution
+
 ### 1.9.3.2
 
 - **Findings Phase 3.2:** Exposed Files on Sassh Findings (`exposed-files`; canonical risk mapping; related-on-expand with Verify Checksums); dismiss status rehydrated from Findings so cached reports stay in sync

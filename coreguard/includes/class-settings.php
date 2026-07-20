@@ -2139,7 +2139,7 @@ class Choctaw_Wp_Security_Settings {
 	}
 
 	/**
-	 * Handle a baseline reset request for the database scan.
+	 * Handle a baseline reset request for the database scan (retired — Findings cutover).
 	 *
 	 * @return void
 	 */
@@ -2154,17 +2154,10 @@ class Choctaw_Wp_Security_Settings {
 
 		check_admin_referer( 'choctaw_wp_security_database_scan_form' );
 
-		$resolved      = $this->get_resolved_scan_tables();
-		$options_table = $resolved['options_table'];
-
-		Choctaw_Wp_Security_Options_Table_Scanner::reset_baseline( $options_table );
-
 		wp_safe_redirect(
 			$this->get_scans_page_url(
 				'database-scan',
-				array(
-					'database_scan_baseline_reset' => '1',
-				)
+				array()
 			)
 		);
 		exit;
@@ -2207,7 +2200,7 @@ class Choctaw_Wp_Security_Settings {
 	}
 
 	/**
-	 * Handle an AJAX database scan baseline reset request.
+	 * Handle an AJAX database scan baseline reset request (retired — Findings cutover).
 	 *
 	 * @return void
 	 */
@@ -2215,7 +2208,7 @@ class Choctaw_Wp_Security_Settings {
 		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			wp_send_json_error(
 				array(
-					'message' => __( 'You do not have permission to reset the database scan baseline.', 'choctaw-wp-security' ),
+					'message' => __( 'You do not have permission to manage database scans.', 'choctaw-wp-security' ),
 				),
 				403
 			);
@@ -2223,15 +2216,9 @@ class Choctaw_Wp_Security_Settings {
 
 		check_ajax_referer( 'choctaw_wp_security_database_scan_ajax', 'nonce' );
 
-		$resolved      = $this->get_resolved_scan_tables();
-		$options_table = $resolved['options_table'];
-
-		Choctaw_Wp_Security_Options_Table_Scanner::reset_baseline( $options_table );
-
-		wp_send_json_success(
+		wp_send_json_error(
 			array(
-				'message'       => __( 'The database scan baseline was reset for the selected options table.', 'choctaw-wp-security' ),
-				'options_table' => $options_table,
+				'message' => __( 'Baseline reset is not available for Sassh Findings-backed scans. Persistent findings replace the old baseline workflow.', 'choctaw-wp-security' ),
 			)
 		);
 	}
@@ -2818,7 +2805,7 @@ class Choctaw_Wp_Security_Settings {
 			wp_enqueue_script(
 				'choctaw-wp-security-database-scan',
 				CHOCTAW_WP_SECURITY_URL . 'assets/js/admin-database-scan.js',
-				array( 'choctaw-wp-security-admin-help', 'choctaw-wp-security-report-status', 'choctaw-wp-security-report-pagination' ),
+				array( 'choctaw-wp-security-admin-help', 'choctaw-wp-security-report-status', 'choctaw-wp-security-report-related-findings', 'choctaw-wp-security-report-pagination' ),
 				CHOCTAW_WP_SECURITY_VERSION,
 				true
 			);
@@ -2841,19 +2828,21 @@ class Choctaw_Wp_Security_Settings {
 					'strings'        => array(
 						'scanButton'         => __( 'Scan Now', 'choctaw-wp-security' ),
 						'rescanButton'       => __( 'Rescan', 'choctaw-wp-security' ),
-						'refreshButton'      => __( 'Refresh', 'choctaw-wp-security' ),
 						'scanning'           => __( 'Scanning options table...', 'choctaw-wp-security' ),
-						'resettingBaseline'  => __( 'Resetting baseline...', 'choctaw-wp-security' ),
 						'scanError'          => __( 'The database scan could not be completed.', 'choctaw-wp-security' ),
-						'resetError'         => __( 'The database scan baseline could not be reset.', 'choctaw-wp-security' ),
 						'noFindings'         => __( 'No findings matched the current filters.', 'choctaw-wp-security' ),
-						'noFlagged'          => __( 'No findings requiring review were found. Choose All statuses or a Safe/Info risk filter to view inventory findings.', 'choctaw-wp-security' ),
+						'noFlagged'          => __( 'No findings requiring review were found.', 'choctaw-wp-security' ),
 						'sortAscending'      => __( 'Sort ascending', 'choctaw-wp-security' ),
 						'sortDescending'     => __( 'Sort descending', 'choctaw-wp-security' ),
 						'configuredTable'    => __( 'WordPress configured table: %s', 'choctaw-wp-security' ),
-						'scanCompleteIssues' => __( 'Scan complete. %1$s critical, %2$s suspicious, %3$s safe, and %4$s informational findings.', 'choctaw-wp-security' ),
-						'scanCompleteClean'  => __( 'Scan complete. No critical or suspicious findings. %1$s safe and %2$s informational item(s) reported.', 'choctaw-wp-security' ),
-						'incomplete'         => __( 'The scan stopped early because it reached its time budget. Review the partial results below and run the scan again if needed.', 'choctaw-wp-security' ),
+						'scanCompleteIssues' => __( 'Scan complete. %1$s critical, %2$s warning, %3$s suspicious findings.', 'choctaw-wp-security' ),
+						'scanCompleteClean'  => __( 'Scan complete. No critical, warning, or suspicious findings.', 'choctaw-wp-security' ),
+						'scanIncomplete'     => __( 'Scan coverage was incomplete. Previously detected findings were not cleared.', 'choctaw-wp-security' ),
+						'scanRejected'       => __( 'This options table cannot be scanned because it is not associated with a registered WordPress site.', 'choctaw-wp-security' ),
+						'notConfirmedThisRun' => __( 'Not reconfirmed by this incomplete scan', 'choctaw-wp-security' ),
+						'priorFindingsNote'  => __( 'Active findings below are from earlier successful scans and were not reconfirmed by this run.', 'choctaw-wp-security' ),
+						'autoloadMetaNote'   => __( 'Below-threshold autoload rows (informational only — not Findings):', 'choctaw-wp-security' ),
+						'incomplete'         => __( 'Scan coverage was incomplete. Previously detected findings were not cleared.', 'choctaw-wp-security' ),
 						'risk'               => __( 'Risk', 'choctaw-wp-security' ),
 						'status'             => __( 'Status', 'choctaw-wp-security' ),
 						'category'           => __( 'Category', 'choctaw-wp-security' ),
@@ -2861,6 +2850,7 @@ class Choctaw_Wp_Security_Settings {
 						'needsReview'        => __( 'Needs Review', 'choctaw-wp-security' ),
 						'allCategories'      => __( 'All categories', 'choctaw-wp-security' ),
 						'riskCritical'       => __( 'Critical', 'choctaw-wp-security' ),
+						'riskWarning'        => __( 'Warning', 'choctaw-wp-security' ),
 						'riskSuspicious'     => __( 'Suspicious', 'choctaw-wp-security' ),
 						'riskSafe'           => __( 'Safe', 'choctaw-wp-security' ),
 						'riskInfo'           => __( 'Info', 'choctaw-wp-security' ),
@@ -2916,7 +2906,6 @@ class Choctaw_Wp_Security_Settings {
 					'categoryLabels' => Choctaw_Wp_Security_Scheduled_Tasks_Patterns::get_category_labels(),
 					'strings'        => array(
 						'scanButton'           => __( 'Scan Now', 'choctaw-wp-security' ),
-						'refreshButton'        => __( 'Refresh', 'choctaw-wp-security' ),
 						'scanning'             => __( 'Scanning WP-Cron events...', 'choctaw-wp-security' ),
 						'scanError'            => __( 'The WP-Cron scan could not be completed.', 'choctaw-wp-security' ),
 						'noFindings'           => __( 'No WP-Cron events matched the current filters.', 'choctaw-wp-security' ),
@@ -2988,7 +2977,6 @@ class Choctaw_Wp_Security_Settings {
 					'strings'        => array(
 						'scanButton'         => __( 'Scan Now', 'choctaw-wp-security' ),
 						'rescanButton'       => __( 'Rescan', 'choctaw-wp-security' ),
-						'refreshButton'      => __( 'Refresh', 'choctaw-wp-security' ),
 						'scanning'           => __( 'Scanning posts table...', 'choctaw-wp-security' ),
 						'resettingBaseline'  => __( 'Resetting baseline...', 'choctaw-wp-security' ),
 						'scanError'          => __( 'The posts scan could not be completed.', 'choctaw-wp-security' ),
@@ -3218,7 +3206,6 @@ class Choctaw_Wp_Security_Settings {
 						'hideDetails'           => __( 'Hide details', 'choctaw-wp-security' ),
 						'search'                => __( 'Search', 'choctaw-wp-security' ),
 						'searchPlaceholder'     => __( 'Search files…', 'choctaw-wp-security' ),
-						'refresh'               => __( 'Refresh', 'choctaw-wp-security' ),
 						'scanIncomplete'        => __( 'Scan coverage was incomplete. Previously detected findings were not cleared.', 'choctaw-wp-security' ),
 						'priorFindingsNote'     => __( 'Active findings below are from earlier successful scans and were not reconfirmed by this run.', 'choctaw-wp-security' ),
 						'notConfirmedThisRun'   => __( 'Not reconfirmed by this incomplete scan', 'choctaw-wp-security' ),
@@ -3778,7 +3765,7 @@ class Choctaw_Wp_Security_Settings {
 			return;
 		}
 
-		$scan_types = array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files' );
+		$scan_types = array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files', 'database-scan' );
 
 		foreach ( $scan_types as $scan_type ) {
 			$storage = $this->get_report_storage_for_scan_type( $scan_type );
@@ -3848,6 +3835,7 @@ class Choctaw_Wp_Security_Settings {
 				'mu-plugins',
 				'verify-checksums',
 				'exposed-files',
+				'database-scan',
 			),
 			true
 		);
@@ -3986,7 +3974,7 @@ class Choctaw_Wp_Security_Settings {
 
 		$scan_type = isset( $_POST['scan_type'] ) ? sanitize_key( wp_unslash( $_POST['scan_type'] ) ) : '';
 
-		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files' ), true ) ) {
+		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files', 'database-scan' ), true ) ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'Clear History is not available for Sassh Findings-backed scans.', 'choctaw-wp-security' ),
@@ -4036,7 +4024,7 @@ class Choctaw_Wp_Security_Settings {
 		$scan_type   = isset( $_POST['scan_type'] ) ? sanitize_text_field( wp_unslash( $_POST['scan_type'] ) ) : '';
 		$fingerprint = isset( $_POST['fingerprint'] ) ? sanitize_text_field( wp_unslash( $_POST['fingerprint'] ) ) : '';
 
-		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files' ), true ) ) {
+		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files', 'database-scan' ), true ) ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'These findings must be dismissed through Sassh Findings.', 'choctaw-wp-security' ),
@@ -5030,8 +5018,7 @@ class Choctaw_Wp_Security_Settings {
 			}
 		}
 
-		$baseline_reset = isset( $_GET['database_scan_baseline_reset'] );
-		$resolved       = $this->get_resolved_scan_tables();
+		$resolved = $this->get_resolved_scan_tables();
 		?>
 		<div class="cws-admin-tab-panel cws-database-scan-panel">
 			<div class="cws-report-section">
@@ -5056,29 +5043,11 @@ class Choctaw_Wp_Security_Settings {
 					</div>
 				<?php endif; ?>
 
-				<?php if ( $baseline_reset ) : ?>
-					<div class="notice notice-success is-dismissible">
-						<p><?php esc_html_e( 'The database scan baseline was reset for the selected options table.', 'choctaw-wp-security' ); ?></p>
-					</div>
-				<?php endif; ?>
-
 				<form method="post" class="cws-database-scan-form" id="cws-database-scan-form">
 					<?php wp_nonce_field( 'choctaw_wp_security_database_scan_form' ); ?>
 					<input type="hidden" name="cws_tab" value="database-scan" />
 
 					<?php submit_button( __( 'Scan Now', 'choctaw-wp-security' ), 'secondary', 'choctaw_wp_security_database_scan', false ); ?>
-					<?php
-					submit_button(
-						__( 'Reset Baseline', 'choctaw-wp-security' ),
-						'secondary',
-						'choctaw_wp_security_database_scan_baseline_reset',
-						false,
-						array(
-							'onclick' => "return confirm('" . esc_js( __( 'Reset the baseline to the current options table snapshot?', 'choctaw-wp-security' ) ) . "');",
-						)
-					);
-					?>
-					<?php $this->render_clear_history_button( 'database-scan' ); ?>
 				</form>
 
 				<div id="cws-database-scan-js-notices" aria-live="polite"></div>

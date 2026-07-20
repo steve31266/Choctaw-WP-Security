@@ -349,7 +349,6 @@
 	function renderToolbar(container) {
 		var toolbar = createElement('div', 'cws-scheduled-tasks-toolbar');
 		var search = document.createElement('input');
-		var refresh = createElement('button', 'button button-secondary', strings.refreshButton || 'Refresh');
 		var categoryOptions = [{ value: '', label: strings.allCategories || 'All Categories' }];
 		var riskOptions = [
 			{ value: '', label: strings.allRisk || 'All Risk' },
@@ -408,10 +407,6 @@
 			renderResult(resultState);
 		});
 		toolbar.appendChild(search);
-
-		refresh.type = 'button';
-		refresh.addEventListener('click', handleScan);
-		toolbar.appendChild(refresh);
 
 		container.appendChild(toolbar);
 	}

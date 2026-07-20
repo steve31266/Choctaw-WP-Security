@@ -201,6 +201,198 @@ sassh_assert(
 	null === Sassh_Findings_Service::blog_id_from_uploads_path( 'wp-content/uploads/evil.php' )
 );
 
+// --- Phase 3.3 option registry / keys / risk / site mapping ---
+sassh_assert(
+	'option object type registered',
+	Sassh_Object_Type_Registry::is_registered( Sassh_Object_Type_Registry::TYPE_OPTION )
+);
+sassh_assert(
+	'option key plain name',
+	'siteurl' === Sassh_Option_Key_Normalizer::object_key_for_option( ' siteurl ' )
+);
+sassh_assert(
+	'option key active plugin',
+	'active_plugins#acme/plugin.php' === Sassh_Option_Key_Normalizer::object_key_for_active_plugin( '/acme/plugin.php' )
+);
+sassh_assert(
+	'option key home+siteurl',
+	'home+siteurl' === Sassh_Option_Key_Normalizer::object_key_home_siteurl()
+);
+sassh_assert(
+	'database-scan scope key',
+	'database-scan:wp_2_options' === Sassh_Findings_Service::database_scan_scope_key( 'wp_2_options' )
+);
+sassh_assert(
+	'database-scan scanner id',
+	'database-scan' === Sassh_Findings_Service::SCANNER_DATABASE_SCAN
+);
+
+sassh_assert(
+	'home-siteurl-mismatch risk suspicious',
+	'suspicious' === Sassh_Findings_Service::database_scan_risk_level( 'home-siteurl-mismatch' )
+);
+sassh_assert(
+	'home-external-host risk warning',
+	'warning' === Sassh_Findings_Service::database_scan_risk_level( 'home-external-host' )
+);
+sassh_assert(
+	'default-role-administrator risk warning',
+	'warning' === Sassh_Findings_Service::database_scan_risk_level( 'default-role-administrator' )
+);
+sassh_assert(
+	'large-autoload risk suspicious',
+	'suspicious' === Sassh_Findings_Service::database_scan_risk_level( 'large-autoload-option' )
+);
+sassh_assert(
+	'malware-option-name risk warning',
+	'warning' === Sassh_Findings_Service::database_scan_risk_level( 'malware-option-name' )
+);
+sassh_assert(
+	'active-plugin-missing risk suspicious',
+	'suspicious' === Sassh_Findings_Service::database_scan_risk_level( 'active-plugin-missing' )
+);
+sassh_assert(
+	'active-plugin path ordinary warning',
+	'warning' === Sassh_Findings_Service::database_scan_risk_level(
+		'active-plugin-suspicious-path',
+		array( 'plugin_path' => 'not-under-plugins/plugin.php' )
+	)
+);
+sassh_assert(
+	'active-plugin path traversal critical',
+	'critical' === Sassh_Findings_Service::database_scan_risk_level(
+		'active-plugin-suspicious-path',
+		array( 'plugin_path' => '../outside/plugin.php' )
+	)
+);
+sassh_assert(
+	'active-plugin path phar critical',
+	'critical' === Sassh_Findings_Service::database_scan_risk_level(
+		'active-plugin-suspicious-path',
+		array( 'plugin_path' => 'phar://evil.phar/x' )
+	)
+);
+
+$tag_patterns  = Choctaw_Wp_Security_Options_Scan_Patterns::$php_tag_patterns;
+$exec_patterns = Choctaw_Wp_Security_Options_Scan_Patterns::$execution_patterns;
+
+sassh_assert(
+	'php tag-only is warning',
+	'warning' === Sassh_Findings_Service::php_execution_risk_from_matches(
+		array( '<?php' ),
+		$tag_patterns,
+		$exec_patterns
+	)
+);
+sassh_assert(
+	'php single execution pattern is warning',
+	'warning' === Sassh_Findings_Service::php_execution_risk_from_matches(
+		array( 'eval(' ),
+		$tag_patterns,
+		$exec_patterns
+	)
+);
+sassh_assert(
+	'php tag plus execution is critical',
+	'critical' === Sassh_Findings_Service::php_execution_risk_from_matches(
+		array( '<?php', 'eval(' ),
+		$tag_patterns,
+		$exec_patterns
+	)
+);
+sassh_assert(
+	'php multiple execution patterns is critical',
+	'critical' === Sassh_Findings_Service::php_execution_risk_from_matches(
+		array( 'eval(', 'base64_decode(' ),
+		$tag_patterns,
+		$exec_patterns
+	)
+);
+sassh_assert(
+	'php shell_exec alone is warning',
+	'warning' === Sassh_Findings_Service::php_execution_risk_from_matches(
+		array( 'shell_exec(' ),
+		$tag_patterns,
+		$exec_patterns
+	)
+);
+sassh_assert(
+	'php two shell patterns is critical',
+	'critical' === Sassh_Findings_Service::php_execution_risk_from_matches(
+		array( 'shell_exec(', 'passthru(' ),
+		$tag_patterns,
+		$exec_patterns
+	)
+);
+
+// Single-site: only configured options table maps.
+$GLOBALS['sassh_test_is_multisite']     = false;
+$GLOBALS['sassh_test_current_blog_id']  = 1;
+$GLOBALS['wpdb']                        = (object) array(
+	'base_prefix' => 'wp_',
+	'options'     => 'wp_options',
+);
+sassh_assert(
+	'single-site configured table maps',
+	1 === Sassh_Option_Key_Normalizer::map_options_table_to_registered_site_blog_id( 'wp_options' )
+);
+sassh_assert(
+	'single-site foreign table rejected',
+	is_wp_error( Sassh_Option_Key_Normalizer::map_options_table_to_registered_site_blog_id( 'wp_old_options' ) )
+);
+
+// Multisite: registered site including archived; orphan rejected.
+$GLOBALS['sassh_test_is_multisite']  = true;
+$GLOBALS['sassh_test_main_site_id']  = 1;
+$GLOBALS['sassh_test_sites']         = array(
+	1 => (object) array(
+		'blog_id'  => 1,
+		'archived' => '0',
+	),
+	2 => (object) array(
+		'blog_id'  => 2,
+		'archived' => '1',
+		'public'   => '0',
+		'spam'     => '0',
+	),
+);
+$GLOBALS['wpdb'] = (object) array(
+	'base_prefix' => 'wp_',
+	'options'     => 'wp_options',
+);
+
+sassh_assert(
+	'multisite main options maps',
+	1 === Sassh_Option_Key_Normalizer::map_options_table_to_registered_site_blog_id( 'wp_options' )
+);
+sassh_assert(
+	'multisite archived subsite still maps',
+	2 === Sassh_Option_Key_Normalizer::map_options_table_to_registered_site_blog_id( 'wp_2_options' )
+);
+sassh_assert(
+	'multisite orphan numeric table rejected',
+	is_wp_error( Sassh_Option_Key_Normalizer::map_options_table_to_registered_site_blog_id( 'wp_27_options' ) )
+);
+sassh_assert(
+	'multisite foreign prefix rejected',
+	is_wp_error( Sassh_Option_Key_Normalizer::map_options_table_to_registered_site_blog_id( 'bak_options' ) )
+);
+sassh_assert(
+	'archived site is registered',
+	Sassh_Option_Key_Normalizer::is_registered_network_site( 2 )
+);
+sassh_assert(
+	'missing site is not registered',
+	! Sassh_Option_Key_Normalizer::is_registered_network_site( 27 )
+);
+
+$content_fp = Sassh_Findings_Service::content_fingerprint_from_string( 'abc' );
+sassh_assert( 'content fingerprint prefix', 0 === strpos( $content_fp, 'sha256:' ) );
+sassh_assert(
+	'content fingerprint stable',
+	$content_fp === Sassh_Findings_Service::content_fingerprint_from_string( 'abc' )
+);
+
 // --- Capabilities ---
 $GLOBALS['sassh_test_is_multisite'] = false;
 $GLOBALS['sassh_test_caps']         = array( 'manage_options' => true );

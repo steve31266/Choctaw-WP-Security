@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.3.3] - 2026-07-20
+
+### Added
+
+- **Findings Phase 3.3:** wp_options / database-scan migrated to Sassh Findings (`object_type=option`; registered-site `blog_id` required; rule-based risk mapping). Sassh dismiss/undismiss and related-on-expand; Clear History and Reset Baseline removed on that tab.
+
+### Changed
+
+- Database scan rejects foreign/orphaned options tables before beginning a Findings execution. Large-autoload Findings only for sizes at/above threshold. PHP execution Critical only for strong pattern combinations. Legacy options baseline is no longer written (orphaned baseline option left in place).
+
 ## [1.9.3.2] - 2026-07-20
 
 ### Added

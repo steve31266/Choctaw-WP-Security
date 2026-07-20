@@ -18,11 +18,12 @@
 	};
 
 	var riskOrder = {
-		critical: 4,
+		critical: 5,
+		warning: 4,
 		suspicious: 3,
-		alert: 3,
-		safe: 2,
-		info: 1
+		info: 2,
+		safe: 1,
+		alert: 2
 	};
 
 	function ready(callback) {
@@ -229,6 +230,7 @@
 	function riskLabel(risk) {
 		var map = {
 			critical: strings.riskCritical || 'Critical',
+			warning: strings.riskWarning || 'Warning',
 			suspicious: strings.riskSuspicious || 'Suspicious',
 			safe: strings.riskSafe || 'Safe',
 			info: strings.riskInfo || 'Info'
@@ -236,8 +238,12 @@
 		return map[risk] || risk || strings.riskInfo || 'Info';
 	}
 
+	function findingRisk(finding) {
+		return text(finding.risk_level || finding.risk || 'info');
+	}
+
 	function collectFindings(result) {
-		if (result && Array.isArray(result.findings) && result.findings.length) {
+		if (result && Array.isArray(result.findings)) {
 			return result.findings;
 		}
 
@@ -257,10 +263,12 @@
 					copy.category_label = categoryLabels[sectionKey] || sectionKey;
 				}
 				if (!copy.risk) {
-					if (copy.severity === 'critical') {
+					if (copy.risk_level) {
+						copy.risk = copy.risk_level;
+					} else if (copy.severity === 'critical') {
 						copy.risk = 'critical';
 					} else if (copy.severity === 'warning') {
-						copy.risk = 'suspicious';
+						copy.risk = 'warning';
 					} else if (sectionKey === 'large_autoload') {
 						copy.risk = 'safe';
 					} else {
@@ -280,7 +288,7 @@
 		var search = text(uiState.search).toLowerCase().trim();
 
 		return findings.filter(function (finding) {
-			if (uiState.risk && finding.risk !== uiState.risk) {
+			if (uiState.risk && findingRisk(finding) !== uiState.risk) {
 				return false;
 			}
 
@@ -318,8 +326,8 @@
 			var b;
 
 			if (key === 'risk') {
-				a = riskOrder[left.risk] || 0;
-				b = riskOrder[right.risk] || 0;
+				a = riskOrder[findingRisk(left)] || 0;
+				b = riskOrder[findingRisk(right)] || 0;
 				if (a !== b) {
 					return (a - b) * dir;
 				}
@@ -390,11 +398,12 @@
 	}
 
 	function renderRiskCell(finding) {
-		var wrap = createElement('div', 'cws-risk is-' + text(finding.risk || 'info'));
+		var risk = findingRisk(finding);
+		var wrap = createElement('div', 'cws-risk is-' + risk);
 		var label = createElement('span', 'cws-risk-label');
 
 		label.appendChild(createCoreGuardMark());
-		appendText(label, riskLabel(finding.risk));
+		appendText(label, finding.risk_label || riskLabel(risk));
 		wrap.appendChild(label);
 		return wrap;
 	}
@@ -436,15 +445,18 @@
 		var riskSelect = document.createElement('select');
 		var categorySelect = document.createElement('select');
 		var searchInput = document.createElement('input');
-		var refresh = createElement('button', 'button button-secondary', strings.refreshButton || strings.rescanButton || 'Refresh');
 		var riskOptions = [
 			{ value: '', label: strings.allRisks || 'All risks' },
 			{ value: 'critical', label: strings.riskCritical || 'Critical' },
+			{ value: 'warning', label: strings.riskWarning || 'Warning' },
 			{ value: 'suspicious', label: strings.riskSuspicious || 'Suspicious' },
-			{ value: 'safe', label: strings.riskSafe || 'Safe' },
 			{ value: 'info', label: strings.riskInfo || 'Info' }
 		];
 		var categoryKeys = Object.keys(categoryLabels);
+
+		if (uiState.risk === 'safe') {
+			uiState.risk = '';
+		}
 
 		riskSelect.setAttribute('aria-label', strings.risk || 'Risk');
 		riskOptions.forEach(function (option) {
@@ -489,9 +501,6 @@
 			renderResult(resultState);
 		});
 
-		refresh.type = 'button';
-		refresh.addEventListener('click', handleScan);
-
 		toolbar.appendChild(riskSelect);
 		if (window.CwsReportStatus) {
 			window.CwsReportStatus.appendStatusFilter(toolbar, uiState, function () {
@@ -501,7 +510,6 @@
 		}
 		toolbar.appendChild(categorySelect);
 		toolbar.appendChild(searchInput);
-		toolbar.appendChild(refresh);
 		parent.appendChild(toolbar);
 	}
 
@@ -535,7 +543,7 @@
 
 	function guidanceForFinding(finding) {
 		var category = text(finding.category || finding.section_key || '');
-		var risk = text(finding.risk || 'info');
+		var risk = findingRisk(finding);
 		var why = text(finding.why_seeing_this || '');
 		var how = text(finding.how_to_proceed || '');
 		var entry;
@@ -572,7 +580,7 @@
 
 		infoPanel.appendChild(createElement('h4', '', strings.infoPanel || 'Info'));
 		appendInfoField(infoList, strings.size || 'Size', sizeFormat(finding.size || 0));
-		appendHighlighted(detailNode, finding.detail || '—');
+		appendHighlighted(detailNode, finding.detail || finding.description || '—');
 		appendInfoField(infoList, strings.detail || 'Detail', detailNode);
 		infoPanel.appendChild(infoList);
 
@@ -602,6 +610,10 @@
 				uiState.expandedId = '';
 				renderResult(resultState);
 			});
+		}
+
+		if (window.CwsReportRelatedFindings) {
+			window.CwsReportRelatedFindings.appendRelatedFindings(right, finding);
 		}
 
 		grid.appendChild(left);
@@ -634,6 +646,9 @@
 		if (isExpanded) {
 			row.className = 'is-expanded';
 		}
+		if (finding.confirmed_this_run === false) {
+			row.className = (row.className ? row.className + ' ' : '') + 'cws-finding-not-confirmed';
+		}
 
 		riskTd.appendChild(renderRiskCell(finding));
 		row.appendChild(riskTd);
@@ -650,6 +665,9 @@
 
 		appendHighlighted(optionCode, finding.option_name || '');
 		optionTd.appendChild(optionCode);
+		if (finding.confirmed_this_run === false) {
+			optionTd.appendChild(createElement('p', 'description', strings.notConfirmedThisRun || 'Not reconfirmed by this incomplete scan'));
+		}
 		row.appendChild(optionTd);
 
 		eye.type = 'button';
@@ -718,33 +736,57 @@
 	function renderSummary(resultsEl, result) {
 		var summary = result.summary || {};
 		var critical = parseInt(summary.critical, 10) || 0;
-		var suspicious = parseInt(summary.suspicious, 10) || parseInt(summary.warning, 10) || 0;
-		var safe = parseInt(summary.safe, 10) || 0;
-		var info = parseInt(summary.info, 10) || 0;
-		var hasProblems = critical + suspicious > 0;
-		var className = critical > 0 ? 'cws-core-checksum-results is-error' : (suspicious > 0 ? 'cws-core-checksum-results is-warning' : 'cws-core-checksum-results is-success');
-		var panel = createElement('div', className);
-		var message = hasProblems ?
-			format(strings.scanCompleteIssues, numberFormat(critical), numberFormat(suspicious), numberFormat(safe), numberFormat(info)) :
-			format(strings.scanCompleteClean, numberFormat(safe), numberFormat(info));
+		var warning = parseInt(summary.warning, 10) || 0;
+		var suspicious = parseInt(summary.suspicious, 10) || 0;
+		var incomplete = !result.rejected && (!!result.scan_incomplete || result.coverage_complete === false || (result.completion_status && result.completion_status !== 'success'));
+		var hasProblems = critical + warning + suspicious > 0;
+		var className;
+		var panel;
+		var message;
+
+		if (result.rejected) {
+			panel = createElement('div', 'cws-core-checksum-results is-error');
+			message = (Array.isArray(result.errors) && result.errors.length) ? result.errors[0] : (strings.scanRejected || 'This options table cannot be scanned.');
+			panel.appendChild(createElement('p', 'cws-core-checksum-summary', message));
+			resultsEl.appendChild(panel);
+			return;
+		}
+
+		className = incomplete
+			? 'cws-core-checksum-results is-warning'
+			: (critical > 0
+				? 'cws-core-checksum-results is-error'
+				: ((warning + suspicious) > 0 ? 'cws-core-checksum-results is-warning' : 'cws-core-checksum-results is-success'));
+		panel = createElement('div', className);
+
+		if (incomplete) {
+			message = strings.scanIncomplete || strings.incomplete || 'Scan coverage was incomplete. Previously detected findings were not cleared.';
+		} else if (hasProblems) {
+			message = format(
+				strings.scanCompleteIssues || 'Scan complete. %1$s critical, %2$s warning, %3$s suspicious findings.',
+				numberFormat(critical),
+				numberFormat(warning),
+				numberFormat(suspicious)
+			);
+		} else {
+			message = strings.scanCompleteClean || 'Scan complete. No critical, warning, or suspicious findings.';
+		}
 
 		panel.appendChild(createElement('p', 'cws-core-checksum-summary', message));
 
-		if (result.scan_incomplete) {
-			panel.appendChild(createElement('p', '', strings.incomplete));
+		if (incomplete && result.prior_findings_only) {
+			panel.appendChild(createElement('p', 'description', strings.priorFindingsNote || 'Active findings below are from earlier successful scans and were not reconfirmed by this run.'));
+		}
+
+		if (Array.isArray(result.errors) && result.errors.length) {
+			result.errors.forEach(function (errorMessage) {
+				panel.appendChild(createElement('p', 'description', errorMessage));
+			});
 		}
 
 		if (result.wordpress_configured_table && result.options_table && result.wordpress_configured_table !== result.options_table) {
 			panel.appendChild(createElement('p', '', format(strings.configuredTable, result.wordpress_configured_table)));
 		}
-
-		// Baseline-only info messages from sections
-		Object.keys(result.sections || {}).forEach(function (sectionKey) {
-			var section = result.sections[sectionKey];
-			if (section && section.info_message) {
-				panel.appendChild(createElement('p', '', section.info_message));
-			}
-		});
 
 		resultsEl.appendChild(panel);
 	}
@@ -813,18 +855,6 @@
 		});
 	}
 
-	function handleBaselineReset() {
-		setBusy(true, strings.resettingBaseline);
-
-		request('choctaw_wp_security_database_scan_baseline_reset').then(function (data) {
-			showNotice(data.message || '', 'success');
-		}).catch(function (error) {
-			showNotice(error.message || strings.resetError, 'error');
-		}).finally(function () {
-			setBusy(false);
-		});
-	}
-
 	function init() {
 		var form = document.getElementById('cws-database-scan-form');
 
@@ -833,16 +863,7 @@
 		}
 
 		form.addEventListener('submit', function (event) {
-			var submitter = event.submitter || document.activeElement;
-			var isBaselineReset = submitter && submitter.name === 'choctaw_wp_security_database_scan_baseline_reset';
-
 			event.preventDefault();
-
-			if (isBaselineReset) {
-				handleBaselineReset();
-				return;
-			}
-
 			handleScan();
 		});
 

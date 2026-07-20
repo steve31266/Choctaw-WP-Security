@@ -21,8 +21,26 @@ class Sassh_Findings_Service {
 	const RULE_CORE_FILE_MISSING     = 'core-file-missing';
 	const RULE_CORE_FILE_UNKNOWN     = 'core-file-unknown';
 	const SCANNER_EXPOSED_FILES      = 'exposed-files';
+	const SCANNER_DATABASE_SCAN      = 'database-scan';
 	const FINGERPRINT_MISSING        = 'sha256:missing';
 	const FINGERPRINT_DIRECTORY      = 'sha256:directory';
+
+	const RULE_HOME_SITEURL_MISMATCH           = 'home-siteurl-mismatch';
+	const RULE_HOME_CONSTANT_MISMATCH          = 'home-constant-mismatch';
+	const RULE_SITEURL_CONSTANT_MISMATCH       = 'siteurl-constant-mismatch';
+	const RULE_HOME_EXTERNAL_HOST              = 'home-external-host';
+	const RULE_SITEURL_EXTERNAL_HOST           = 'siteurl-external-host';
+	const RULE_USERS_CAN_REGISTER_ENABLED      = 'users-can-register-enabled';
+	const RULE_DEFAULT_ROLE_ADMINISTRATOR      = 'default-role-administrator';
+	const RULE_ADMIN_EMAIL_INVALID             = 'admin-email-invalid';
+	const RULE_CRITICAL_OPTION_EXTERNAL_URL    = 'critical-option-external-url';
+	const RULE_ACTIVE_PLUGINS_INVALID          = 'active-plugins-invalid';
+	const RULE_ACTIVE_PLUGIN_SUSPICIOUS_PATH   = 'active-plugin-suspicious-path';
+	const RULE_ACTIVE_PLUGIN_MISSING           = 'active-plugin-missing';
+	const RULE_LARGE_AUTOLOAD_OPTION           = 'large-autoload-option';
+	const RULE_PHP_EXECUTION_PATTERNS_MATCH    = 'php-execution-patterns-match';
+	const RULE_MALWARE_OPTION_NAME             = 'malware-option-name';
+	const RULE_SCRIPTS_NON_WIDGET_MATCH        = 'scripts-non-widget-match';
 
 	/**
 	 * Risk severity order (low to high).
@@ -475,6 +493,186 @@ class Sassh_Findings_Service {
 	 */
 	public static function exposed_files_scope_key() {
 		return 'exposed-files:wordpress-root';
+	}
+
+	/**
+	 * Scope key for a database-scan options table.
+	 *
+	 * @param string $options_table Options table name.
+	 * @return string
+	 */
+	public static function database_scan_scope_key( $options_table ) {
+		return 'database-scan:' . (string) $options_table;
+	}
+
+	/**
+	 * SHA-256 fingerprint for an arbitrary string payload.
+	 *
+	 * @param string $value Raw bytes/string.
+	 * @return string sha256:hex
+	 */
+	public static function content_fingerprint_from_string( $value ) {
+		return 'sha256:' . hash( 'sha256', (string) $value );
+	}
+
+	/**
+	 * Rule-based risk_level for database-scan (Phase 3.3). No legacy warning→suspicious collapse.
+	 *
+	 * @param string               $rule_id  Rule id.
+	 * @param array<string, mixed> $evidence Optional evidence (matched_patterns, plugin_path, …).
+	 * @return string
+	 */
+	public static function database_scan_risk_level( $rule_id, array $evidence = array() ) {
+		$rule_id = (string) $rule_id;
+
+		switch ( $rule_id ) {
+			case self::RULE_HOME_SITEURL_MISMATCH:
+			case self::RULE_HOME_CONSTANT_MISMATCH:
+			case self::RULE_SITEURL_CONSTANT_MISMATCH:
+			case self::RULE_USERS_CAN_REGISTER_ENABLED:
+			case self::RULE_ADMIN_EMAIL_INVALID:
+			case self::RULE_ACTIVE_PLUGINS_INVALID:
+			case self::RULE_ACTIVE_PLUGIN_MISSING:
+			case self::RULE_LARGE_AUTOLOAD_OPTION:
+				return 'suspicious';
+
+			case self::RULE_HOME_EXTERNAL_HOST:
+			case self::RULE_SITEURL_EXTERNAL_HOST:
+			case self::RULE_DEFAULT_ROLE_ADMINISTRATOR:
+			case self::RULE_CRITICAL_OPTION_EXTERNAL_URL:
+			case self::RULE_SCRIPTS_NON_WIDGET_MATCH:
+			case self::RULE_MALWARE_OPTION_NAME:
+				return 'warning';
+
+			case self::RULE_ACTIVE_PLUGIN_SUSPICIOUS_PATH:
+				return self::active_plugin_path_risk_level(
+					isset( $evidence['plugin_path'] ) ? (string) $evidence['plugin_path'] : ''
+				);
+
+			case self::RULE_PHP_EXECUTION_PATTERNS_MATCH:
+				$matched = isset( $evidence['matched_patterns'] ) && is_array( $evidence['matched_patterns'] )
+					? $evidence['matched_patterns']
+					: array();
+				$tag_patterns = isset( $evidence['php_tag_patterns'] ) && is_array( $evidence['php_tag_patterns'] )
+					? $evidence['php_tag_patterns']
+					: array();
+				$execution_patterns = isset( $evidence['execution_patterns'] ) && is_array( $evidence['execution_patterns'] )
+					? $evidence['execution_patterns']
+					: array();
+
+				return self::php_execution_risk_from_matches( $matched, $tag_patterns, $execution_patterns );
+
+			default:
+				return 'suspicious';
+		}
+	}
+
+	/**
+	 * Risk for active-plugin path outside plugins dir.
+	 *
+	 * Critical only when the path itself shows strong malware evidence.
+	 *
+	 * @param string $plugin_path Plugin path entry.
+	 * @return string
+	 */
+	public static function active_plugin_path_risk_level( $plugin_path ) {
+		$path = (string) $plugin_path;
+
+		if ( '' === $path ) {
+			return 'warning';
+		}
+
+		$lower = strtolower( $path );
+
+		if (
+			false !== strpos( $lower, 'phar://' )
+			|| preg_match( '#^[a-z][a-z0-9+.-]*://#i', $path )
+			|| false !== strpos( $path, "\0" )
+			|| false !== strpos( $path, '../' )
+			|| false !== strpos( $path, '..\\' )
+		) {
+			return 'critical';
+		}
+
+		return 'warning';
+	}
+
+	/**
+	 * PHP execution pattern risk from the complete matched evidence set.
+	 *
+	 * Tag alone → warning. Single execution/obfuscation pattern alone → warning.
+	 * Critical only for documented strong combinations (tag+execution, multiple
+	 * complementary execution patterns, or 2+ shell-execution patterns).
+	 *
+	 * @param array<int, string> $matched_patterns    All patterns matched in the value.
+	 * @param array<int, string> $php_tag_patterns    Known PHP tag patterns.
+	 * @param array<int, string> $execution_patterns  Known execution/obfuscation patterns.
+	 * @return string
+	 */
+	public static function php_execution_risk_from_matches( array $matched_patterns, array $php_tag_patterns, array $execution_patterns ) {
+		$matched = array();
+
+		foreach ( $matched_patterns as $pattern ) {
+			$pattern = (string) $pattern;
+			if ( '' !== $pattern ) {
+				$matched[ $pattern ] = $pattern;
+			}
+		}
+
+		$matched = array_values( $matched );
+
+		if ( empty( $matched ) ) {
+			return 'warning';
+		}
+
+		$tag_hits = array();
+		$exec_hits = array();
+
+		foreach ( $matched as $pattern ) {
+			foreach ( $php_tag_patterns as $tag ) {
+				if ( 0 === strcasecmp( (string) $tag, $pattern ) ) {
+					$tag_hits[ $pattern ] = $pattern;
+				}
+			}
+			foreach ( $execution_patterns as $exec ) {
+				if ( 0 === strcasecmp( (string) $exec, $pattern ) ) {
+					$exec_hits[ $pattern ] = $pattern;
+				}
+			}
+		}
+
+		$tag_count  = count( $tag_hits );
+		$exec_count = count( $exec_hits );
+
+		// Tag + execution/obfuscation.
+		if ( $tag_count > 0 && $exec_count > 0 ) {
+			return 'critical';
+		}
+
+		// Multiple complementary execution/obfuscation patterns.
+		if ( $exec_count >= 2 ) {
+			return 'critical';
+		}
+
+		// Especially strong shell-execution combination (2+ shell family).
+		$shell_family = array( 'shell_exec(', 'passthru(', 'system(' );
+		$shell_hits   = 0;
+
+		foreach ( $exec_hits as $pattern ) {
+			foreach ( $shell_family as $shell ) {
+				if ( 0 === strcasecmp( $shell, $pattern ) ) {
+					++$shell_hits;
+					break;
+				}
+			}
+		}
+
+		if ( $shell_hits >= 2 ) {
+			return 'critical';
+		}
+
+		// Tag alone, or a single execution/obfuscation pattern alone.
+		return 'warning';
 	}
 
 	/**

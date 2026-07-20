@@ -61,6 +61,9 @@
 		if (id === 'exposed-files') {
 			return 'Exposed Files';
 		}
+		if (id === 'database-scan') {
+			return 'wp_options';
+		}
 		return id || '—';
 	}
 

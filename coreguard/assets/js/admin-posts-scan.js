@@ -331,7 +331,6 @@
 		var toolbar = createElement('div', 'cws-report-toolbar');
 		var riskSelect = document.createElement('select');
 		var categorySelect = document.createElement('select');
-		var refresh = createElement('button', 'button button-secondary', strings.refreshButton || strings.rescanButton || 'Refresh');
 
 		riskSelect.setAttribute('aria-label', strings.risk || 'Risk');
 		[
@@ -371,9 +370,6 @@
 			renderResult(resultState);
 		});
 
-		refresh.type = 'button';
-		refresh.addEventListener('click', handleScan);
-
 		toolbar.appendChild(riskSelect);
 		if (window.CwsReportStatus) {
 			window.CwsReportStatus.appendStatusFilter(toolbar, uiState, function () {
@@ -382,7 +378,6 @@
 			});
 		}
 		toolbar.appendChild(categorySelect);
-		toolbar.appendChild(refresh);
 		parent.appendChild(toolbar);
 	}
 

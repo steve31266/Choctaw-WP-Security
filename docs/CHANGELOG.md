@@ -19,6 +19,19 @@ Newest entries first.
 
 ---
 
+## 2026-07-20 12:50 CDT
+
+**Summary:** Locked and shipped Findings Phase **3.3** (Database options → Sassh Findings): registered `object_type=option`; required registered-site `blog_id` (reject foreign/orphaned tables before begin; archived registered sites accepted); rule-based risk (no legacy warning→suspicious); PHP Critical only on strong combinations; ≥threshold autoload Findings only; Clear History + Reset Baseline removed; fresh start; dismiss cache rehydration.
+
+**Documents:**
+- `docs/CoreGuard Findings System.md` — updated — §5 / §11 / §18 Phase 3.3 complete; next = 3.4
+- `.cursor/plans/CoreGuard-Findings-System.md` — align with formal PRD (working copy)
+- `.cursor/plans/findings_phase_3_3_database_options.plan.md` — updated — approved + implemented
+- `.cursor/plans/findings_phase_3x_index.plan.md` — updated — 3.3 complete
+- `CHANGELOG.md` — updated — `[1.9.3.3] - 2026-07-20`
+- `docs/README.md` — updated — Findings status through Phase 3.3
+- `coreguard/sassh.php` — updated — `Version` / `CHOCTAW_WP_SECURITY_VERSION` → `1.9.3.3`
+
 ## 2026-07-20 00:20 CDT
 
 **Summary:** Plugin version set to **1.9.3.2** for the Findings Phase 3.2 release (Exposed Files → Sassh Findings), including dismiss-status cache rehydration fix.

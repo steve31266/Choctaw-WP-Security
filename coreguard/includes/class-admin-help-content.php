@@ -641,7 +641,7 @@ class Choctaw_Wp_Security_Admin_Help_Content {
 		$paragraphs = array(
 			__( 'This scan uses the options table for the WordPress Tables prefix chosen under Settings. By default that is the live WordPress-configured prefix from wp-config.php.', 'choctaw-wp-security' ),
 			__( 'This scan covers only that options table. It does not scan posts, users, comments, or other database tables. Findings are reported for investigation — nothing is automatically deleted or modified.', 'choctaw-wp-security' ),
-			__( 'The first scan of an options table establishes a baseline for change tracking. Subsequent scans of that same table report options that are new or changed since the previous scan.', 'choctaw-wp-security' ),
+			__( 'Findings persist across scans. Sassh tracks first seen, last seen, and whether a condition is still detected. Only options tables that belong to a registered WordPress site can be scanned.', 'choctaw-wp-security' ),
 		);
 
 		return self::paragraphs_to_html( $paragraphs );

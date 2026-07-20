@@ -33,7 +33,6 @@ class Choctaw_Wp_Security_Options_Scan_Patterns {
 		'php_execution_patterns',
 		'malware_option_names',
 		'scripts_non_widget',
-		'baseline_diff',
 	);
 
 	/**
@@ -147,10 +146,6 @@ class Choctaw_Wp_Security_Options_Scan_Patterns {
 				'title'    => __( 'Scripts in Non-Widget Options', 'choctaw-wp-security' ),
 				'guidance' => __( 'Script or iframe tags outside widget and theme_mods options are uncommon and may indicate injected content.', 'choctaw-wp-security' ),
 			),
-			'baseline_diff'            => array(
-				'title'    => __( 'Changed Options Since Last Scan', 'choctaw-wp-security' ),
-				'guidance' => __( 'Compares the current wp_options table against the snapshot from your previous scan. New or changed rows may be routine plugin updates or signs of tampering.', 'choctaw-wp-security' ),
-			),
 		);
 	}
 
@@ -167,7 +162,6 @@ class Choctaw_Wp_Security_Options_Scan_Patterns {
 			'php_execution_patterns' => __( 'Execution', 'choctaw-wp-security' ),
 			'malware_option_names'   => __( 'Malware Names', 'choctaw-wp-security' ),
 			'scripts_non_widget'     => __( 'Scripts', 'choctaw-wp-security' ),
-			'baseline_diff'          => __( 'Changed', 'choctaw-wp-security' ),
 		);
 	}
 

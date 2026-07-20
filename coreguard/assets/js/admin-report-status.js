@@ -58,6 +58,7 @@
 			|| scanType === 'mu-plugins'
 			|| scanType === 'verify-checksums'
 			|| scanType === 'exposed-files'
+			|| scanType === 'database-scan'
 			|| (finding && finding.findings_backend === 'sassh');
 	}
 

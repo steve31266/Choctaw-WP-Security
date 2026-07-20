@@ -287,7 +287,6 @@
 		var categorySelect = document.createElement('select');
 		var searchLabel = document.createElement('label');
 		var searchInput = document.createElement('input');
-		var refreshButton = createElement('button', 'button button-secondary', strings.refresh || 'Refresh');
 
 		riskLabelEl.appendChild(createElement('span', 'screen-reader-text', strings.risk || 'Risk'));
 		riskSelect.appendChild(new Option(strings.allRisks || 'All risks', ''));
@@ -339,12 +338,6 @@
 		});
 		searchLabel.appendChild(searchInput);
 		toolbar.appendChild(searchLabel);
-
-		refreshButton.type = 'button';
-		refreshButton.addEventListener('click', function () {
-			handleScan();
-		});
-		toolbar.appendChild(refreshButton);
 
 		parent.appendChild(toolbar);
 	}
