@@ -390,6 +390,10 @@
 			});
 		}
 
+		if (window.CwsReportRelatedFindings) {
+			window.CwsReportRelatedFindings.appendRelatedFindings(right, finding);
+		}
+
 		grid.appendChild(left);
 		grid.appendChild(right);
 		return grid;

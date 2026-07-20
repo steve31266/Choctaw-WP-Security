@@ -54,7 +54,9 @@
 		if (findingId(finding)) {
 			return true;
 		}
-		return scanType === 'uploads-folder' || (finding && finding.findings_backend === 'sassh');
+		return scanType === 'uploads-folder'
+			|| scanType === 'mu-plugins'
+			|| (finding && finding.findings_backend === 'sassh');
 	}
 
 	function openStatusForFinding(finding) {

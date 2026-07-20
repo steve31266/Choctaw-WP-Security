@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.3.0] - 2026-07-19
+
+### Added
+
+- **Findings Phase 3.0:** Multisite **Network Admin** shell for the full Sassh UI (Home, Settings, Scans, About); no Sassh menus on subsite dashboards.
+- **MU-Plugins** Findings producer (`php-like-file-in-mu-plugins` → **Suspicious** + Needs Review), fingerprint dismiss/undismiss, Clear History removed on that tab.
+- Related-findings detail panel (loaded on row expand; hidden when empty) for Sassh file findings; AJAX `sassh_finding_related`.
+
+### Changed
+
+- All Sassh admin AJAX/actions (including prototype `choctaw_wp_security_*` handlers) require `Sassh_Capabilities::current_user_can_manage()`.
+- Multisite Sassh settings use the **network option** as the sole store (defaults when unset; no migration/fallback from leftover site options). Single-site unchanged.
+- Plugins-row **Settings** link points to Network Admin on Multisite (capability-gated).
+
 ## [1.9.3] - 2026-07-19
 
 ### Added

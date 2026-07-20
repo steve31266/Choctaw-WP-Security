@@ -2,15 +2,15 @@
 
 ## Project Requirements Document
 
-**Document status:** Finalized requirements — Phase 1/2 implemented and QA’d (2026-07-19); Phase 3+ pending  
+**Document status:** Finalized requirements — Phase 1/2 and Phase **3.0** complete and QA’d (2026-07-19); Phase **3.1+** scanner migrations next; Phase 4/5 pending  
 **Product scope:** Sassh WordPress Plugin (historical “CoreGuard” docs filenames), Sassh CLI, and future Sassh Desktop  
 **Primary purpose:** Define a shared, persistent system for recording scan findings, presenting items for human review, preserving dismissals, and reopening findings when their relevant state changes.
 
 **Scope of this document:** The Findings System — persistence, dismissals, effective status, object correlation, audit retention, scan-run attribution needed by future consumers, and the contract used by WordPress reports and future Desktop via CLI/JSON.
 
-**Implementation status:** Phase 1 (persistence / shared service) and Phase 2 (Uploads Folder reference producer) are complete in the plugin. Multisite Network Admin UI registration remains deferred to Phase 3 (Super Admin site-admin access is an interim gate only).
+**Implementation status:** Phase 1, 2, and **3.0** are implemented and QA’d in the plugin: persistence; Uploads + MU-Plugins Findings producers; Multisite Network Admin shell; centralized auth on all Sassh admin AJAX; network-option settings (Multisite fresh start); related-findings detail UI (hidden when empty; Uploads/MU scopes do not naturally overlap). Remaining Store-backed scanners migrate as Phase **3.1–3.7**; prototype store wind-down is Phase **3.8**.
 
-**Future consumers (architecture must accommodate; not Phase 1/2 delivery):** Scan Site aggregate runs, scheduled scans, email notifications, Home tab summary, Desktop orchestration, and new scanners such as Shell Scan. Phase 1/2 did not and must not expand into building those products.
+**Future consumers (architecture must accommodate; not Phase 1/2/3.x delivery):** Scan Site aggregate runs, scheduled scans, email notifications, Home tab summary, Desktop orchestration, and new scanners such as Shell Scan. Early Findings phases must not expand into building those products.
 
 **Canonical location:** This document under `docs/` is the formal Findings System contract. The working copy in `.cursor/plans/CoreGuard-Findings-System.md` should stay aligned; plans must not become a second conflicting source of truth.
 
@@ -216,8 +216,8 @@ Locked requirements:
   - WordPress Multisite: require a network-level capability such as `manage_network_options` (Super Administrators).
   - State-changing WordPress admin actions also require nonce verification in both modes.
 - Apply the same authorization boundary to viewing reports/findings, listing/retrieving findings, running scans that persist Findings, dismissing, undoing dismissals, and any other network-wide Findings action.
-- On Multisite, network-wide Sassh reports must be registered under **Network Admin**, not exposed through individual subsite admin dashboards. Until Network Admin UI is available, do **not** weaken the gate to ordinary subsite administrators as an interim shortcut.
-- The Multisite network has one Sassh dashboard (Network Admin when registered).
+- On Multisite, network-wide Sassh reports must be registered under **Network Admin**, not exposed through individual subsite admin dashboards. Ordinary subsite administrators must not receive Findings access (including via direct AJAX). Phase **3.0** registers the full Sassh UI under Network Admin and requires `Sassh_Capabilities` on all Sassh admin handlers.
+- The Multisite network has one Sassh dashboard under Network Admin.
 - The network has one shared findings, dismissal, and audit store.
 - Shared WordPress core, plugin, theme, MU-plugin, and configuration files are scanned and reported once.
 - A dismissal applies network-wide to that specific finding and reviewed fingerprint.
@@ -439,11 +439,11 @@ Each scanner integrated with the system shall document its object-key normalizat
 
 **Phase 1 (required):** Correlation storage, queries, and tests.
 
-**Uploads-only reference phase:** Related-findings UI is not required. Correlation keys and object fingerprints are still stored.
+**Phase 2 (Uploads-only):** Related-findings UI not required. Correlation keys and object fingerprints are still stored.
 
-**Later UI:** Detail-panel related context when a second participating file scanner exists (that scanner is a separate project). Related list excludes the current finding.
+**Phase 3.0:** Detail-panel related UI ships (load on row expand; cap 10; hidden when empty). Uploads and MU-Plugins directory scopes are mutually exclusive, so they do not naturally populate related context; the UI is ready for later overlapping file scanners (e.g. Phase 3.2 Exposed files). Related list excludes the current finding.
 
-**CLI/JSON:** Include related context on `findings get`. Do not include related findings in list responses by default.
+**CLI/JSON (Phase 4):** Include related context on `findings get`. Do not include related findings in list responses by default.
 
 Related summary requirements:
 
@@ -749,7 +749,7 @@ Scanners shall not:
 
 The Uploads scan should be the first reference implementation because it has clear file identities, straightforward content hashing, and an obvious dismissal/reopening lifecycle.
 
-Findings System delivery for Phase 1/2 means persistence plus Uploads as the first producer. Migrating other existing scans and building new scans are later work that consumes the same service.
+Findings System delivery for Phase 1/2 means persistence plus Uploads as the first producer. Phase **3.0** adds MU-Plugins and the Network Admin shell. Migrating remaining existing scans is Phase **3.1+** (see §18); building new scanners remains separate work that must consume the same service.
 
 Example observation:
 
@@ -780,17 +780,21 @@ stateDiagram-v2
     NotDetected --> NeedsReview: Returns changed
 ```
 
-After the Uploads integration is proven, recommended migration order of existing scans onto the shared service is:
+After the Uploads integration is proven, remaining existing scans migrate onto the shared service as **Phase 3.x** slices (see §18). Locked order:
 
-1. MU-Plugins and other file-based scans.
-2. Core checksum findings.
-3. Database options findings.
-4. WP-Cron findings.
-5. Vulnerability findings.
-6. Exposed sensitive-file findings.
-7. Future heuristic scans (separate projects) once they exist.
+1. **3.0 (done):** MU-Plugins (and Network Admin / related UI).
+2. **3.1:** Core checksum findings.
+3. **3.2:** Exposed sensitive-file findings (likely first natural related-findings peer with Uploads).
+4. **3.3:** Database options findings (`object_type` registry: `option`).
+5. **3.4:** WP-Cron findings (`cron_event`).
+6. **3.5:** Vulnerability / unrecognized-component findings.
+7. **3.6:** Directory Browsing — configuration/exposure object type (not forced `file`).
+8. **3.7 (optional):** wp_posts (Store-backed; outside the original §11 list).
+9. **3.8:** Prototype `Finding_Status_Store` wind-down after the last migrated scan; leftover **Review Not Needed** string sweep.
 
-The exact order may be adjusted to match current CoreGuard development priorities, but each migration must use the common service. During migration, remove that scanner’s Clear History control and baseline dependency per §4.4.
+Object-type registry entries expand **inside** the phase that first needs them. Future heuristic scans remain separate projects once they exist.
+
+The exact order of 3.1–3.7 may be adjusted with justification, but each migration must use the common service. During migration, remove that scanner’s Clear History control and baseline dependency per §4.4.
 
 ---
 
@@ -1123,21 +1127,38 @@ At minimum, automated tests shall cover:
 - Do **not** build Scan Site, scheduler, email, or Home.
 - Multisite: centralize Sassh authorization (`manage_options` single-site; `manage_network_options` Multisite). Network Admin menu registration deferred to Phase 3.
 
-### Phase 3: Shared UI and additional scans — **next**
+### Phase 3.0: Shared UI and MU-Plugins — **complete / QA’d (2026-07)**
 
-- Register network-wide Sassh Findings / Scans under **Network Admin** on Multisite; stop relying on Super Admin site-admin interim access (§3.10).
-- Extract reusable report components.
-- Migrate additional scans onto the shared service; remove each scan’s Clear History/baseline when migrated (§4.4).
-- Map each scanner’s legacy risk values to the canonical five levels; document overrides.
-- Add related-findings detail-panel UI when a second participating file scanner exists.
-- Document identity and fingerprint behavior for every scanner.
+- Register complete Sassh UI (Home, Settings, Scans, About) under **Network Admin** on Multisite; no subsite-admin menus (§3.10).
+- Require `Sassh_Capabilities` on all Sassh admin AJAX/actions (including prototype handlers), not menu-hiding alone.
+- Multisite settings: network option is sole authority for network-governing Sassh settings; **no** migration/fallback from site option (intentional fresh start); single-site keeps site option.
+- Plugins-row **Settings** link points to Network Admin on Multisite (gated by `Sassh_Capabilities`).
+- Migrate **MU-Plugins** onto Findings: `scanner_id=mu-plugins`, `rule_id=php-like-file-in-mu-plugins`, `risk_level=suspicious` + `needs_review`; scope-bounded finalize; missing dir = empty success; unreadable/invalid or confirmed `FILE_LIMIT` overflow = non-success without absence; Clear History removed.
+- Related-findings detail UI on expand (cap 10; hidden when empty); Uploads/MU scopes mutually exclusive so natural related peers are deferred to later 3.x file scanners.
 
-### Phase 4: CLI and JSON contract
+### Phase 3.1–3.8: Remaining scanner migrations and closeout — **pending**
+
+Narrowly scoped plans, one phase at a time (same pattern as 3.0). Registry expansion travels with the first consumer. See §11.
+
+| Phase | Scope | Status |
+| --- | --- | --- |
+| **3.1** | Core checksums (`verify-checksums`) | pending |
+| **3.2** | Exposed sensitive files (`exposed-files`) | pending |
+| **3.3** | Database options (`database-scan`); register `option` | pending |
+| **3.4** | WP-Cron (`scheduled-tasks`); register `cron_event` | pending |
+| **3.5** | Vulnerabilities / unrecognized components | pending |
+| **3.6** | Directory Browsing (`exposed-folders`); exposure/config object type | pending |
+| **3.7** | wp_posts (`wp-posts`) — optional | pending |
+| **3.8** | Gut/remove `Finding_Status_Store` after last migration; leftover **Review Not Needed** string sweep | pending |
+
+### Phase 4: CLI and JSON contract — **after 3.x progress (not blocked on 3.8)**
 
 - Define a versioned JSON schema for the common finding envelope (`risk_level`, classification, effective status).
 - Implement list, get (with related), dismiss, and undismiss commands.
 - Add filtering, pagination, and structured errors.
 - Test concurrency and stale-fingerprint rejection.
+
+Prefer migrating at least **3.1** and **3.2** before freezing the public CLI surface so related findings and multi-scanner list/get are meaningful; Phase 4 may start earlier if product priority requires it.
 
 ### Phase 5: Desktop integration
 
@@ -1147,17 +1168,17 @@ At minimum, automated tests shall cover:
 - Implement Desktop-owned findings for plugin-free sites.
 - Preserve separation between plugin findings and Desktop-only history.
 
-### Later (explicitly after Findings scanner migration)
+### Later (explicitly after Findings scanner migration / Phase 3.8)
 
 - Scan Site aggregate orchestration, scheduled scans, email notifications, Home summary (§12).
 
-**Next deliverable:** a narrowly scoped Phase 3 implementation plan (Network Admin + next scanner migrations). Phase 3 coding begins only after that plan is approved.
+**Next deliverable:** Phase **3.1** implementation plan (Core checksums → Findings), then implementation after approval.
 
 ---
 
 ## 19. Acceptance Criteria
 
-The initial Findings System is ready for broader scan integration when the following hold. **Phase 1/2 Uploads reference:** these criteria were met for Uploads in plugin QA (2026-07-19); remaining scanners must meet them as each migrates.
+The initial Findings System is ready for broader scan integration when the following hold. **Phase 1/2 Uploads** and **Phase 3.0 MU-Plugins / Network Admin:** met in plugin QA (2026-07-19). Remaining scanners must meet these criteria as each Phase **3.1+** migration lands.
 
 - Uploads uses the shared service rather than scan-specific dismissal logic.
 - A repeated unchanged result maps to the same finding.

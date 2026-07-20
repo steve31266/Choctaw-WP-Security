@@ -26,7 +26,6 @@ class Choctaw_Wp_Security_Finding_Status_Store {
 		'wp-posts',
 		'scheduled-tasks',
 		'exposed-files',
-		'mu-plugins',
 		'verify-checksums',
 		'directory-browsing',
 		'unrecognized-components',

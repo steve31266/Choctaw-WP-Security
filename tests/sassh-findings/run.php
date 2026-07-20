@@ -66,6 +66,7 @@ sassh_assert( 'hash_tuple is stable', $hash_a === Sassh_Findings_Service::hash_t
 sassh_assert( 'hash_tuple is not naïve concat', $hash_a !== $hash_b );
 
 sassh_assert( 'warning defaults to needs_review', 'needs_review' === Sassh_Findings_Service::default_classification( 'warning' ) );
+sassh_assert( 'suspicious defaults to needs_review', 'needs_review' === Sassh_Findings_Service::default_classification( 'suspicious' ) );
 sassh_assert( 'critical defaults to needs_review', 'needs_review' === Sassh_Findings_Service::default_classification( 'critical' ) );
 sassh_assert( 'info defaults to no_action_needed', 'no_action_needed' === Sassh_Findings_Service::default_classification( 'info' ) );
 sassh_assert( 'safe defaults to no_action_needed', 'no_action_needed' === Sassh_Findings_Service::default_classification( 'safe' ) );
@@ -73,6 +74,14 @@ sassh_assert( 'safe defaults to no_action_needed', 'no_action_needed' === Sassh_
 sassh_assert(
 	'uploads scope key uses normalized path',
 	'uploads:wp-content/uploads' === Sassh_Findings_Service::uploads_scope_key( $root . 'wp-content/uploads' )
+);
+sassh_assert(
+	'mu-plugins scope key uses normalized path',
+	'mu-plugins:wp-content/mu-plugins' === Sassh_Findings_Service::mu_plugins_scope_key( $root . 'wp-content/mu-plugins' )
+);
+sassh_assert(
+	'mu-plugins rule id is php-like',
+	'php-like-file-in-mu-plugins' === Sassh_Findings_Service::RULE_PHP_MU_PLUGINS
 );
 
 sassh_assert(

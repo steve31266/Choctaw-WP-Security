@@ -794,3 +794,37 @@ mark.cws-search-hit {
 	}
 }
 
+/* Related findings (Sassh Findings detail panel) */
+.cws-related-findings {
+	border-top: 1px solid #dcdcde;
+	margin-top: 1.25em;
+	padding-top: 1em;
+}
+
+.cws-related-findings-list {
+	list-style: none;
+	margin: 0.5em 0 0;
+	padding: 0;
+}
+
+.cws-related-findings-item {
+	border: 1px solid #dcdcde;
+	border-radius: 2px;
+	margin: 0 0 0.5em;
+	padding: 0.65em 0.75em;
+}
+
+.cws-related-findings-meta,
+.cws-related-findings-fp {
+	color: #646970;
+	display: block;
+	font-size: 12px;
+	margin-top: 0.25em;
+}
+
+.cws-related-findings-hint {
+	color: #50575e;
+	font-size: 12px;
+	margin: 0.5em 0 0;
+}
+

@@ -12,8 +12,10 @@ defined( 'ABSPATH' ) || exit;
  */
 class Sassh_Findings_Service {
 
-	const SCANNER_UPLOADS = 'uploads-folder';
-	const RULE_PHP_UPLOADS = 'php-file-in-uploads';
+	const SCANNER_UPLOADS     = 'uploads-folder';
+	const RULE_PHP_UPLOADS    = 'php-file-in-uploads';
+	const SCANNER_MU_PLUGINS  = 'mu-plugins';
+	const RULE_PHP_MU_PLUGINS = 'php-like-file-in-mu-plugins';
 
 	/**
 	 * Risk severity order (low to high).
@@ -419,6 +421,22 @@ class Sassh_Findings_Service {
 		}
 
 		return 'uploads:' . $normalized;
+	}
+
+	/**
+	 * Build MU-Plugins scope key from mu-plugins directory.
+	 *
+	 * @param string $dir Absolute mu-plugins directory.
+	 * @return string
+	 */
+	public static function mu_plugins_scope_key( $dir ) {
+		$normalized = Sassh_Object_Path_Normalizer::normalize_in_root( $dir );
+
+		if ( '' === $normalized ) {
+			$normalized = 'wp-content/mu-plugins';
+		}
+
+		return 'mu-plugins:' . $normalized;
 	}
 
 	/**

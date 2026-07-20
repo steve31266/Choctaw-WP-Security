@@ -57,16 +57,47 @@ class Choctaw_Wp_Security_Utils {
 	/**
 	 * Retrieve merged plugin options.
 	 *
+	 * Single-site: site option. Multisite: network option only (no site-option fallback).
+	 *
 	 * @return array<string, mixed>
 	 */
 	public static function get_options() {
-		$stored = get_option( self::OPTION_KEY, array() );
+		$stored = self::read_stored_options();
 
 		if ( ! is_array( $stored ) ) {
 			$stored = array();
 		}
 
 		return wp_parse_args( $stored, self::default_options() );
+	}
+
+	/**
+	 * Persist plugin options via the network-aware store.
+	 *
+	 * @param array<string, mixed> $options Options array (already sanitized).
+	 * @return bool
+	 */
+	public static function update_options( array $options ) {
+		if ( is_multisite() ) {
+			return (bool) update_network_option( null, self::OPTION_KEY, $options );
+		}
+
+		return (bool) update_option( self::OPTION_KEY, $options );
+	}
+
+	/**
+	 * Read raw stored options without defaults merge.
+	 *
+	 * Multisite intentionally ignores any leftover site-level option row.
+	 *
+	 * @return mixed
+	 */
+	private static function read_stored_options() {
+		if ( is_multisite() ) {
+			return get_network_option( null, self::OPTION_KEY, array() );
+		}
+
+		return get_option( self::OPTION_KEY, array() );
 	}
 
 	/**
@@ -258,7 +289,7 @@ class Choctaw_Wp_Security_Utils {
 
 		$options['database_scan_table_prefix'] = (string) $prefix;
 
-		return update_option( self::OPTION_KEY, $options );
+		return self::update_options( $options );
 	}
 
 	/**

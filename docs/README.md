@@ -46,4 +46,4 @@ Heuristic **engine/pack implementation** plans stay under `.cursor/plans/` (e.g.
 
 All files in this folder are **draft scaffolds** until `api_version` 1 is frozen for the first joint Plugin + Desktop release.
 
-**Findings System:** Phase 1/2 (persistence + Uploads reference) is implemented in the plugin and recorded in [CoreGuard Findings System.md](CoreGuard%20Findings%20System.md) §18. CLI/JSON/Desktop Findings surfaces remain Phase 4/5.
+**Findings System:** Phase 1, 2, and **3.0** (persistence, Uploads + MU-Plugins, Network Admin shell, related-findings UI) are implemented and QA’d — see [CoreGuard Findings System.md](CoreGuard%20Findings%20System.md) §11 and §18. Remaining scanner migrations are Phase **3.1–3.7**; prototype store wind-down is **3.8**. CLI/JSON/Desktop remain Phase 4/5.

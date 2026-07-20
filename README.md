@@ -348,6 +348,10 @@ coreguard/
 
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
 
+### 1.9.3.0
+
+- **Findings Phase 3.0:** Multisite Network Admin Sassh shell, MU-Plugins Findings producer (Suspicious), related-findings detail UI, network-option settings; further scanner migrations tracked as Phase 3.1–3.8 in `docs/`
+
 ### 1.9.3
 
 - **Sassh Findings System (Phase 1/2):** persistent findings tables, Uploads Folder as first producer (Warning + Needs Review), fingerprint-gated dismiss/undismiss, Multisite Super Admin authorization

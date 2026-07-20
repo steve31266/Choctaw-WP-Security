@@ -1,6 +1,6 @@
 <?php
 /**
- * Must-Use plugins folder scanner.
+ * Must-Use plugins folder scanner (Sassh Findings producer).
  *
  * @package Choctaw_Wp_Security
  */
@@ -15,37 +15,101 @@ class Choctaw_Wp_Security_Mu_Plugins_Scanner {
 	const CONTENTS_CHAR_LIMIT = 16384;
 	const FILE_LIMIT          = 200;
 	const CATEGORY_KEY        = 'mu_plugin';
+	const SCANNER_ID          = 'mu-plugins';
+	const RULE_ID             = 'php-like-file-in-mu-plugins';
 
 	/**
-	 * Scan the mu-plugins folder for PHP-like files.
+	 * Scan the mu-plugins folder for PHP-like files and persist via Sassh Findings.
 	 *
 	 * @return array<string, mixed>
 	 */
 	public function scan() {
-		$dir      = defined( 'WPMU_PLUGIN_DIR' ) ? WPMU_PLUGIN_DIR : WP_CONTENT_DIR . '/mu-plugins';
-		$paths    = $this->find_php_files( (string) $dir );
-		$findings = array();
+		Sassh_Findings_Schema::maybe_upgrade();
 
-		foreach ( $paths as $index => $absolute_path ) {
-			$findings[] = $this->build_finding( $absolute_path, $index );
+		$dir       = defined( 'WPMU_PLUGIN_DIR' ) ? (string) WPMU_PLUGIN_DIR : WP_CONTENT_DIR . '/mu-plugins';
+		$scope_key = Sassh_Findings_Service::mu_plugins_scope_key( $dir );
+		$service   = new Sassh_Findings_Service();
+
+		$execution_id = $service->begin_scanner_execution(
+			self::SCANNER_ID,
+			array(
+				'scope_key'  => $scope_key,
+				'run_type'   => 'individual',
+				'run_source' => 'wordpress_admin',
+			)
+		);
+
+		// Confirmed missing directory = successful empty scope (absence may run).
+		if ( ! file_exists( $dir ) ) {
+			$service->record_observations( $execution_id, array() );
+			$ok = $service->finalize_scanner_execution( $execution_id, 'success' );
+
+			return $this->build_report_from_findings( $service, $ok, $execution_id );
 		}
 
-		$count = count( $findings );
+		// Exists but not a readable directory = incomplete; no absence.
+		if ( ! is_dir( $dir ) || ! is_readable( $dir ) ) {
+			$service->finalize_scanner_execution( $execution_id, 'failed' );
 
-		return array(
-			'success'  => true,
-			'findings' => $findings,
-			'summary'  => array(
-				'critical'   => 0,
-				'suspicious' => 0,
-				'alert'      => $count,
-				'safe'       => 0,
-				'info'       => 0,
-				'total'      => $count,
-				'flagged'    => $count,
-			),
-			'scanned_at' => time(),
-		);
+			return $this->build_report_from_findings( $service, false, $execution_id );
+		}
+
+		try {
+			$discovery = $this->find_php_files( $dir );
+
+			if ( ! empty( $discovery['error'] ) ) {
+				$service->finalize_scanner_execution( $execution_id, 'failed' );
+
+				return $this->build_report_from_findings( $service, false, $execution_id );
+			}
+
+			if ( ! empty( $discovery['limit_exceeded'] ) ) {
+				$observations = array();
+
+				foreach ( $discovery['paths'] as $absolute_path ) {
+					$observation = $this->build_observation( $absolute_path );
+
+					if ( null !== $observation ) {
+						$observations[] = $observation;
+					}
+				}
+
+				$service->record_observations( $execution_id, $observations );
+				$service->finalize_scanner_execution( $execution_id, 'partial' );
+
+				return $this->build_report_from_findings( $service, false, $execution_id );
+			}
+
+			$observations   = array();
+			$hash_failures  = 0;
+
+			foreach ( $discovery['paths'] as $absolute_path ) {
+				$observation = $this->build_observation( $absolute_path );
+
+				if ( null === $observation ) {
+					++$hash_failures;
+					continue;
+				}
+
+				$observations[] = $observation;
+			}
+
+			if ( $hash_failures > 0 ) {
+				$service->record_observations( $execution_id, $observations );
+				$service->finalize_scanner_execution( $execution_id, 'partial' );
+
+				return $this->build_report_from_findings( $service, false, $execution_id );
+			}
+
+			$service->record_observations( $execution_id, $observations );
+			$ok = $service->finalize_scanner_execution( $execution_id, 'success' );
+
+			return $this->build_report_from_findings( $service, $ok, $execution_id );
+		} catch ( Exception $e ) {
+			$service->finalize_scanner_execution( $execution_id, 'failed' );
+
+			return $this->build_report_from_findings( $service, false, $execution_id );
+		}
 	}
 
 	/**
@@ -60,42 +124,146 @@ class Choctaw_Wp_Security_Mu_Plugins_Scanner {
 	}
 
 	/**
-	 * Build one finding from an absolute file path.
+	 * Build a Findings observation for one PHP-like MU-plugin file.
 	 *
-	 * @param string $absolute_path Absolute filesystem path.
-	 * @param int    $index         Finding index.
-	 * @return array<string, mixed>
+	 * @param string $absolute_path Absolute path.
+	 * @return array<string, mixed>|null Null when fingerprint cannot be computed.
 	 */
-	private function build_finding( $absolute_path, $index ) {
-		$size        = file_exists( $absolute_path ) ? (int) filesize( $absolute_path ) : 0;
-		$modified    = file_exists( $absolute_path ) ? filemtime( $absolute_path ) : false;
-		$headers     = $this->read_plugin_headers( $absolute_path );
-		$labels      = self::get_category_labels();
-		$fingerprint = Choctaw_Wp_Security_Finding_Status_Store::fingerprint_mu_plugin( $absolute_path );
-		$preview     = Choctaw_Wp_Security_Utils::read_file_contents_preview_result( $absolute_path, self::CONTENTS_CHAR_LIMIT );
+	private function build_observation( $absolute_path ) {
+		$object_key = Sassh_Object_Path_Normalizer::normalize_in_root( $absolute_path );
+
+		if ( '' === $object_key ) {
+			return null;
+		}
+
+		if ( ! is_readable( $absolute_path ) ) {
+			return null;
+		}
+
+		$fingerprint = Sassh_Findings_Service::file_content_fingerprint( $absolute_path );
+
+		if ( 'sha256:missing' === $fingerprint || 'sha256:unreadable' === $fingerprint ) {
+			return null;
+		}
+
+		$meta    = Choctaw_Wp_Security_Utils::get_file_preview_meta( $absolute_path );
+		$labels  = self::get_category_labels();
+		$headers = $this->read_plugin_headers( $absolute_path );
 
 		return array(
-			'id'                => $fingerprint,
-			'fingerprint'       => $fingerprint,
-			'path'              => $this->format_display_path( $absolute_path ),
-			'absolute_path'     => $absolute_path,
-			'risk'              => 'alert',
-			'risk_label'        => __( 'Alert', 'choctaw-wp-security' ),
-			'category'          => self::CATEGORY_KEY,
-			'category_label'    => $labels[ self::CATEGORY_KEY ],
-			'version'           => $this->header_or_empty( $headers, 'Version' ),
-			'author'            => $this->header_or_empty( $headers, 'Author' ),
-			'plugin_uri'        => $this->header_or_empty( $headers, 'PluginURI' ),
-			'update_uri'        => $this->header_or_empty( $headers, 'UpdateURI' ),
-			'description'       => $this->header_or_empty( $headers, 'Description' ),
-			'size'              => $size,
-			'size_label'        => size_format( $size ),
-			'modified'          => false === $modified ? 0 : (int) $modified,
-			'modified_label'    => $this->format_modified_label( $modified ),
-			'contents'          => $preview['contents'],
-			'contents_truncated' => ! empty( $preview['truncated'] ),
-			'why_seeing_this'   => __( 'The wp-content/mu-plugins directory contains "Must-Use" plugins that WordPress loads automatically. It\'s a popular target for hackers because these plugins remain hidden from the WordPress dashboard. However, many managed hosting providers, security plugins, backup systems, and performance plugins install files here as part of their normal operation.', 'choctaw-wp-security' ),
-			'how_to_proceed'    => __( 'Verify that each file belongs to software you intentionally installed or to your hosting provider. Unknown or unexpected files should be investigated before removal, as deleting legitimate Must-Use plugins can disable important site functionality or hosting features.', 'choctaw-wp-security' ),
+			'scanner_id'           => self::SCANNER_ID,
+			'rule_id'              => self::RULE_ID,
+			'object_type'          => Sassh_Object_Type_Registry::TYPE_FILE,
+			'object_key'           => $object_key,
+			'blog_id'              => null,
+			'risk_level'           => 'suspicious',
+			'sassh_classification' => 'needs_review',
+			'content_fingerprint'  => $fingerprint,
+			'object_fingerprint'   => $fingerprint,
+			'title'                => $this->format_display_path( $absolute_path ),
+			'description'          => __( 'PHP-like file found in the Must-Use plugins folder.', 'choctaw-wp-security' ),
+			'metadata'             => array(
+				'path'              => $this->format_display_path( $absolute_path ),
+				'absolute_path'     => $absolute_path,
+				'category'          => self::CATEGORY_KEY,
+				'category_label'    => $labels[ self::CATEGORY_KEY ],
+				'version'           => $this->header_or_empty( $headers, 'Version' ),
+				'author'            => $this->header_or_empty( $headers, 'Author' ),
+				'plugin_uri'        => $this->header_or_empty( $headers, 'PluginURI' ),
+				'update_uri'        => $this->header_or_empty( $headers, 'UpdateURI' ),
+				'description'       => $this->header_or_empty( $headers, 'Description' ),
+				'size'              => $meta['size'],
+				'size_label'        => $meta['size_label'],
+				'modified'          => $meta['modified'],
+				'modified_label'    => $meta['modified_label'],
+				'permissions'       => isset( $meta['permissions'] ) ? $meta['permissions'] : '',
+				'owner'             => isset( $meta['owner'] ) ? $meta['owner'] : '',
+				'contents'          => $meta['contents'],
+				'contents_truncated'  => ! empty( $meta['contents_truncated'] ),
+				'why_seeing_this'   => __( 'The wp-content/mu-plugins directory contains "Must-Use" plugins that WordPress loads automatically. It\'s a popular target for hackers because these plugins remain hidden from the WordPress dashboard. However, many managed hosting providers, security plugins, backup systems, and performance plugins install files here as part of their normal operation.', 'choctaw-wp-security' ),
+				'how_to_proceed'    => __( 'Verify that each file belongs to software you intentionally installed or to your hosting provider. Unknown or unexpected files should be investigated before removal, as deleting legitimate Must-Use plugins can disable important site functionality or hosting features.', 'choctaw-wp-security' ),
+			),
+		);
+	}
+
+	/**
+	 * Build UI report payload from persisted findings.
+	 *
+	 * @param Sassh_Findings_Service $service      Service.
+	 * @param bool                   $success      Whether finalize succeeded as full success.
+	 * @param int                    $execution_id Execution id.
+	 * @return array<string, mixed>
+	 */
+	private function build_report_from_findings( Sassh_Findings_Service $service, $success, $execution_id ) {
+		$rows     = $service->list_findings(
+			array(
+				'scanner_id'      => self::SCANNER_ID,
+				'detection_state' => 'active',
+			)
+		);
+		$findings   = array();
+		$suspicious = 0;
+
+		foreach ( $rows as $row ) {
+			$finding = array(
+				'id'                  => $row['finding_id'],
+				'finding_id'          => $row['finding_id'],
+				'fingerprint'         => $row['content_fingerprint'],
+				'content_fingerprint' => $row['content_fingerprint'],
+				'object_fingerprint'  => $row['object_fingerprint'],
+				'path'                => isset( $row['path'] ) ? $row['path'] : $row['object_key'],
+				'absolute_path'       => isset( $row['absolute_path'] ) ? $row['absolute_path'] : '',
+				'risk'                => $row['risk_level'],
+				'risk_level'          => $row['risk_level'],
+				'risk_label'          => $row['risk_label'],
+				'status'              => $row['effective_status'],
+				'status_label'        => $row['status_label'],
+				'effective_status'    => $row['effective_status'],
+				'category'            => isset( $row['category'] ) ? $row['category'] : self::CATEGORY_KEY,
+				'category_label'      => isset( $row['category_label'] ) ? $row['category_label'] : '',
+				'version'             => isset( $row['version'] ) ? $row['version'] : '',
+				'author'              => isset( $row['author'] ) ? $row['author'] : '',
+				'plugin_uri'          => isset( $row['plugin_uri'] ) ? $row['plugin_uri'] : '',
+				'update_uri'          => isset( $row['update_uri'] ) ? $row['update_uri'] : '',
+				'description'         => isset( $row['description'] ) ? $row['description'] : '',
+				'size'                => isset( $row['size'] ) ? $row['size'] : 0,
+				'size_label'          => isset( $row['size_label'] ) ? $row['size_label'] : '',
+				'modified'            => isset( $row['modified'] ) ? $row['modified'] : 0,
+				'modified_label'      => isset( $row['modified_label'] ) ? $row['modified_label'] : '',
+				'contents'            => isset( $row['contents'] ) ? $row['contents'] : '',
+				'contents_truncated'    => ! empty( $row['contents_truncated'] ),
+				'why_seeing_this'     => isset( $row['why_seeing_this'] ) ? $row['why_seeing_this'] : '',
+				'how_to_proceed'      => isset( $row['how_to_proceed'] ) ? $row['how_to_proceed'] : '',
+				'first_seen_at'       => $row['first_seen_at'],
+				'last_seen_at'        => $row['last_seen_at'],
+				'detection_state'     => $row['detection_state'],
+			);
+
+			if ( 'suspicious' === $finding['risk_level'] ) {
+				++$suspicious;
+			}
+
+			$findings[] = $finding;
+		}
+
+		$count = count( $findings );
+
+		return array(
+			'success'          => (bool) $success,
+			'findings'         => $findings,
+			'summary'          => array(
+				'critical'   => 0,
+				'warning'    => 0,
+				'suspicious' => $suspicious,
+				'alert'      => 0,
+				'safe'       => 0,
+				'info'       => 0,
+				'total'      => $count,
+				'flagged'    => $count,
+			),
+			'scanned_at'       => time(),
+			'execution_id'     => $execution_id,
+			'findings_backend' => 'sassh',
 		);
 	}
 
@@ -137,17 +305,25 @@ class Choctaw_Wp_Security_Mu_Plugins_Scanner {
 	/**
 	 * Find PHP-like files in a directory.
 	 *
+	 * Exactly FILE_LIMIT matches is still complete unless a further candidate is seen.
+	 *
 	 * @param string $folder Directory path.
-	 * @return array<int, string>
+	 * @return array{paths: array<int, string>, limit_exceeded: bool, error: string}
 	 */
 	private function find_php_files( $folder ) {
 		$folder = (string) $folder;
+		$result = array(
+			'paths'          => array(),
+			'limit_exceeded' => false,
+			'error'          => '',
+		);
 
 		if ( '' === $folder || ! is_dir( $folder ) || ! is_readable( $folder ) ) {
-			return array();
+			$result['error'] = 'unreadable';
+
+			return $result;
 		}
 
-		$matches    = array();
 		$extensions = array( 'php', 'phtml', 'phar', 'php3', 'php4', 'php5', 'php7' );
 
 		try {
@@ -156,60 +332,48 @@ class Choctaw_Wp_Security_Mu_Plugins_Scanner {
 			);
 
 			foreach ( $iterator as $file ) {
-				if ( count( $matches ) >= self::FILE_LIMIT ) {
-					break;
-				}
-
 				if ( ! $file->isFile() ) {
 					continue;
 				}
 
 				$extension = strtolower( $file->getExtension() );
 
-				if ( in_array( $extension, $extensions, true ) ) {
-					$matches[] = $file->getPathname();
+				if ( ! in_array( $extension, $extensions, true ) ) {
+					continue;
 				}
+
+				if ( count( $result['paths'] ) >= self::FILE_LIMIT ) {
+					// Confirmed overflow: at least one more PHP-like file beyond the cap.
+					$result['limit_exceeded'] = true;
+					break;
+				}
+
+				$result['paths'][] = $file->getPathname();
 			}
 		} catch ( Exception $exception ) {
-			return $matches;
+			$result['error'] = 'traversal';
+
+			return $result;
 		}
 
-		sort( $matches, SORT_STRING );
+		sort( $result['paths'], SORT_STRING );
 
-		return $matches;
+		return $result;
 	}
 
 	/**
-	 * Format a path relative to the WordPress root when possible.
+	 * Format a display path relative to ABSPATH when possible.
 	 *
-	 * @param string $path File path.
+	 * @param string $absolute_path Absolute path.
 	 * @return string
 	 */
-	private function format_display_path( $path ) {
-		$normalized_path = wp_normalize_path( $path );
-		$root            = trailingslashit( wp_normalize_path( ABSPATH ) );
+	private function format_display_path( $absolute_path ) {
+		$normalized = Sassh_Object_Path_Normalizer::normalize_in_root( $absolute_path );
 
-		if ( 0 === strpos( $normalized_path, $root ) ) {
-			return ltrim( substr( $normalized_path, strlen( $root ) ), '/' );
+		if ( '' !== $normalized ) {
+			return $normalized;
 		}
 
-		return $normalized_path;
-	}
-
-	/**
-	 * Format a filemtime value for display.
-	 *
-	 * @param int|false $modified Unix timestamp or false.
-	 * @return string
-	 */
-	private function format_modified_label( $modified ) {
-		if ( false === $modified || ! $modified ) {
-			return __( 'Unavailable', 'choctaw-wp-security' );
-		}
-
-		return wp_date(
-			sprintf( '%s %s', get_option( 'date_format' ), get_option( 'time_format' ) ),
-			(int) $modified
-		);
+		return wp_normalize_path( (string) $absolute_path );
 	}
 }

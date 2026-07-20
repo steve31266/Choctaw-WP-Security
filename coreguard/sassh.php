@@ -3,7 +3,7 @@
  * Plugin Name:       Sassh Security
  * Plugin URI:        https://github.com/steve31266/Choctaw-WP-Security
  * Description:       Cleans core files from malware infections, makes it extremely difficult for hackers and malware to get in, scans your website for infected files and database records.
- * Version:           1.9.3
+ * Version:           1.9.3.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Sashtastic, LLC
@@ -16,7 +16,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'CHOCTAW_WP_SECURITY_VERSION', '1.9.3' );
+define( 'CHOCTAW_WP_SECURITY_VERSION', '1.9.3.0' );
 define( 'CHOCTAW_WP_SECURITY_FILE', __FILE__ );
 define( 'CHOCTAW_WP_SECURITY_PATH', plugin_dir_path( __FILE__ ) );
 define( 'CHOCTAW_WP_SECURITY_URL', plugin_dir_url( __FILE__ ) );
@@ -77,13 +77,23 @@ add_action( 'plugins_loaded', 'choctaw_wp_security_bootstrap' );
 /**
  * Add a Settings link to the plugin row actions.
  *
+ * On Multisite, Sassh Settings live under Network Admin only.
+ *
  * @param array<string, string> $links Existing plugin action links.
  * @return array<string, string>
  */
 function choctaw_wp_security_plugin_action_links( $links ) {
+	if ( ! Sassh_Capabilities::current_user_can_manage() ) {
+		return $links;
+	}
+
+	$settings_url = is_multisite()
+		? network_admin_url( 'admin.php?page=sassh-settings' )
+		: admin_url( 'admin.php?page=sassh-settings' );
+
 	$settings_link = sprintf(
 		'<a href="%s">%s</a>',
-		esc_url( admin_url( 'admin.php?page=sassh-settings' ) ),
+		esc_url( $settings_url ),
 		esc_html__( 'Settings', 'choctaw-wp-security' )
 	);
 
@@ -106,6 +116,7 @@ function choctaw_wp_security_plugin_action_links( $links ) {
 	return $links;
 }
 add_filter( 'plugin_action_links_' . plugin_basename( CHOCTAW_WP_SECURITY_FILE ), 'choctaw_wp_security_plugin_action_links' );
+add_filter( 'network_admin_plugin_action_links_' . plugin_basename( CHOCTAW_WP_SECURITY_FILE ), 'choctaw_wp_security_plugin_action_links' );
 
 /**
  * Set default options on activation.

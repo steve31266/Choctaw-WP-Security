@@ -19,6 +19,36 @@ Newest entries first.
 
 ---
 
+## 2026-07-19 22:45 CDT
+
+**Summary:** Plugin version set to **1.9.3.0** for the Findings Phase 3.0 release (four-part WordPress plugin version string).
+
+**Documents:**
+- `coreguard/sassh.php` — updated — `Version` / `CHOCTAW_WP_SECURITY_VERSION` → `1.9.3.0`
+- `CHANGELOG.md` — updated — `[1.9.3.0] - 2026-07-19` release notes
+- `README.md` — updated — 1.9.3.0 changelog summary
+
+## 2026-07-19 22:40 CDT
+
+**Summary:** Post–Phase 3.0 docs sync: renamed completed Phase 3 work to **Phase 3.0**; locked remaining Findings scanner migrations and closeout as Phase **3.1–3.8** (checksums → exposed files → options → cron → vulns → directory browsing → optional posts → store wind-down); next deliverable is the Phase 3.1 plan. Updated Multisite/related-findings wording to match shipped 3.0 behavior. Manual QA for 3.0 recorded as passed.
+
+**Documents:**
+- `docs/CoreGuard Findings System.md` — updated — status, §3.10, §5.7, §11, §18–§19 Phase 3.0 / 3.1–3.8
+- `docs/README.md` — updated — Findings Phase 3.0 / 3.x status note
+- `.cursor/plans/findings_phase_3_943aa5f0.plan.md` — updated — status complete/QA’d; follow-ons as 3.1–3.8
+- `.cursor/plans/CoreGuard-Findings-System.md` — synced with formal PRD
+- `README.md` — updated — Findings changelog blurb for Phase 3.0
+
+## 2026-07-19 20:00 CDT
+
+**Summary:** Locked and recorded Findings Phase 3 decisions: full Multisite Network Admin Sassh shell; required centralized auth on all Sassh AJAX; Multisite network-option settings fresh start (no site-option migration/fallback); MU-Plugins Findings migration (`suspicious`, `php-like-file-in-mu-plugins`, missing-dir empty success / overflow-only FILE_LIMIT incomplete); related-findings detail UI with fixture-based correlation acceptance.
+
+**Documents:**
+- `docs/CoreGuard Findings System.md` — updated — status, §18 Phase 3 complete, next deliverable
+- `docs/README.md` — updated — Findings Phase 1–3 status note
+- `.cursor/plans/findings_phase_3_943aa5f0.plan.md` — approved implementation plan
+- `.cursor/plans/CoreGuard-Findings-System.md` — sync Phase 3 status with formal PRD
+
 ## 2026-07-19 19:20 CDT
 
 **Summary:** Plugin release **1.9.3** — Sassh public rebrand (`sassh.php`, admin UI), Findings System Phase 1/2 (Uploads reference), and related docs status updates recorded for this release.

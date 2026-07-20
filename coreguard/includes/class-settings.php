@@ -19,13 +19,21 @@ class Choctaw_Wp_Security_Settings {
 	 */
 	public function register_hooks() {
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
-		add_action( 'admin_menu', array( $this, 'register_menu' ) );
+		if ( is_multisite() ) {
+			add_action( 'network_admin_menu', array( $this, 'register_menu' ) );
+			add_action( 'network_admin_edit_sassh_save_settings', array( $this, 'handle_network_settings_save' ) );
+		} else {
+			add_action( 'admin_menu', array( $this, 'register_menu' ) );
+		}
 		add_action( 'admin_head', array( $this, 'hide_admin_submenu_css' ) );
+		add_action( 'network_admin_head', array( $this, 'hide_admin_submenu_css' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_menu_assets' ) );
+		add_action( 'network_admin_enqueue_scripts', array( $this, 'enqueue_admin_menu_assets' ) );
 		add_filter( 'parent_file', array( $this, 'filter_admin_parent_file' ) );
 		// Scan load handlers are registered from register_menu() using the real
 		// submenu hook suffix WordPress returns (derived from the menu title).
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
+		add_action( 'network_admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 		add_action( 'wp_ajax_choctaw_wp_security_database_scan', array( $this, 'ajax_database_scan' ) );
 		add_action( 'wp_ajax_choctaw_wp_security_database_scan_baseline_reset', array( $this, 'ajax_database_scan_baseline_reset' ) );
 		add_action( 'wp_ajax_choctaw_wp_security_scheduled_tasks_scan', array( $this, 'ajax_scheduled_tasks_scan' ) );
@@ -45,6 +53,7 @@ class Choctaw_Wp_Security_Settings {
 		add_action( 'wp_ajax_choctaw_wp_security_finding_clear_history', array( $this, 'ajax_finding_clear_history' ) );
 		add_action( 'wp_ajax_sassh_finding_dismiss', array( $this, 'ajax_sassh_finding_dismiss' ) );
 		add_action( 'wp_ajax_sassh_finding_undismiss', array( $this, 'ajax_sassh_finding_undismiss' ) );
+		add_action( 'wp_ajax_sassh_finding_related', array( $this, 'ajax_sassh_finding_related' ) );
 	}
 
 	/**
@@ -269,10 +278,12 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function register_menu() {
+		$capability = is_multisite() ? 'manage_network_options' : 'manage_options';
+
 		add_menu_page(
 			__( 'Sassh', 'choctaw-wp-security' ),
 			__( 'Sassh Security', 'choctaw-wp-security' ),
-			'manage_options',
+			$capability,
 			'sassh',
 			array( $this, 'render_home_page' ),
 			$this->get_admin_menu_icon_url(),
@@ -283,7 +294,7 @@ class Choctaw_Wp_Security_Settings {
 			'sassh',
 			__( 'Sassh', 'choctaw-wp-security' ),
 			__( 'Home', 'choctaw-wp-security' ),
-			'manage_options',
+			$capability,
 			'sassh',
 			array( $this, 'render_home_page' )
 		);
@@ -292,7 +303,7 @@ class Choctaw_Wp_Security_Settings {
 			'sassh',
 			__( 'Sassh Settings', 'choctaw-wp-security' ),
 			__( 'Settings', 'choctaw-wp-security' ),
-			'manage_options',
+			$capability,
 			'sassh-settings',
 			array( $this, 'render_settings_page' )
 		);
@@ -301,7 +312,7 @@ class Choctaw_Wp_Security_Settings {
 			'sassh',
 			__( 'Sassh Scans', 'choctaw-wp-security' ),
 			__( 'Scans', 'choctaw-wp-security' ),
-			'manage_options',
+			$capability,
 			'sassh-scans',
 			array( $this, 'render_scans_page' )
 		);
@@ -310,7 +321,7 @@ class Choctaw_Wp_Security_Settings {
 			'sassh',
 			__( 'About Sassh', 'choctaw-wp-security' ),
 			__( 'About', 'choctaw-wp-security' ),
-			'manage_options',
+			$capability,
 			'sassh-about',
 			array( $this, 'render_about_page' )
 		);
@@ -353,7 +364,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function enqueue_admin_menu_assets() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			return;
 		}
 
@@ -420,8 +431,9 @@ class Choctaw_Wp_Security_Settings {
 	 */
 	private function get_admin_page_url( $page_slug, array $args = array() ) {
 		$args = array_merge( array( 'page' => $page_slug ), $args );
+		$base = is_multisite() ? network_admin_url( 'admin.php' ) : admin_url( 'admin.php' );
 
-		return add_query_arg( $args, admin_url( 'admin.php' ) );
+		return add_query_arg( $args, $base );
 	}
 
 	/**
@@ -638,7 +650,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	private function render_admin_shell( $section ) {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			return;
 		}
 
@@ -995,17 +1007,63 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	private function render_main_tab() {
+		$form_action = is_multisite()
+			? network_admin_url( 'edit.php?action=sassh_save_settings' )
+			: admin_url( 'options.php' );
 		?>
 		<div class="cws-admin-tab-panel">
-			<form action="options.php" method="post">
+			<?php if ( is_multisite() && isset( $_GET['updated'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
+				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Settings saved.', 'choctaw-wp-security' ); ?></p></div>
+			<?php endif; ?>
+			<form action="<?php echo esc_url( $form_action ); ?>" method="post">
 				<?php
-				settings_fields( 'choctaw_wp_security' );
+				if ( is_multisite() ) {
+					wp_nonce_field( 'sassh_save_network_settings' );
+					echo '<input type="hidden" name="option_page" value="choctaw_wp_security" />';
+				} else {
+					settings_fields( 'choctaw_wp_security' );
+				}
 				do_settings_sections( 'sassh-settings' );
 				submit_button();
 				?>
 			</form>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Persist Sassh settings from Network Admin (network option; no site-option migration).
+	 *
+	 * @return void
+	 */
+	public function handle_network_settings_save() {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
+			wp_die( esc_html__( 'You do not have permission to manage Sassh settings.', 'choctaw-wp-security' ) );
+		}
+
+		check_admin_referer( 'sassh_save_network_settings' );
+
+		$raw = isset( $_POST[ Choctaw_Wp_Security_Utils::OPTION_KEY ] )
+			? wp_unslash( $_POST[ Choctaw_Wp_Security_Utils::OPTION_KEY ] ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			: array();
+
+		if ( ! is_array( $raw ) ) {
+			$raw = array();
+		}
+
+		$sanitized = $this->sanitize_options( $raw );
+		Choctaw_Wp_Security_Utils::update_options( $sanitized );
+
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'page'    => 'sassh-settings',
+					'updated' => 'true',
+				),
+				network_admin_url( 'admin.php' )
+			)
+		);
+		exit;
 	}
 
 	/**
@@ -1690,7 +1748,6 @@ class Choctaw_Wp_Security_Settings {
 					<?php wp_nonce_field( 'choctaw_wp_security_mu_plugins_scan_form' ); ?>
 					<input type="hidden" name="cws_tab" value="mu-plugins" />
 					<?php submit_button( __( 'Scan Now', 'choctaw-wp-security' ), 'secondary', 'choctaw_wp_security_mu_plugins_scan', false ); ?>
-					<?php $this->render_clear_history_button( 'mu-plugins' ); ?>
 				</form>
 
 				<div id="cws-mu-plugins-js-notices" aria-live="polite"></div>
@@ -1713,24 +1770,24 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	private function render_mu_plugins_results( $result ) {
-		$findings = isset( $result['findings'] ) && is_array( $result['findings'] ) ? $result['findings'] : array();
-		$summary  = isset( $result['summary'] ) && is_array( $result['summary'] ) ? $result['summary'] : array();
-		$alert    = isset( $summary['alert'] ) ? (int) $summary['alert'] : 0;
-		$panel    = $alert > 0 ? 'cws-core-checksum-results is-warning' : 'cws-core-checksum-results is-success';
+		$findings    = isset( $result['findings'] ) && is_array( $result['findings'] ) ? $result['findings'] : array();
+		$summary     = isset( $result['summary'] ) && is_array( $result['summary'] ) ? $result['summary'] : array();
+		$suspicious  = isset( $summary['suspicious'] ) ? (int) $summary['suspicious'] : ( isset( $summary['alert'] ) ? (int) $summary['alert'] : 0 );
+		$panel       = $suspicious > 0 ? 'cws-core-checksum-results is-warning' : 'cws-core-checksum-results is-success';
 		?>
 		<div class="<?php echo esc_attr( $panel ); ?>">
 			<p class="cws-core-checksum-summary">
 				<?php
-				if ( $alert > 0 ) {
+				if ( $suspicious > 0 ) {
 					echo esc_html(
 						sprintf(
-							/* translators: %s: alert finding count */
-							__( 'Scan complete. %s must-use plugin file(s) found for review.', 'choctaw-wp-security' ),
-							number_format_i18n( $alert )
+							/* translators: %s: suspicious finding count */
+							__( 'Scan complete. %s suspicious must-use plugin file(s) found for review.', 'choctaw-wp-security' ),
+							number_format_i18n( $suspicious )
 						)
 					);
 				} else {
-					esc_html_e( 'Scan complete. No PHP files were found in the mu-plugins folder.', 'choctaw-wp-security' );
+					esc_html_e( 'Scan complete. No PHP-like files were found in the mu-plugins folder.', 'choctaw-wp-security' );
 				}
 				?>
 			</p>
@@ -1747,6 +1804,7 @@ class Choctaw_Wp_Security_Settings {
 			<thead>
 				<tr>
 					<th scope="col"><?php esc_html_e( 'Risk', 'choctaw-wp-security' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'Status', 'choctaw-wp-security' ); ?></th>
 					<th scope="col"><?php esc_html_e( 'Category', 'choctaw-wp-security' ); ?></th>
 					<th scope="col"><?php esc_html_e( 'File', 'choctaw-wp-security' ); ?></th>
 					<th scope="col"><?php esc_html_e( 'Action', 'choctaw-wp-security' ); ?></th>
@@ -1755,11 +1813,15 @@ class Choctaw_Wp_Security_Settings {
 			<tbody>
 				<?php foreach ( $pagination['items'] as $index => $finding ) : ?>
 					<?php
-					$row_id = 'cws-mu-fallback-' . (int) $index;
-					$path   = isset( $finding['path'] ) ? (string) $finding['path'] : '';
+					$row_id     = 'cws-mu-fallback-' . (int) $index;
+					$path       = isset( $finding['path'] ) ? (string) $finding['path'] : '';
+					$risk       = isset( $finding['risk_level'] ) ? (string) $finding['risk_level'] : ( isset( $finding['risk'] ) ? (string) $finding['risk'] : 'suspicious' );
+					$risk_label = isset( $finding['risk_label'] ) ? (string) $finding['risk_label'] : __( 'Suspicious', 'choctaw-wp-security' );
+					$status_lbl = isset( $finding['status_label'] ) ? (string) $finding['status_label'] : '';
 					?>
 					<tr>
-						<td><?php $this->render_risk_badge( 'alert', __( 'Alert', 'choctaw-wp-security' ) ); ?></td>
+						<td><?php $this->render_risk_badge( $risk, $risk_label ); ?></td>
+						<td><?php echo esc_html( $status_lbl ); ?></td>
 						<td><span class="cws-report-pill"><?php echo esc_html( isset( $finding['category_label'] ) ? (string) $finding['category_label'] : __( 'MU-Plugin', 'choctaw-wp-security' ) ); ?></span></td>
 						<td><?php $this->render_file_path( $path ); ?></td>
 						<td>
@@ -1769,7 +1831,7 @@ class Choctaw_Wp_Security_Settings {
 						</td>
 					</tr>
 					<tr class="cws-report-detail-row" id="<?php echo esc_attr( $row_id ); ?>" hidden>
-						<td colspan="4">
+						<td colspan="5">
 							<div class="cws-report-detail-grid cws-mu-plugins-detail-grid">
 								<div class="cws-mu-plugins-detail-left">
 									<div class="cws-mu-plugins-info-panel">
@@ -1895,7 +1957,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function handle_core_checksum_scan() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			return;
 		}
 
@@ -1931,7 +1993,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function handle_component_scan() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			return;
 		}
 
@@ -1967,7 +2029,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function handle_exposed_folders_scan() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			return;
 		}
 
@@ -2003,7 +2065,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function handle_database_scan() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			return;
 		}
 
@@ -2042,7 +2104,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function handle_database_scan_baseline_reset() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			return;
 		}
 
@@ -2074,7 +2136,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function ajax_database_scan() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'You do not have permission to run database scans.', 'choctaw-wp-security' ),
@@ -2110,7 +2172,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function ajax_database_scan_baseline_reset() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'You do not have permission to reset the database scan baseline.', 'choctaw-wp-security' ),
@@ -2140,7 +2202,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function handle_scheduled_tasks_scan() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			return;
 		}
 
@@ -2179,7 +2241,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function ajax_scheduled_tasks_scan() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'You do not have permission to run WP-Cron scans.', 'choctaw-wp-security' ),
@@ -2215,7 +2277,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function handle_posts_scan() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			return;
 		}
 
@@ -2254,7 +2316,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function handle_exposed_files_scan() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			return;
 		}
 
@@ -2326,7 +2388,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function handle_mu_plugins_scan() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			return;
 		}
 
@@ -2362,7 +2424,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function handle_posts_scan_baseline_reset() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			return;
 		}
 
@@ -2394,7 +2456,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function ajax_posts_scan() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'You do not have permission to run posts scans.', 'choctaw-wp-security' ),
@@ -2430,7 +2492,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function ajax_posts_scan_baseline_reset() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'You do not have permission to reset the posts scan baseline.', 'choctaw-wp-security' ),
@@ -2460,7 +2522,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function ajax_exposed_files_scan() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'You do not have permission to run exposed files scans.', 'choctaw-wp-security' ),
@@ -2521,7 +2583,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function ajax_mu_plugins_scan() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'You do not have permission to run MU-Plugins scans.', 'choctaw-wp-security' ),
@@ -2554,7 +2616,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function ajax_directory_browsing_scan() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'You do not have permission to run directory browsing scans.', 'choctaw-wp-security' ),
@@ -2675,6 +2737,14 @@ class Choctaw_Wp_Security_Settings {
 			true
 		);
 
+		wp_enqueue_script(
+			'choctaw-wp-security-report-related-findings',
+			CHOCTAW_WP_SECURITY_URL . 'assets/js/admin-report-related-findings.js',
+			array( 'choctaw-wp-security-report-status' ),
+			(string) filemtime( CHOCTAW_WP_SECURITY_PATH . 'assets/js/admin-report-related-findings.js' ),
+			true
+		);
+
 		wp_localize_script(
 			'choctaw-wp-security-report-status',
 			'choctawWpSecurityFindingStatus',
@@ -2693,6 +2763,13 @@ class Choctaw_Wp_Security_Settings {
 					'statusError'       => __( 'The status could not be updated.', 'choctaw-wp-security' ),
 					'clearHistory'      => __( 'Clear History', 'choctaw-wp-security' ),
 					'clearHistoryError' => __( 'History could not be cleared.', 'choctaw-wp-security' ),
+					'relatedFindings'   => __( 'Related findings', 'choctaw-wp-security' ),
+					'relatedSameFp'     => __( 'Same file contents fingerprint', 'choctaw-wp-security' ),
+					'relatedDiffFp'     => __( 'Different file contents fingerprint', 'choctaw-wp-security' ),
+					'relatedUnknownFp'  => __( 'Object fingerprint comparison unavailable', 'choctaw-wp-security' ),
+					'relatedDismissedHint' => __( 'This file was previously reported by another scanner and dismissed while its contents had the same fingerprint.', 'choctaw-wp-security' ),
+					'relatedLoadError'  => __( 'Related findings could not be loaded.', 'choctaw-wp-security' ),
+					'notDetected'       => __( 'No Longer Detected', 'choctaw-wp-security' ),
 				),
 			)
 		);
@@ -3113,7 +3190,7 @@ class Choctaw_Wp_Security_Settings {
 			wp_enqueue_script(
 				'choctaw-wp-security-uploads-folder',
 				CHOCTAW_WP_SECURITY_URL . 'assets/js/admin-uploads-folder.js',
-				array( 'choctaw-wp-security-admin-help', 'choctaw-wp-security-report-status', 'choctaw-wp-security-report-pagination' ),
+				array( 'choctaw-wp-security-admin-help', 'choctaw-wp-security-report-status', 'choctaw-wp-security-report-related-findings', 'choctaw-wp-security-report-pagination' ),
 				(string) filemtime( CHOCTAW_WP_SECURITY_PATH . 'assets/js/admin-uploads-folder.js' ),
 				true
 			);
@@ -3172,7 +3249,7 @@ class Choctaw_Wp_Security_Settings {
 			wp_enqueue_script(
 				'choctaw-wp-security-mu-plugins',
 				CHOCTAW_WP_SECURITY_URL . 'assets/js/admin-mu-plugins.js',
-				array( 'choctaw-wp-security-admin-help', 'choctaw-wp-security-report-status', 'choctaw-wp-security-report-pagination' ),
+				array( 'choctaw-wp-security-admin-help', 'choctaw-wp-security-report-status', 'choctaw-wp-security-report-related-findings', 'choctaw-wp-security-report-pagination' ),
 				(string) filemtime( CHOCTAW_WP_SECURITY_PATH . 'assets/js/admin-mu-plugins.js' ),
 				true
 			);
@@ -3221,8 +3298,9 @@ class Choctaw_Wp_Security_Settings {
 						'hideDetails'          => __( 'Hide details', 'choctaw-wp-security' ),
 						'search'               => __( 'Search', 'choctaw-wp-security' ),
 						'searchPlaceholder'    => __( 'Search files…', 'choctaw-wp-security' ),
-						'scanCompleteIssues'   => __( 'Scan complete. %1$s must-use plugin file(s) found for review.', 'choctaw-wp-security' ),
-						'scanCompleteClean'    => __( 'Scan complete. No PHP files were found in the mu-plugins folder.', 'choctaw-wp-security' ),
+						'riskSuspicious'       => __( 'Suspicious', 'choctaw-wp-security' ),
+						'scanCompleteIssues'   => __( 'Scan complete. %1$s suspicious must-use plugin file(s) found for review.', 'choctaw-wp-security' ),
+						'scanCompleteClean'    => __( 'Scan complete. No PHP-like files were found in the mu-plugins folder.', 'choctaw-wp-security' ),
 					),
 				)
 			);
@@ -3647,7 +3725,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function ajax_finding_clear_history() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'You do not have permission to clear history.', 'choctaw-wp-security' ),
@@ -3660,10 +3738,10 @@ class Choctaw_Wp_Security_Settings {
 
 		$scan_type = isset( $_POST['scan_type'] ) ? sanitize_key( wp_unslash( $_POST['scan_type'] ) ) : '';
 
-		if ( 'uploads-folder' === $scan_type ) {
+		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins' ), true ) ) {
 			wp_send_json_error(
 				array(
-					'message' => __( 'Clear History is not available for Uploads Folder findings.', 'choctaw-wp-security' ),
+					'message' => __( 'Clear History is not available for Sassh Findings-backed scans.', 'choctaw-wp-security' ),
 				),
 				400
 			);
@@ -3696,7 +3774,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	private function handle_finding_status_ajax( $mode ) {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'You do not have permission to update finding status.', 'choctaw-wp-security' ),
@@ -3710,10 +3788,10 @@ class Choctaw_Wp_Security_Settings {
 		$scan_type   = isset( $_POST['scan_type'] ) ? sanitize_text_field( wp_unslash( $_POST['scan_type'] ) ) : '';
 		$fingerprint = isset( $_POST['fingerprint'] ) ? sanitize_text_field( wp_unslash( $_POST['fingerprint'] ) ) : '';
 
-		if ( 'uploads-folder' === $scan_type ) {
+		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins' ), true ) ) {
 			wp_send_json_error(
 				array(
-					'message' => __( 'Uploads Folder findings must be dismissed through Sassh Findings.', 'choctaw-wp-security' ),
+					'message' => __( 'These findings must be dismissed through Sassh Findings.', 'choctaw-wp-security' ),
 				),
 				400
 			);
@@ -3785,6 +3863,62 @@ class Choctaw_Wp_Security_Settings {
 	 */
 	public function ajax_sassh_finding_undismiss() {
 		$this->handle_sassh_finding_status_ajax( 'undismiss' );
+	}
+
+	/**
+	 * AJAX: related findings for a detail-panel expand (cap 10; capability-gated).
+	 *
+	 * @return void
+	 */
+	public function ajax_sassh_finding_related() {
+		Sassh_Capabilities::require_manage_or_json_error(
+			__( 'You do not have permission to view Sassh findings.', 'choctaw-wp-security' )
+		);
+
+		check_ajax_referer( 'sassh_finding_status', 'nonce' );
+
+		$finding_id = isset( $_POST['finding_id'] ) ? sanitize_text_field( wp_unslash( $_POST['finding_id'] ) ) : '';
+
+		if ( '' === $finding_id ) {
+			wp_send_json_error(
+				array(
+					'message' => __( 'Missing finding id.', 'choctaw-wp-security' ),
+				),
+				400
+			);
+		}
+
+		$service = new Sassh_Findings_Service();
+		$related = $service->list_related_findings( $finding_id );
+		$items   = array();
+
+		foreach ( $related as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$items[] = array(
+				'finding_id'              => isset( $row['finding_id'] ) ? (string) $row['finding_id'] : '',
+				'scanner_id'              => isset( $row['scanner_id'] ) ? (string) $row['scanner_id'] : '',
+				'rule_id'                 => isset( $row['rule_id'] ) ? (string) $row['rule_id'] : '',
+				'title'                   => isset( $row['title'] ) ? (string) $row['title'] : '',
+				'object_key'              => isset( $row['object_key'] ) ? (string) $row['object_key'] : '',
+				'risk_level'              => isset( $row['risk_level'] ) ? (string) $row['risk_level'] : '',
+				'risk_label'              => isset( $row['risk_label'] ) ? (string) $row['risk_label'] : '',
+				'effective_status'        => isset( $row['effective_status'] ) ? (string) $row['effective_status'] : '',
+				'status_label'            => isset( $row['status_label'] ) ? (string) $row['status_label'] : '',
+				'detection_state'         => isset( $row['detection_state'] ) ? (string) $row['detection_state'] : '',
+				'object_fingerprint_comparison' => isset( $row['object_fingerprint_comparison'] ) ? (string) $row['object_fingerprint_comparison'] : 'unknown',
+				'last_seen_at'                  => isset( $row['last_seen_at'] ) ? (string) $row['last_seen_at'] : '',
+			);
+		}
+
+		wp_send_json_success(
+			array(
+				'finding_id'       => $finding_id,
+				'related_findings' => $items,
+			)
+		);
 	}
 
 	/**
@@ -7135,7 +7269,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function handle_users_table_load() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			return;
 		}
 
@@ -7175,7 +7309,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function ajax_users_table_load() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'You do not have permission to load users tables.', 'choctaw-wp-security' ),
@@ -7221,7 +7355,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function ajax_user_activity_load() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'You do not have permission to load user activity.', 'choctaw-wp-security' ),
@@ -7257,7 +7391,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function ajax_user_usermeta_load() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'You do not have permission to load usermeta.', 'choctaw-wp-security' ),
@@ -7293,7 +7427,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function ajax_user_file_activity_load() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'You do not have permission to load file activity.', 'choctaw-wp-security' ),
@@ -7329,7 +7463,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	public function ajax_file_changes_checksum() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'You do not have permission to verify core checksums.', 'choctaw-wp-security' ),

@@ -19,10 +19,11 @@
 
 	var riskOrder = {
 		critical: 4,
-		suspicious: 3,
-		alert: 3,
-		safe: 2,
-		info: 1
+		warning: 3,
+		suspicious: 2,
+		alert: 2,
+		safe: 1,
+		info: 0
 	};
 
 	function ready(callback) {
@@ -160,6 +161,7 @@
 	function riskLabel(risk) {
 		var map = {
 			critical: strings.riskCritical || 'Critical',
+			warning: strings.riskWarning || 'Warning',
 			suspicious: strings.riskSuspicious || 'Suspicious',
 			alert: strings.riskAlert || 'Alert',
 			safe: strings.riskSafe || 'Safe',
@@ -289,7 +291,7 @@
 
 		riskLabelEl.appendChild(createElement('span', 'screen-reader-text', strings.risk || 'Risk'));
 		riskSelect.appendChild(new Option(strings.allRisks || 'All risks', ''));
-		riskSelect.appendChild(new Option(strings.riskAlert || 'Alert', 'alert'));
+		riskSelect.appendChild(new Option(strings.riskSuspicious || 'Suspicious', 'suspicious'));
 		riskSelect.value = uiState.risk;
 		riskSelect.addEventListener('change', function () {
 			uiState.risk = riskSelect.value;
@@ -400,6 +402,10 @@
 			});
 		}
 
+		if (window.CwsReportRelatedFindings) {
+			window.CwsReportRelatedFindings.appendRelatedFindings(right, finding);
+		}
+
 		grid.appendChild(left);
 		grid.appendChild(right);
 		return grid;
@@ -415,7 +421,8 @@
 		var pathCode = createElement('code', 'cws-file-path', finding.path || '');
 		var eye = createElement('button', 'cws-report-eye');
 		var eyeIcon = createElement('span', 'dashicons dashicons-visibility');
-		var isExpanded = uiState.expandedId === finding.id;
+		var rowKey = finding.finding_id || finding.id || finding.fingerprint || '';
+		var isExpanded = uiState.expandedId === rowKey;
 
 		if (isExpanded) {
 			row.className = 'is-expanded';
@@ -438,7 +445,7 @@
 		eyeIcon.setAttribute('aria-hidden', 'true');
 		eye.appendChild(eyeIcon);
 		eye.addEventListener('click', function () {
-			uiState.expandedId = isExpanded ? '' : finding.id;
+			uiState.expandedId = isExpanded ? '' : rowKey;
 			renderResult(resultState);
 		});
 		actionsTd.appendChild(eye);
@@ -494,12 +501,12 @@
 
 	function renderSummary(resultsEl, result) {
 		var summary = result.summary || {};
-		var alertCount = parseInt(summary.alert, 10) || 0;
-		var className = alertCount > 0 ? 'cws-core-checksum-results is-warning' : 'cws-core-checksum-results is-success';
+		var suspiciousCount = parseInt(summary.suspicious, 10) || parseInt(summary.alert, 10) || 0;
+		var className = suspiciousCount > 0 ? 'cws-core-checksum-results is-warning' : 'cws-core-checksum-results is-success';
 		var panel = createElement('div', className);
-		var message = alertCount > 0 ?
-			format(strings.scanCompleteIssues || 'Scan complete. %1$s must-use plugin file(s) found for review.', numberFormat(alertCount)) :
-			format(strings.scanCompleteClean || 'Scan complete. No PHP files were found in the mu-plugins folder.');
+		var message = suspiciousCount > 0 ?
+			format(strings.scanCompleteIssues || 'Scan complete. %1$s suspicious must-use plugin file(s) found for review.', numberFormat(suspiciousCount)) :
+			format(strings.scanCompleteClean || 'Scan complete. No PHP-like files were found in the mu-plugins folder.');
 		panel.appendChild(createElement('p', 'cws-core-checksum-summary', message));
 		resultsEl.appendChild(panel);
 	}
