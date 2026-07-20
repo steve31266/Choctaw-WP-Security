@@ -348,6 +348,10 @@ coreguard/
 
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
 
+### 1.9.3.1
+
+- **Findings Phase 3.1:** Verify Checksums on Sassh Findings (`verify-checksums`; Critical/Suspicious core rules), AJAX/JS report with dismiss/undismiss and related-on-expand; incomplete-run and locale handling; Status/Path display fixes for Sassh-backed reports
+
 ### 1.9.3.0
 
 - **Findings Phase 3.0:** Multisite Network Admin Sassh shell, MU-Plugins Findings producer (Suspicious), related-findings detail UI, network-option settings; further scanner migrations tracked as Phase 3.1–3.8 in `docs/`

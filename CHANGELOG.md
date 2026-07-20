@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.3.1] - 2026-07-19
+
+### Added
+
+- **Findings Phase 3.1:** Verify Checksums migrated to Sassh Findings (`verify-checksums`; rules `core-file-modified` / `core-file-missing` / `core-file-unknown` → Critical / Critical / Suspicious). AJAX/JS report (`admin-core-checksum.js`) with Sassh dismiss/undismiss and related-on-expand; Clear History removed on that tab.
+
+### Changed
+
+- Verify Checksums incomplete/failed runs surface coverage gaps and do not reconcile absence; report distinguishes findings confirmed this run vs prior persisted findings. Checksum locale fallback records `locale_requested` vs `locale_effective`. Missing-file findings returning after absence reopen Needs Review despite `sha256:missing`.
+
+### Fixed
+
+- Sassh Findings-backed reports no longer merge the prototype status store (which could reset Status to Needs Review after dismiss + rescan while still filtering as Dismissed).
+- Verify Checksums Path column shows `/` again for root-relative files (e.g. `agents.txt`).
+
 ## [1.9.3.0] - 2026-07-19
 
 ### Added

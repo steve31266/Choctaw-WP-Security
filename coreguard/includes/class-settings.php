@@ -41,6 +41,7 @@ class Choctaw_Wp_Security_Settings {
 		add_action( 'wp_ajax_choctaw_wp_security_posts_scan_baseline_reset', array( $this, 'ajax_posts_scan_baseline_reset' ) );
 		add_action( 'wp_ajax_choctaw_wp_security_uploads_folder_scan', array( $this, 'ajax_uploads_folder_scan' ) );
 		add_action( 'wp_ajax_choctaw_wp_security_mu_plugins_scan', array( $this, 'ajax_mu_plugins_scan' ) );
+		add_action( 'wp_ajax_choctaw_wp_security_core_checksum_scan', array( $this, 'ajax_core_checksum_scan' ) );
 		add_action( 'wp_ajax_choctaw_wp_security_exposed_files_scan', array( $this, 'ajax_exposed_files_scan' ) );
 		add_action( 'wp_ajax_choctaw_wp_security_directory_browsing_scan', array( $this, 'ajax_directory_browsing_scan' ) );
 		add_action( 'wp_ajax_choctaw_wp_security_users_table_load', array( $this, 'ajax_users_table_load' ) );
@@ -1965,7 +1966,7 @@ class Choctaw_Wp_Security_Settings {
 			return;
 		}
 
-		check_admin_referer( 'choctaw_wp_security_core_checksum_scan' );
+		check_admin_referer( 'choctaw_wp_security_core_checksum_scan_form' );
 
 		$scanner = new Choctaw_Wp_Security_Core_Checksum_Scanner();
 		$result  = $scanner->scan();
@@ -1985,6 +1986,39 @@ class Choctaw_Wp_Security_Settings {
 			)
 		);
 		exit;
+	}
+
+	/**
+	 * Handle an AJAX Verify Checksums scan request.
+	 *
+	 * @return void
+	 */
+	public function ajax_core_checksum_scan() {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
+			wp_send_json_error(
+				array(
+					'message' => __( 'You do not have permission to run Verify Checksums scans.', 'choctaw-wp-security' ),
+				),
+				403
+			);
+		}
+
+		check_ajax_referer( 'choctaw_wp_security_core_checksum_ajax', 'nonce' );
+
+		$scanner = new Choctaw_Wp_Security_Core_Checksum_Scanner();
+		$result  = $scanner->scan();
+
+		$result = $this->save_report_result(
+			$this->get_core_checksum_result_transient_key(),
+			Choctaw_Wp_Security_Utils::USER_META_CORE_CHECKSUM_RESULT,
+			$result
+		);
+
+		wp_send_json_success(
+			array(
+				'result' => $result,
+			)
+		);
 	}
 
 	/**
@@ -3245,6 +3279,71 @@ class Choctaw_Wp_Security_Settings {
 			);
 		}
 
+		if ( 'verify-checksums' === $this->get_active_admin_tab() ) {
+			wp_enqueue_script(
+				'choctaw-wp-security-core-checksum',
+				CHOCTAW_WP_SECURITY_URL . 'assets/js/admin-core-checksum.js',
+				array( 'choctaw-wp-security-admin-help', 'choctaw-wp-security-report-status', 'choctaw-wp-security-report-related-findings', 'choctaw-wp-security-report-pagination' ),
+				(string) filemtime( CHOCTAW_WP_SECURITY_PATH . 'assets/js/admin-core-checksum.js' ),
+				true
+			);
+
+			wp_localize_script(
+				'choctaw-wp-security-core-checksum',
+				'choctawWpSecurityCoreChecksum',
+				array(
+					'ajaxUrl'        => admin_url( 'admin-ajax.php' ),
+					'nonce'          => wp_create_nonce( 'choctaw_wp_security_core_checksum_ajax' ),
+					'scanType'       => 'verify-checksums',
+					'pageSize'       => $this->get_report_page_size(),
+					'itemNoun'       => __( 'findings', 'choctaw-wp-security' ),
+					'initialResult'  => $this->load_report_result(
+						$this->get_core_checksum_result_transient_key(),
+						Choctaw_Wp_Security_Utils::USER_META_CORE_CHECKSUM_RESULT
+					),
+					'categoryLabels' => Choctaw_Wp_Security_Core_Checksum_Scanner::get_category_labels(),
+					'strings'        => array(
+						'scanButton'           => __( 'Scan Now', 'choctaw-wp-security' ),
+						'rescanButton'         => __( 'Rescan', 'choctaw-wp-security' ),
+						'scanning'             => __( 'Verifying WordPress core checksums…', 'choctaw-wp-security' ),
+						'scanError'            => __( 'The Verify Checksums scan could not be completed.', 'choctaw-wp-security' ),
+						'noFindings'           => __( 'No findings matched the current filters.', 'choctaw-wp-security' ),
+						'risk'                 => __( 'Risk', 'choctaw-wp-security' ),
+						'status'               => __( 'Status', 'choctaw-wp-security' ),
+						'category'             => __( 'Category', 'choctaw-wp-security' ),
+						'allRisks'             => __( 'All risks', 'choctaw-wp-security' ),
+						'allCategories'        => __( 'All categories', 'choctaw-wp-security' ),
+						'riskCritical'         => __( 'Critical', 'choctaw-wp-security' ),
+						'riskSuspicious'       => __( 'Suspicious', 'choctaw-wp-security' ),
+						'path'                 => __( 'Path', 'choctaw-wp-security' ),
+						'file'                 => __( 'File', 'choctaw-wp-security' ),
+						'actions'              => __( 'Action', 'choctaw-wp-security' ),
+						'infoPanel'            => __( 'Info', 'choctaw-wp-security' ),
+						'contentsHeading'      => __( 'Contents', 'choctaw-wp-security' ),
+						'modifiedDateTime'     => __( 'Modified Date/Time', 'choctaw-wp-security' ),
+						'fileSize'             => __( 'File Size', 'choctaw-wp-security' ),
+						'permissions'          => __( 'Permissions', 'choctaw-wp-security' ),
+						'owner'                => __( 'Owner', 'choctaw-wp-security' ),
+						'confirmation'         => __( 'Confirmation', 'choctaw-wp-security' ),
+						'notConfirmedThisRun'  => __( 'Not reconfirmed by this incomplete scan', 'choctaw-wp-security' ),
+						'whySeeingThis'        => __( 'Why you are seeing this', 'choctaw-wp-security' ),
+						'howToProceed'         => __( 'How to proceed', 'choctaw-wp-security' ),
+						'whySeeingThisFallback' => __( 'This path did not match official WordPress core verification.', 'choctaw-wp-security' ),
+						'howToProceedFallback'  => __( 'Review the file carefully and restore clean core files when appropriate.', 'choctaw-wp-security' ),
+						'viewDetails'          => __( 'View details', 'choctaw-wp-security' ),
+						'hideDetails'          => __( 'Hide details', 'choctaw-wp-security' ),
+						'search'               => __( 'Search', 'choctaw-wp-security' ),
+						'searchPlaceholder'    => __( 'Search files…', 'choctaw-wp-security' ),
+						'scanIncomplete'       => __( 'Scan coverage was incomplete. Previously detected findings were not cleared.', 'choctaw-wp-security' ),
+						'priorFindingsNote'    => __( 'Active findings below are from earlier successful scans and were not reconfirmed by this run.', 'choctaw-wp-security' ),
+						'localeFallback'       => __( 'Requested checksum locale %1$s; used %2$s.', 'choctaw-wp-security' ),
+						'scanCompleteIssues'   => __( 'Scan complete. %1$s critical and %2$s suspicious core checksum finding(s). %3$s file(s) checked for WordPress %4$s (%5$s).', 'choctaw-wp-security' ),
+						'scanCompleteClean'    => __( 'Scan complete. All checked WordPress core files match official checksums for version %1$s (%2$s). %3$s files verified.', 'choctaw-wp-security' ),
+					),
+				)
+			);
+		}
+
 		if ( 'mu-plugins' === $this->get_active_admin_tab() ) {
 			wp_enqueue_script(
 				'choctaw-wp-security-mu-plugins',
@@ -3557,8 +3656,8 @@ class Choctaw_Wp_Security_Settings {
 
 		$scan_type = $this->get_scan_type_for_report_meta( $user_meta_key );
 
-		// Uploads Folder uses Sassh Findings; do not merge prototype status store.
-		if ( '' !== $scan_type && 'uploads-folder' !== $scan_type ) {
+		// Sassh Findings-backed reports already carry effective status; do not merge prototype store.
+		if ( '' !== $scan_type && ! $this->report_uses_sassh_findings( $scan_type, $result ) ) {
 			$result = Choctaw_Wp_Security_Finding_Status_Store::apply_to_result( $scan_type, $result );
 		}
 
@@ -3596,13 +3695,36 @@ class Choctaw_Wp_Security_Settings {
 
 		$scan_type = $this->get_scan_type_for_report_meta( $user_meta_key );
 
-		if ( '' !== $scan_type && 'uploads-folder' !== $scan_type ) {
+		if ( '' !== $scan_type && ! $this->report_uses_sassh_findings( $scan_type, $result ) ) {
 			$result = Choctaw_Wp_Security_Finding_Status_Store::apply_to_result( $scan_type, $result );
 		}
 
 		set_transient( $transient_key, $result, $this->get_report_result_ttl() );
 
 		return $result;
+	}
+
+	/**
+	 * Whether a scan report is backed by Sassh Findings (skip prototype status merge).
+	 *
+	 * @param string               $scan_type Scan type key.
+	 * @param array<string, mixed> $result    Report payload.
+	 * @return bool
+	 */
+	private function report_uses_sassh_findings( $scan_type, array $result ) {
+		if ( ! empty( $result['findings_backend'] ) && 'sassh' === (string) $result['findings_backend'] ) {
+			return true;
+		}
+
+		return in_array(
+			(string) $scan_type,
+			array(
+				'uploads-folder',
+				'mu-plugins',
+				'verify-checksums',
+			),
+			true
+		);
 	}
 
 	/**
@@ -3738,7 +3860,7 @@ class Choctaw_Wp_Security_Settings {
 
 		$scan_type = isset( $_POST['scan_type'] ) ? sanitize_key( wp_unslash( $_POST['scan_type'] ) ) : '';
 
-		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins' ), true ) ) {
+		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins', 'verify-checksums' ), true ) ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'Clear History is not available for Sassh Findings-backed scans.', 'choctaw-wp-security' ),
@@ -4028,10 +4150,11 @@ class Choctaw_Wp_Security_Settings {
 	 * @param string $scan_type   Scan type key.
 	 * @param string $fingerprint Finding fingerprint.
 	 * @param string $status      Current status.
+	 * @param string $finding_id  Optional Sassh finding id (uses sassh_finding_* AJAX when set).
 	 * @return void
 	 */
-	private function render_dismiss_controls( $scan_type, $fingerprint, $status ) {
-		$is_dismissed = Choctaw_Wp_Security_Finding_Status_Store::STATUS_DISMISSED === $status;
+	private function render_dismiss_controls( $scan_type, $fingerprint, $status, $finding_id = '' ) {
+		$is_dismissed = 'dismissed' === $status || Choctaw_Wp_Security_Finding_Status_Store::STATUS_DISMISSED === $status;
 		?>
 		<div
 			class="cws-report-dismiss"
@@ -4039,6 +4162,9 @@ class Choctaw_Wp_Security_Settings {
 			data-scan-type="<?php echo esc_attr( (string) $scan_type ); ?>"
 			data-fingerprint="<?php echo esc_attr( (string) $fingerprint ); ?>"
 			data-status="<?php echo esc_attr( (string) $status ); ?>"
+			<?php if ( '' !== (string) $finding_id ) : ?>
+				data-finding-id="<?php echo esc_attr( (string) $finding_id ); ?>"
+			<?php endif; ?>
 		>
 			<label class="cws-report-dismiss-label">
 				<input
@@ -4151,36 +4277,47 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	private function render_core_checksum_section() {
-		$result = false;
+		$result          = false;
+		$results_missing = false;
 
 		if ( isset( $_GET['core_checksum_run'] ) ) {
 			$result = $this->load_report_result(
 				$this->get_core_checksum_result_transient_key(),
 				Choctaw_Wp_Security_Utils::USER_META_CORE_CHECKSUM_RESULT
 			);
+
+			if ( false === $result ) {
+				$results_missing = true;
+			}
 		}
 		?>
-		<div class="cws-admin-tab-panel">
+		<div class="cws-admin-tab-panel cws-core-checksum-panel">
 			<div class="cws-report-section">
-			<h2><?php esc_html_e( 'WP Core Verify-Checksums', 'choctaw-wp-security' ); ?></h2>
-			<?php Choctaw_Wp_Security_Admin_Help::render_tab_intro( 'core_checksum' ); ?>
+				<h2><?php esc_html_e( 'WP Core Verify-Checksums', 'choctaw-wp-security' ); ?></h2>
+				<?php Choctaw_Wp_Security_Admin_Help::render_tab_intro( 'core_checksum' ); ?>
 
-			<form method="post">
-				<?php wp_nonce_field( 'choctaw_wp_security_core_checksum_scan' ); ?>
-				<input type="hidden" name="choctaw_wp_security_core_checksum_scan" value="1" />
-				<input type="hidden" name="cws_tab" value="verify-checksums" />
-				<?php submit_button( __( 'Scan Now', 'choctaw-wp-security' ), 'secondary', 'submit', false ); ?>
-				<?php $this->render_clear_history_button( 'verify-checksums' ); ?>
-			</form>
+				<?php if ( $results_missing ) : ?>
+					<div class="notice notice-warning">
+						<p><?php esc_html_e( 'The previous Verify Checksums scan results are no longer available. Run Scan Now to generate a fresh report.', 'choctaw-wp-security' ); ?></p>
+					</div>
+				<?php endif; ?>
 
-			<?php if ( is_array( $result ) ) : ?>
-				<?php $this->render_core_checksum_results( $result ); ?>
-			<?php endif; ?>
+				<form method="post" class="cws-core-checksum-form" id="cws-core-checksum-form">
+					<?php wp_nonce_field( 'choctaw_wp_security_core_checksum_scan_form' ); ?>
+					<input type="hidden" name="cws_tab" value="verify-checksums" />
+					<?php submit_button( __( 'Scan Now', 'choctaw-wp-security' ), 'secondary', 'choctaw_wp_security_core_checksum_scan', false ); ?>
+				</form>
+
+				<div id="cws-core-checksum-js-notices" aria-live="polite"></div>
+				<div id="cws-core-checksum-js-results"></div>
+
+				<div id="cws-core-checksum-fallback-results">
+					<?php if ( is_array( $result ) ) : ?>
+						<?php $this->render_core_checksum_results( $result ); ?>
+						<?php $this->render_core_checksum_category_reports( $result ); ?>
+					<?php endif; ?>
+				</div>
 			</div>
-
-			<?php if ( is_array( $result ) ) : ?>
-				<?php $this->render_core_checksum_category_reports( $result ); ?>
-			<?php endif; ?>
 		</div>
 		<?php
 	}
@@ -5925,11 +6062,26 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	private function render_core_checksum_results( $result ) {
-		$has_problems = empty( $result['success'] );
-		$panel_class  = $has_problems ? 'cws-core-checksum-results is-error' : 'cws-core-checksum-results is-success';
+		$incomplete   = ! empty( $result['scan_incomplete'] ) || ( isset( $result['coverage_complete'] ) && ! $result['coverage_complete'] );
+		$summary      = isset( $result['summary'] ) && is_array( $result['summary'] ) ? $result['summary'] : array();
+		$critical     = isset( $summary['critical'] ) ? (int) $summary['critical'] : 0;
+		$suspicious   = isset( $summary['suspicious'] ) ? (int) $summary['suspicious'] : 0;
+		$has_problems = $incomplete || $critical > 0 || $suspicious > 0 || empty( $result['success'] );
+		$panel_class  = $incomplete ? 'cws-core-checksum-results is-warning' : ( $critical > 0 ? 'cws-core-checksum-results is-error' : ( $has_problems ? 'cws-core-checksum-results is-warning' : 'cws-core-checksum-results is-success' ) );
+		$locale_eff   = isset( $result['locale_effective'] ) ? (string) $result['locale_effective'] : ( isset( $result['locale'] ) ? (string) $result['locale'] : '' );
+		$locale_req   = isset( $result['locale_requested'] ) ? (string) $result['locale_requested'] : '';
 		?>
 		<div class="<?php echo esc_attr( $panel_class ); ?>">
-			<?php if ( ! $has_problems ) : ?>
+			<?php if ( $incomplete ) : ?>
+				<p class="cws-core-checksum-summary">
+					<?php esc_html_e( 'Scan coverage was incomplete. Previously detected findings were not cleared.', 'choctaw-wp-security' ); ?>
+				</p>
+				<?php if ( ! empty( $result['prior_findings_only'] ) ) : ?>
+					<p class="description">
+						<?php esc_html_e( 'Active findings below are from earlier successful scans and were not reconfirmed by this run.', 'choctaw-wp-security' ); ?>
+					</p>
+				<?php endif; ?>
+			<?php elseif ( ! $has_problems ) : ?>
 				<p class="cws-core-checksum-summary">
 					<?php
 					echo esc_html(
@@ -5937,7 +6089,7 @@ class Choctaw_Wp_Security_Settings {
 							/* translators: 1: WordPress version, 2: locale, 3: number of files checked */
 							__( 'All checked WordPress core files match official checksums for version %1$s (%2$s). %3$d files verified.', 'choctaw-wp-security' ),
 							isset( $result['version'] ) ? (string) $result['version'] : '',
-							isset( $result['locale'] ) ? (string) $result['locale'] : '',
+							$locale_eff,
 							isset( $result['checked'] ) ? (int) $result['checked'] : 0
 						)
 					);
@@ -5951,21 +6103,35 @@ class Choctaw_Wp_Security_Settings {
 							/* translators: 1: WordPress version, 2: locale, 3: number of files checked */
 							__( 'Problems were found while comparing WordPress %1$s (%2$s). %3$d core files were checked.', 'choctaw-wp-security' ),
 							isset( $result['version'] ) ? (string) $result['version'] : '',
-							isset( $result['locale'] ) ? (string) $result['locale'] : '',
+							$locale_eff,
 							isset( $result['checked'] ) ? (int) $result['checked'] : 0
 						)
 					);
 					?>
 				</p>
+			<?php endif; ?>
 
-				<?php if ( ! empty( $result['errors'] ) ) : ?>
-					<h3><?php esc_html_e( 'Errors', 'choctaw-wp-security' ); ?></h3>
-					<ul class="cws-core-checksum-list">
-						<?php foreach ( $result['errors'] as $error_message ) : ?>
-							<li><?php echo esc_html( (string) $error_message ); ?></li>
-						<?php endforeach; ?>
-					</ul>
-				<?php endif; ?>
+			<?php if ( '' !== $locale_req && '' !== $locale_eff && $locale_req !== $locale_eff ) : ?>
+				<p class="description">
+					<?php
+					echo esc_html(
+						sprintf(
+							/* translators: 1: requested locale, 2: effective locale */
+							__( 'Requested checksum locale %1$s; used %2$s.', 'choctaw-wp-security' ),
+							$locale_req,
+							$locale_eff
+						)
+					);
+					?>
+				</p>
+			<?php endif; ?>
+
+			<?php if ( ! empty( $result['errors'] ) && is_array( $result['errors'] ) ) : ?>
+				<ul class="cws-core-checksum-list">
+					<?php foreach ( $result['errors'] as $error_message ) : ?>
+						<li><?php echo esc_html( (string) $error_message ); ?></li>
+					<?php endforeach; ?>
+				</ul>
 			<?php endif; ?>
 		</div>
 		<?php
@@ -5978,29 +6144,7 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	private function render_core_checksum_category_reports( $result ) {
-		$modified = isset( $result['modified'] ) && is_array( $result['modified'] ) ? $result['modified'] : array();
-		$missing  = isset( $result['missing'] ) && is_array( $result['missing'] ) ? $result['missing'] : array();
-		$unknown  = isset( $result['unknown'] ) && is_array( $result['unknown'] ) ? $result['unknown'] : array();
-
-		$findings = array();
-
-		foreach ( $modified as $file_path ) {
-			$path        = (string) $file_path;
-			$fingerprint = Choctaw_Wp_Security_Finding_Status_Store::fingerprint_checksum( $path, 'modified' );
-			$findings[]  = $this->build_checksum_finding_row( $path, 'critical', 'modified', $fingerprint );
-		}
-		foreach ( $missing as $file_path ) {
-			$path        = (string) $file_path;
-			$fingerprint = Choctaw_Wp_Security_Finding_Status_Store::fingerprint_checksum( $path, 'missing' );
-			$findings[]  = $this->build_checksum_finding_row( $path, 'critical', 'missing', $fingerprint );
-		}
-		foreach ( $unknown as $file_path ) {
-			$path        = (string) $file_path;
-			$fingerprint = Choctaw_Wp_Security_Finding_Status_Store::fingerprint_checksum( $path, 'unknown' );
-			$findings[]  = $this->build_checksum_finding_row( $path, 'suspicious', 'unknown', $fingerprint );
-		}
-
-		$findings = Choctaw_Wp_Security_Finding_Status_Store::apply( 'verify-checksums', $findings );
+		$findings = isset( $result['findings'] ) && is_array( $result['findings'] ) ? $result['findings'] : array();
 
 		$risk_filter     = isset( $_GET['cws_checksum_risk'] ) ? sanitize_key( wp_unslash( $_GET['cws_checksum_risk'] ) ) : '';
 		$status_filter   = isset( $_GET['cws_checksum_status'] ) ? sanitize_key( wp_unslash( $_GET['cws_checksum_status'] ) ) : 'needs_review';
@@ -6015,7 +6159,8 @@ class Choctaw_Wp_Security_Settings {
 				array_filter(
 					$findings,
 					static function ( $finding ) use ( $risk_filter ) {
-						return $risk_filter === $finding['risk'];
+						$risk = isset( $finding['risk'] ) ? (string) $finding['risk'] : ( isset( $finding['risk_level'] ) ? (string) $finding['risk_level'] : '' );
+						return $risk_filter === $risk;
 					}
 				)
 			);
@@ -6075,7 +6220,7 @@ class Choctaw_Wp_Security_Settings {
 		<div class="cws-report-section cws-core-checksum-category-report">
 			<h3><?php esc_html_e( 'Checksum Findings', 'choctaw-wp-security' ); ?></h3>
 
-			<?php if ( empty( $modified ) && empty( $missing ) && empty( $unknown ) ) : ?>
+			<?php if ( empty( $result['findings'] ) ) : ?>
 				<p><?php esc_html_e( 'No files reported.', 'choctaw-wp-security' ); ?></p>
 			<?php else : ?>
 				<form method="get" class="cws-report-toolbar" action="">
@@ -6130,21 +6275,25 @@ class Choctaw_Wp_Security_Settings {
 						<tbody>
 							<?php foreach ( $pagination['items'] as $index => $finding ) : ?>
 								<?php
-								$category    = $finding['category'];
-								$row_id      = 'cws-checksum-' . $category . '-' . (int) $index;
-								$risk_lbl    = 'suspicious' === $finding['risk']
-									? __( 'Suspicious', 'choctaw-wp-security' )
-									: __( 'Critical', 'choctaw-wp-security' );
-								$status      = isset( $finding['status'] ) ? (string) $finding['status'] : Choctaw_Wp_Security_Finding_Status_Store::STATUS_NEEDS_REVIEW;
-								$status_lbl  = isset( $finding['status_label'] ) ? (string) $finding['status_label'] : Choctaw_Wp_Security_Finding_Status_Store::status_label( $status );
-								$fingerprint = isset( $finding['fingerprint'] ) ? (string) $finding['fingerprint'] : '';
+								$category    = isset( $finding['category'] ) ? (string) $finding['category'] : '';
+								$row_id      = 'cws-checksum-' . sanitize_key( $category ) . '-' . (int) $index;
+								$risk_key    = isset( $finding['risk'] ) ? (string) $finding['risk'] : ( isset( $finding['risk_level'] ) ? (string) $finding['risk_level'] : 'critical' );
+								$risk_lbl    = isset( $finding['risk_label'] ) ? (string) $finding['risk_label'] : ( 'suspicious' === $risk_key ? __( 'Suspicious', 'choctaw-wp-security' ) : __( 'Critical', 'choctaw-wp-security' ) );
+								$status      = isset( $finding['status'] ) ? (string) $finding['status'] : ( isset( $finding['effective_status'] ) ? (string) $finding['effective_status'] : 'needs_review' );
+								$status_lbl  = isset( $finding['status_label'] ) ? (string) $finding['status_label'] : Sassh_Findings_Service::status_label( $status );
+								$fingerprint = isset( $finding['content_fingerprint'] ) ? (string) $finding['content_fingerprint'] : ( isset( $finding['fingerprint'] ) ? (string) $finding['fingerprint'] : '' );
+								$finding_id  = isset( $finding['finding_id'] ) ? (string) $finding['finding_id'] : '';
+								$why_text    = isset( $finding['why_seeing_this'] ) && '' !== (string) $finding['why_seeing_this']
+									? (string) $finding['why_seeing_this']
+									: ( isset( $why_copy[ $category ] ) ? $why_copy[ $category ] : '' );
+								$cat_label   = isset( $finding['category_label'] ) ? (string) $finding['category_label'] : ( isset( $category_labels[ $category ] ) ? $category_labels[ $category ] : $category );
 								?>
-								<tr>
-									<td><?php $this->render_risk_badge( $finding['risk'], $risk_lbl ); ?></td>
+								<tr<?php echo isset( $finding['confirmed_this_run'] ) && ! $finding['confirmed_this_run'] ? ' class="cws-finding-not-confirmed"' : ''; ?>>
+									<td><?php $this->render_risk_badge( $risk_key, $risk_lbl ); ?></td>
 									<td><?php $this->render_status_badge( $status, $status_lbl ); ?></td>
-									<td><span class="cws-report-pill"><?php echo esc_html( $category_labels[ $category ] ); ?></span></td>
-									<td><?php $this->render_file_path( $this->get_core_file_directory_path( $finding['path'] ) ); ?></td>
-									<td><?php $this->render_file_path( $this->get_core_file_basename( $finding['path'] ) ); ?></td>
+									<td><span class="cws-report-pill"><?php echo esc_html( $cat_label ); ?></span></td>
+									<td><?php $this->render_file_path( $this->get_core_file_directory_path( isset( $finding['path'] ) ? (string) $finding['path'] : '' ) ); ?></td>
+									<td><?php $this->render_file_path( $this->get_core_file_basename( isset( $finding['path'] ) ? (string) $finding['path'] : '' ) ); ?></td>
 									<td>
 										<button
 											type="button"
@@ -6172,6 +6321,10 @@ class Choctaw_Wp_Security_Settings {
 														<dd><?php echo esc_html( $this->display_or_em_dash( isset( $finding['permissions'] ) ? (string) $finding['permissions'] : '' ) ); ?></dd>
 														<dt><?php esc_html_e( 'Owner', 'choctaw-wp-security' ); ?></dt>
 														<dd><?php echo esc_html( $this->display_or_em_dash( isset( $finding['owner'] ) ? (string) $finding['owner'] : '' ) ); ?></dd>
+														<?php if ( isset( $finding['confirmed_this_run'] ) && ! $finding['confirmed_this_run'] ) : ?>
+															<dt><?php esc_html_e( 'Confirmation', 'choctaw-wp-security' ); ?></dt>
+															<dd><?php esc_html_e( 'Not reconfirmed by this incomplete scan', 'choctaw-wp-security' ); ?></dd>
+														<?php endif; ?>
 													</dl>
 												</div>
 												<div class="cws-report-contents">
@@ -6182,12 +6335,18 @@ class Choctaw_Wp_Security_Settings {
 											<div class="cws-report-detail-right">
 												<div>
 													<h4><?php esc_html_e( 'Why you are seeing this', 'choctaw-wp-security' ); ?></h4>
-													<p><?php echo esc_html( $why_copy[ $category ] ); ?></p>
+													<p><?php echo esc_html( $why_text ); ?></p>
 												</div>
 												<div>
 													<h4><?php esc_html_e( 'How to proceed', 'choctaw-wp-security' ); ?></h4>
-													<?php echo wp_kses_post( $this->get_checksum_how_to_proceed_html( $category ) ); ?>
-													<?php $this->render_dismiss_controls( 'verify-checksums', $fingerprint, $status ); ?>
+													<?php
+													if ( isset( $finding['how_to_proceed'] ) && '' !== (string) $finding['how_to_proceed'] ) {
+														echo wp_kses_post( '<p>' . esc_html( (string) $finding['how_to_proceed'] ) . '</p>' );
+													} else {
+														echo wp_kses_post( $this->get_checksum_how_to_proceed_html( $category ) );
+													}
+													?>
+													<?php $this->render_dismiss_controls( 'verify-checksums', $fingerprint, $status, $finding_id ); ?>
 												</div>
 											</div>
 										</div>

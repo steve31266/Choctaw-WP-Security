@@ -19,6 +19,35 @@ Newest entries first.
 
 ---
 
+## 2026-07-19 23:30 CDT
+
+**Summary:** Plugin version set to **1.9.3.1** for the Findings Phase 3.1 release (Verify Checksums → Sassh Findings), including post-QA Status/Path display fixes.
+
+**Documents:**
+- `coreguard/sassh.php` — updated — `Version` / `CHOCTAW_WP_SECURITY_VERSION` → `1.9.3.1`
+- `CHANGELOG.md` — updated — `[1.9.3.1] - 2026-07-19` release notes
+- `README.md` — updated — 1.9.3.1 changelog summary
+
+## 2026-07-19 23:15 CDT
+
+**Summary:** Locked and shipped Findings Phase **3.1** (Verify Checksums → Sassh Findings): three `core-file-*` rules, incomplete-coverage reporting, requested vs effective checksum locales, missing-file reappearance → Needs Review, AJAX/JS report parity with Uploads/MU.
+
+**Documents:**
+- `docs/CoreGuard Findings System.md` — updated — §11 / §18 Phase 3.1 complete; next = 3.2
+- `.cursor/plans/CoreGuard-Findings-System.md` — aligned with formal PRD
+- `.cursor/plans/findings_phase_3_1_core_checksums.plan.md` — updated — implemented
+- `.cursor/plans/findings_phase_3x_index.plan.md` — updated — 3.1 complete
+- `CHANGELOG.md` — updated — Unreleased Phase 3.1 notes
+
+## 2026-07-19 22:50 CDT
+
+**Summary:** Added summary-only Findings Phase **3.1–3.8** plan documents (plus index) under `.cursor/plans/` for dedicated implementation chats; each references Phase 1/2, Phase 3.0, the formal PRD, and sibling 3.x plans.
+
+**Documents:**
+- `.cursor/plans/findings_phase_3x_index.plan.md` — added — Phase 3.x index
+- `.cursor/plans/findings_phase_3_1_*.plan.md` … `findings_phase_3_8_*.plan.md` — added — per-phase summaries
+- `docs/README.md` — updated — link to Phase 3.x index
+
 ## 2026-07-19 22:45 CDT
 
 **Summary:** Plugin version set to **1.9.3.0** for the Findings Phase 3.0 release (four-part WordPress plugin version string).

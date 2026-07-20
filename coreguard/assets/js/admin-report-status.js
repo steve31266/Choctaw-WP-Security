@@ -56,6 +56,7 @@
 		}
 		return scanType === 'uploads-folder'
 			|| scanType === 'mu-plugins'
+			|| scanType === 'verify-checksums'
 			|| (finding && finding.findings_backend === 'sassh');
 	}
 
@@ -114,9 +115,8 @@
 
 	function renderStatusCell(finding) {
 		var status = findingStatus(finding);
-		var label = finding && finding.status_label
-			? text(finding.status_label)
-			: statusLabelFor(status);
+		// Prefer label derived from effective status so a stale status_label cannot disagree.
+		var label = statusLabelFor(status);
 
 		return createElement('span', 'cws-status-text', label);
 	}
@@ -335,6 +335,7 @@
 			var error = block.querySelector('.cws-report-dismiss-error');
 			var scanType = block.getAttribute('data-scan-type') || '';
 			var fingerprint = block.getAttribute('data-fingerprint') || '';
+			var findingId = block.getAttribute('data-finding-id') || '';
 			var currentStatus = block.getAttribute('data-status') || 'needs_review';
 
 			if (!checkbox || !submit) {
@@ -343,16 +344,28 @@
 
 			submit.addEventListener('click', function () {
 				var wantDismissed = checkbox.checked;
-				var action = wantDismissed
-					? 'choctaw_wp_security_finding_dismiss'
-					: 'choctaw_wp_security_finding_undismiss';
+				var request;
 
 				if (error) {
 					error.hidden = true;
 				}
 				submit.disabled = true;
 
-				postStatusAction(action, scanType, fingerprint)
+				if (findingId) {
+					request = postSasshFindingAction(
+						wantDismissed ? 'sassh_finding_dismiss' : 'sassh_finding_undismiss',
+						findingId,
+						fingerprint
+					);
+				} else {
+					request = postStatusAction(
+						wantDismissed ? 'choctaw_wp_security_finding_dismiss' : 'choctaw_wp_security_finding_undismiss',
+						scanType,
+						fingerprint
+					);
+				}
+
+				request
 					.then(function () {
 						window.location.reload();
 					})

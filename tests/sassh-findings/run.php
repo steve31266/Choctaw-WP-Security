@@ -85,6 +85,66 @@ sassh_assert(
 );
 
 sassh_assert(
+	'verify-checksums scope key',
+	'verify-checksums:wordpress-core' === Sassh_Findings_Service::verify_checksums_scope_key()
+);
+sassh_assert(
+	'verify-checksums scanner id',
+	'verify-checksums' === Sassh_Findings_Service::SCANNER_VERIFY_CHECKSUMS
+);
+sassh_assert(
+	'core-file-modified rule id',
+	'core-file-modified' === Sassh_Findings_Service::RULE_CORE_FILE_MODIFIED
+);
+sassh_assert(
+	'core-file-missing rule id',
+	'core-file-missing' === Sassh_Findings_Service::RULE_CORE_FILE_MISSING
+);
+sassh_assert(
+	'core-file-unknown rule id',
+	'core-file-unknown' === Sassh_Findings_Service::RULE_CORE_FILE_UNKNOWN
+);
+sassh_assert(
+	'missing fingerprint sentinel',
+	'sha256:missing' === Sassh_Findings_Service::FINGERPRINT_MISSING
+);
+sassh_assert(
+	'missing reappearance invalidates dismissal (sentinel)',
+	Sassh_Findings_Service::should_invalidate_dismissal_on_reappearance( 'core-file-missing', 'sha256:missing' )
+);
+sassh_assert(
+	'missing reappearance invalidates dismissal (rule)',
+	Sassh_Findings_Service::should_invalidate_dismissal_on_reappearance( 'core-file-missing', 'sha256:abc' )
+);
+sassh_assert(
+	'modified reappearance with same content fp keeps dismissal path',
+	! Sassh_Findings_Service::should_invalidate_dismissal_on_reappearance( 'core-file-modified', 'sha256:abc' )
+);
+
+// Report DTO incomplete flags (shape contract used by admin-core-checksum.js).
+$incomplete_dto = array(
+	'success'            => false,
+	'coverage_complete'  => false,
+	'absence_reconciled' => false,
+	'completion_status'  => 'partial',
+	'scan_incomplete'    => true,
+	'locale_requested'   => 'fr_FR',
+	'locale_effective'   => 'en_US',
+	'findings'           => array(
+		array(
+			'finding_id'         => 'ssf_test',
+			'confirmed_this_run' => false,
+		),
+	),
+	'prior_findings_only' => true,
+);
+sassh_assert( 'incomplete DTO not success', false === $incomplete_dto['success'] );
+sassh_assert( 'incomplete DTO coverage false', false === $incomplete_dto['coverage_complete'] );
+sassh_assert( 'incomplete DTO absence not reconciled', false === $incomplete_dto['absence_reconciled'] );
+sassh_assert( 'incomplete DTO locale fallback visible', $incomplete_dto['locale_requested'] !== $incomplete_dto['locale_effective'] );
+sassh_assert( 'incomplete DTO prior finding not confirmed', false === $incomplete_dto['findings'][0]['confirmed_this_run'] );
+
+sassh_assert(
 	'status label Review Not Needed',
 	'Review Not Needed' === Sassh_Findings_Service::status_label( 'no_action_needed' )
 );

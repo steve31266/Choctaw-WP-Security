@@ -12,10 +12,15 @@ defined( 'ABSPATH' ) || exit;
  */
 class Sassh_Findings_Service {
 
-	const SCANNER_UPLOADS     = 'uploads-folder';
-	const RULE_PHP_UPLOADS    = 'php-file-in-uploads';
-	const SCANNER_MU_PLUGINS  = 'mu-plugins';
-	const RULE_PHP_MU_PLUGINS = 'php-like-file-in-mu-plugins';
+	const SCANNER_UPLOADS            = 'uploads-folder';
+	const RULE_PHP_UPLOADS           = 'php-file-in-uploads';
+	const SCANNER_MU_PLUGINS         = 'mu-plugins';
+	const RULE_PHP_MU_PLUGINS        = 'php-like-file-in-mu-plugins';
+	const SCANNER_VERIFY_CHECKSUMS   = 'verify-checksums';
+	const RULE_CORE_FILE_MODIFIED    = 'core-file-modified';
+	const RULE_CORE_FILE_MISSING     = 'core-file-missing';
+	const RULE_CORE_FILE_UNKNOWN     = 'core-file-unknown';
+	const FINGERPRINT_MISSING        = 'sha256:missing';
 
 	/**
 	 * Risk severity order (low to high).
@@ -440,6 +445,67 @@ class Sassh_Findings_Service {
 	}
 
 	/**
+	 * Stable Verify Checksums scope (WordPress core tree vs official checksums).
+	 *
+	 * @return string
+	 */
+	public static function verify_checksums_scope_key() {
+		return 'verify-checksums:wordpress-core';
+	}
+
+	/**
+	 * Merge keys into an open execution's JSON meta.
+	 *
+	 * @param int                  $execution_id Execution id.
+	 * @param array<string, mixed> $meta_patch   Keys to merge.
+	 * @return void
+	 */
+	public function update_execution_meta( $execution_id, array $meta_patch ) {
+		global $wpdb;
+
+		$execution = $this->get_execution( $execution_id );
+
+		if ( ! $execution ) {
+			return;
+		}
+
+		$existing = array();
+
+		if ( ! empty( $execution['meta'] ) && is_string( $execution['meta'] ) ) {
+			$decoded = json_decode( $execution['meta'], true );
+			if ( is_array( $decoded ) ) {
+				$existing = $decoded;
+			}
+		}
+
+		$table = Sassh_Findings_Schema::table( 'sassh_scanner_executions' );
+
+		$wpdb->update(
+			$table,
+			array(
+				'meta' => wp_json_encode( array_merge( $existing, $meta_patch ) ),
+			),
+			array( 'id' => (int) $execution_id ),
+			array( '%s' ),
+			array( '%d' )
+		);
+	}
+
+	/**
+	 * Whether reappearance after not_detected must invalidate a still-valid dismissal.
+	 *
+	 * Sentinel fingerprints (sha256:missing) cannot distinguish absence episodes.
+	 *
+	 * @param string $rule_id    Rule id.
+	 * @param string $content_fp Finding content fingerprint.
+	 * @return bool
+	 */
+	public static function should_invalidate_dismissal_on_reappearance( $rule_id, $content_fp ) {
+		return self::FINGERPRINT_MISSING === (string) $content_fp
+			|| self::RULE_CORE_FILE_MISSING === (string) $rule_id;
+	}
+
+	/**
 	 * Default classification for a risk level.
 	 *
 	 * @param string $risk_level Risk level.
@@ -651,6 +717,11 @@ class Sassh_Findings_Service {
 
 		if ( 'not_detected' === $prev_detection ) {
 			$this->record_event( $finding_id, 'reappeared', $prev_detection, 'active', $execution_id, $execution['scan_run_id'], null );
+
+			// Sentinel fingerprints (e.g. missing files) cannot distinguish episodes; reopen review.
+			if ( self::should_invalidate_dismissal_on_reappearance( $rule_id, $content_fp ) ) {
+				$this->invalidate_dismissal( $finding_id, 'reappeared_after_absence', $execution_id, $execution['scan_run_id'] );
+			}
 		}
 
 		if ( $prev_fp !== $content_fp ) {

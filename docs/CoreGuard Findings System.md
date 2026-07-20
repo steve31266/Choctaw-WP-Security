@@ -2,13 +2,13 @@
 
 ## Project Requirements Document
 
-**Document status:** Finalized requirements — Phase 1/2 and Phase **3.0** complete and QA’d (2026-07-19); Phase **3.1+** scanner migrations next; Phase 4/5 pending  
+**Document status:** Finalized requirements — Phase 1/2, Phase **3.0**, and Phase **3.1** (Verify Checksums) complete (2026-07-19); Phase **3.2+** scanner migrations next; Phase 4/5 pending  
 **Product scope:** Sassh WordPress Plugin (historical “CoreGuard” docs filenames), Sassh CLI, and future Sassh Desktop  
 **Primary purpose:** Define a shared, persistent system for recording scan findings, presenting items for human review, preserving dismissals, and reopening findings when their relevant state changes.
 
 **Scope of this document:** The Findings System — persistence, dismissals, effective status, object correlation, audit retention, scan-run attribution needed by future consumers, and the contract used by WordPress reports and future Desktop via CLI/JSON.
 
-**Implementation status:** Phase 1, 2, and **3.0** are implemented and QA’d in the plugin: persistence; Uploads + MU-Plugins Findings producers; Multisite Network Admin shell; centralized auth on all Sassh admin AJAX; network-option settings (Multisite fresh start); related-findings detail UI (hidden when empty; Uploads/MU scopes do not naturally overlap). Remaining Store-backed scanners migrate as Phase **3.1–3.7**; prototype store wind-down is Phase **3.8**.
+**Implementation status:** Phase 1, 2, **3.0**, and **3.1** are implemented in the plugin: persistence; Uploads + MU-Plugins + Verify Checksums Findings producers; Multisite Network Admin shell; centralized auth on all Sassh admin AJAX; network-option settings (Multisite fresh start); related-findings detail UI (hidden when empty). Remaining Store-backed scanners migrate as Phase **3.2–3.7**; prototype store wind-down is Phase **3.8**.
 
 **Future consumers (architecture must accommodate; not Phase 1/2/3.x delivery):** Scan Site aggregate runs, scheduled scans, email notifications, Home tab summary, Desktop orchestration, and new scanners such as Shell Scan. Early Findings phases must not expand into building those products.
 
@@ -783,8 +783,8 @@ stateDiagram-v2
 After the Uploads integration is proven, remaining existing scans migrate onto the shared service as **Phase 3.x** slices (see §18). Locked order:
 
 1. **3.0 (done):** MU-Plugins (and Network Admin / related UI).
-2. **3.1:** Core checksum findings.
-3. **3.2:** Exposed sensitive-file findings (likely first natural related-findings peer with Uploads).
+2. **3.1 (done):** Core checksum findings (`verify-checksums`).
+3. **3.2:** Exposed sensitive-file findings (likely first natural related-findings peer with Uploads / checksums).
 4. **3.3:** Database options findings (`object_type` registry: `option`).
 5. **3.4:** WP-Cron findings (`cron_event`).
 6. **3.5:** Vulnerability / unrecognized-component findings.
@@ -1136,13 +1136,22 @@ At minimum, automated tests shall cover:
 - Migrate **MU-Plugins** onto Findings: `scanner_id=mu-plugins`, `rule_id=php-like-file-in-mu-plugins`, `risk_level=suspicious` + `needs_review`; scope-bounded finalize; missing dir = empty success; unreadable/invalid or confirmed `FILE_LIMIT` overflow = non-success without absence; Clear History removed.
 - Related-findings detail UI on expand (cap 10; hidden when empty); Uploads/MU scopes mutually exclusive so natural related peers are deferred to later 3.x file scanners.
 
-### Phase 3.1–3.8: Remaining scanner migrations and closeout — **pending**
+### Phase 3.1: Verify Checksums Findings — **complete (2026-07-19)**
 
-Narrowly scoped plans, one phase at a time (same pattern as 3.0). Registry expansion travels with the first consumer. See §11.
+- Migrate **Verify Checksums** onto Findings: `scanner_id=verify-checksums`; rules `core-file-modified` / `core-file-missing` / `core-file-unknown`; risk Critical / Critical / Suspicious + `needs_review`.
+- Scope `verify-checksums:wordpress-core`; finalize-with-absence only on full success; incomplete/failed/partial never clears prior findings and must surface incomplete coverage in the report (including `confirmed_this_run` distinction).
+- Execution meta stores `locale_requested` and `locale_effective` (en_US fallback diagnosable).
+- Unreadable expected or unknown files, and mid-scan content changes between digests → partial, no absence.
+- Missing-file fingerprint `sha256:missing`; reappearance after `not_detected` invalidates prior dismissal (Needs Review).
+- AJAX/JS report parity with Uploads/MU; Clear History removed for this tab; fresh start (no prototype `core:` import).
+
+### Phase 3.2–3.8: Remaining scanner migrations and closeout — **pending**
+
+Narrowly scoped plans, one phase at a time (same pattern as 3.0/3.1). Registry expansion travels with the first consumer. See §11.
 
 | Phase | Scope | Status |
 | --- | --- | --- |
-| **3.1** | Core checksums (`verify-checksums`) | pending |
+| **3.1** | Core checksums (`verify-checksums`) | complete (2026-07-19) |
 | **3.2** | Exposed sensitive files (`exposed-files`) | pending |
 | **3.3** | Database options (`database-scan`); register `option` | pending |
 | **3.4** | WP-Cron (`scheduled-tasks`); register `cron_event` | pending |
@@ -1172,7 +1181,7 @@ Prefer migrating at least **3.1** and **3.2** before freezing the public CLI sur
 
 - Scan Site aggregate orchestration, scheduled scans, email notifications, Home summary (§12).
 
-**Next deliverable:** Phase **3.1** implementation plan (Core checksums → Findings), then implementation after approval.
+**Next deliverable:** Phase **3.2** implementation plan (Exposed sensitive files → Findings), then implementation after approval.
 
 ---
 
