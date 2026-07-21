@@ -173,7 +173,7 @@ class Choctaw_Wp_Security_Admin_Help_Content {
 				'detail_html' => self::database_scan_about_html(),
 			),
 			'scheduled_tasks'  => array(
-				'visible'     => __( 'WordPress stores background jobs in its WP-Cron system. This report highlights WP-Cron events that may require investigation, such as unknown hooks, missing handlers, unusual schedules, suspicious arguments, stale events, or excessive duplication. Recognized WordPress core and plugin maintenance events are hidden by default to make potential issues easier to identify.', 'choctaw-wp-security' ),
+				'visible'     => __( 'WordPress stores background jobs in its WP-Cron system. Problem rules become Sassh Findings (Needs Review) for unknown hooks, missing handlers, unusual schedules, suspicious arguments, stale events, or excessive duplication. Recognized core and plugin/theme maintenance events appear in a separate non-dismissible inventory and are not Findings.', 'choctaw-wp-security' ),
 				'detail_html' => self::scheduled_tasks_why_html(),
 			),
 			'posts_scan'       => array(

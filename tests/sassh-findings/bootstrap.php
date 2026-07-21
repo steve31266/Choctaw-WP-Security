@@ -66,8 +66,19 @@ require_once $root . '/coreguard/includes/class-sassh-object-path-normalizer.php
 require_once $root . '/coreguard/includes/class-sassh-object-type-registry.php';
 require_once $root . '/coreguard/includes/class-sassh-option-key-normalizer.php';
 require_once $root . '/coreguard/includes/class-sassh-findings-service.php';
+require_once $root . '/coreguard/includes/class-sassh-cron-event-key-normalizer.php';
 require_once $root . '/coreguard/includes/class-exposed-files-patterns.php';
 require_once $root . '/coreguard/includes/class-options-scan-patterns.php';
+
+if ( ! function_exists( 'wp_json_encode' ) ) {
+	/**
+	 * @param mixed $data Data.
+	 * @return string|false
+	 */
+	function wp_json_encode( $data ) {
+		return json_encode( $data );
+	}
+}
 
 if ( ! class_exists( 'WP_Error' ) ) {
 	/**

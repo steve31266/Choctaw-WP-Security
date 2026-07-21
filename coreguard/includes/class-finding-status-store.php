@@ -23,7 +23,6 @@ class Choctaw_Wp_Security_Finding_Status_Store {
 	 */
 	public static $supported_scan_types = array(
 		'wp-posts',
-		'scheduled-tasks',
 		'directory-browsing',
 		'unrecognized-components',
 	);

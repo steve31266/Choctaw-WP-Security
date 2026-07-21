@@ -64,6 +64,9 @@
 		if (id === 'database-scan') {
 			return 'wp_options';
 		}
+		if (id === 'scheduled-tasks') {
+			return 'Scheduled Tasks';
+		}
 		return id || '—';
 	}
 

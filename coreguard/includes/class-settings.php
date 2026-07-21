@@ -2885,7 +2885,12 @@ class Choctaw_Wp_Security_Settings {
 			wp_enqueue_script(
 				'choctaw-wp-security-scheduled-tasks',
 				CHOCTAW_WP_SECURITY_URL . 'assets/js/admin-scheduled-tasks.js',
-				array( 'choctaw-wp-security-admin-help', 'choctaw-wp-security-report-status', 'choctaw-wp-security-report-pagination' ),
+				array(
+					'choctaw-wp-security-admin-help',
+					'choctaw-wp-security-report-status',
+					'choctaw-wp-security-report-related-findings',
+					'choctaw-wp-security-report-pagination',
+				),
 				CHOCTAW_WP_SECURITY_VERSION,
 				true
 			);
@@ -2898,7 +2903,7 @@ class Choctaw_Wp_Security_Settings {
 					'nonce'          => wp_create_nonce( 'choctaw_wp_security_scheduled_tasks_ajax' ),
 					'scanType'       => 'scheduled-tasks',
 					'pageSize'       => $this->get_report_page_size(),
-					'itemNoun'       => __( 'events', 'choctaw-wp-security' ),
+					'itemNoun'       => __( 'findings', 'choctaw-wp-security' ),
 					'initialResult'  => $this->load_report_result(
 						$this->get_scheduled_tasks_result_transient_key(),
 						Choctaw_Wp_Security_Utils::USER_META_SCHEDULED_TASKS_RESULT
@@ -2908,28 +2913,32 @@ class Choctaw_Wp_Security_Settings {
 						'scanButton'           => __( 'Scan Now', 'choctaw-wp-security' ),
 						'scanning'             => __( 'Scanning WP-Cron events...', 'choctaw-wp-security' ),
 						'scanError'            => __( 'The WP-Cron scan could not be completed.', 'choctaw-wp-security' ),
-						'noFindings'           => __( 'No WP-Cron events matched the current filters.', 'choctaw-wp-security' ),
-						'noFlagged'            => __( 'No WP-Cron events requiring review were found. Choose All Risk or Info to include recognized maintenance jobs.', 'choctaw-wp-security' ),
+						'scanRejected'         => __( 'This options table cannot be scanned.', 'choctaw-wp-security' ),
+						'scanIncomplete'       => __( 'Scan coverage was incomplete. Previously detected findings were not cleared.', 'choctaw-wp-security' ),
+						'priorFindingsNote'    => __( 'Active findings below are from earlier successful scans and were not reconfirmed by this run.', 'choctaw-wp-security' ),
+						'noFindings'           => __( 'No WP-Cron findings matched the current filters.', 'choctaw-wp-security' ),
+						'noFlagged'            => __( 'No WP-Cron findings requiring review were found.', 'choctaw-wp-security' ),
 						'sortAscending'        => __( 'Sort ascending', 'choctaw-wp-security' ),
 						'sortDescending'       => __( 'Sort descending', 'choctaw-wp-security' ),
 						'configuredTable'      => __( 'WordPress configured table: %s', 'choctaw-wp-security' ),
-						'scanCompleteIssues'   => __( 'Scan complete. %1$s critical, %2$s suspicious, %3$s review, and %4$s informational findings. %5$s flagged for review.', 'choctaw-wp-security' ),
-						'scanCompleteClean'    => __( 'Scan complete. No critical or suspicious findings. %1$s review and %2$s informational item(s) reported. %3$s flagged for review.', 'choctaw-wp-security' ),
+						'scanCompleteIssues'   => __( 'Scan complete. %1$s critical, %2$s warning, %3$s suspicious findings.', 'choctaw-wp-security' ),
+						'scanCompleteClean'    => __( 'Scan complete. No critical, warning, or suspicious findings.', 'choctaw-wp-security' ),
+						'inventoryHeading'     => __( 'Recognized scheduled tasks (inventory)', 'choctaw-wp-security' ),
+						'inventoryHelp'        => __( 'Informational only — not Findings. These recognized events are not dismissible and do not participate in Findings identity or absence.', 'choctaw-wp-security' ),
+						'noInventory'          => __( 'No recognized scheduled tasks in the scanned cron option.', 'choctaw-wp-security' ),
 						'risk'                 => __( 'Risk', 'choctaw-wp-security' ),
+						'status'               => __( 'Status', 'choctaw-wp-security' ),
 						'category'             => __( 'Category', 'choctaw-wp-security' ),
 						'hook'                 => __( 'Hook', 'choctaw-wp-security' ),
 						'schedule'             => __( 'Schedule', 'choctaw-wp-security' ),
 						'nextRun'              => __( 'Next Run', 'choctaw-wp-security' ),
 						'source'               => __( 'Source', 'choctaw-wp-security' ),
-						'size'                 => __( 'Size', 'choctaw-wp-security' ),
 						'details'              => __( 'Details', 'choctaw-wp-security' ),
-						'excerpt'              => __( 'Excerpt', 'choctaw-wp-security' ),
 						'actions'              => __( 'Action', 'choctaw-wp-security' ),
 						'viewDetails'          => __( 'View details', 'choctaw-wp-security' ),
 						'hideDetails'          => __( 'Hide details', 'choctaw-wp-security' ),
 						'infoPanel'            => __( 'Info', 'choctaw-wp-security' ),
-						'rawArguments'         => __( 'Raw Arguments', 'choctaw-wp-security' ),
-						'confidence'           => __( 'Confidence: %s', 'choctaw-wp-security' ),
+						'rawArguments'         => __( 'Arguments (preview)', 'choctaw-wp-security' ),
 						'whySeeingThis'        => __( 'Why you are seeing this', 'choctaw-wp-security' ),
 						'howToProceed'         => __( 'How to proceed', 'choctaw-wp-security' ),
 						'allRisk'              => __( 'All Risk', 'choctaw-wp-security' ),
@@ -2938,12 +2947,13 @@ class Choctaw_Wp_Security_Settings {
 						'allSources'           => __( 'All Sources', 'choctaw-wp-security' ),
 						'searchPlaceholder'    => __( 'Search hook or source...', 'choctaw-wp-security' ),
 						'riskCritical'         => __( 'Critical', 'choctaw-wp-security' ),
+						'riskWarning'          => __( 'Warning', 'choctaw-wp-security' ),
 						'riskSuspicious'       => __( 'Suspicious', 'choctaw-wp-security' ),
-						'riskReview'           => __( 'Review', 'choctaw-wp-security' ),
 						'riskInfo'             => __( 'Info', 'choctaw-wp-security' ),
 						'sourcePlugin'         => __( 'Plugin', 'choctaw-wp-security' ),
 						'sourceTheme'          => __( 'Theme', 'choctaw-wp-security' ),
 						'sourceUnknown'        => __( 'Unknown', 'choctaw-wp-security' ),
+						'notReconfirmed'       => __( 'Not reconfirmed by this incomplete run', 'choctaw-wp-security' ),
 						'whyThisMatters'       => Choctaw_Wp_Security_Admin_Help::get_toggle_label(),
 					),
 				)
@@ -3765,7 +3775,7 @@ class Choctaw_Wp_Security_Settings {
 			return;
 		}
 
-		$scan_types = array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files', 'database-scan' );
+		$scan_types = array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files', 'database-scan', 'scheduled-tasks' );
 
 		foreach ( $scan_types as $scan_type ) {
 			$storage = $this->get_report_storage_for_scan_type( $scan_type );
@@ -3836,6 +3846,7 @@ class Choctaw_Wp_Security_Settings {
 				'verify-checksums',
 				'exposed-files',
 				'database-scan',
+				'scheduled-tasks',
 			),
 			true
 		);
@@ -3974,7 +3985,7 @@ class Choctaw_Wp_Security_Settings {
 
 		$scan_type = isset( $_POST['scan_type'] ) ? sanitize_key( wp_unslash( $_POST['scan_type'] ) ) : '';
 
-		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files', 'database-scan' ), true ) ) {
+		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files', 'database-scan', 'scheduled-tasks' ), true ) ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'Clear History is not available for Sassh Findings-backed scans.', 'choctaw-wp-security' ),
@@ -4024,7 +4035,7 @@ class Choctaw_Wp_Security_Settings {
 		$scan_type   = isset( $_POST['scan_type'] ) ? sanitize_text_field( wp_unslash( $_POST['scan_type'] ) ) : '';
 		$fingerprint = isset( $_POST['fingerprint'] ) ? sanitize_text_field( wp_unslash( $_POST['fingerprint'] ) ) : '';
 
-		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files', 'database-scan' ), true ) ) {
+		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files', 'database-scan', 'scheduled-tasks' ), true ) ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'These findings must be dismissed through Sassh Findings.', 'choctaw-wp-security' ),
@@ -5677,7 +5688,6 @@ class Choctaw_Wp_Security_Settings {
 					<input type="hidden" name="cws_tab" value="scheduled-tasks" />
 
 					<?php submit_button( __( 'Scan Now', 'choctaw-wp-security' ), 'secondary', 'choctaw_wp_security_scheduled_tasks_scan', false ); ?>
-					<?php $this->render_clear_history_button( 'scheduled-tasks' ); ?>
 				</form>
 
 				<div id="cws-scheduled-tasks-js-notices" aria-live="polite"></div>

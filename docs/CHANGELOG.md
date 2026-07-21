@@ -19,6 +19,19 @@ Newest entries first.
 
 ---
 
+## 2026-07-20 18:40 CDT
+
+**Summary:** Locked and shipped Findings Phase **3.4** (WP-Cron / Scheduled Tasks → Sassh Findings): registered `object_type=cron_event`; registered-site `blog_id` gate; per problem-rule Findings after aggregation; recognized-only report inventory; rule-based risk; Clear History removed; fresh start; capped/sanitized argument previews.
+
+**Documents:**
+- `docs/CoreGuard Findings System.md` — updated — §5 / §11 / §18 Phase 3.4 complete; next = 3.5
+- `.cursor/plans/CoreGuard-Findings-System.md` — align with formal PRD (working copy)
+- `.cursor/plans/findings_phase_3_4_wp_cron.plan.md` — updated — approved + implemented
+- `.cursor/plans/findings_phase_3x_index.plan.md` — updated — 3.4 complete
+- `CHANGELOG.md` — updated — `[1.9.3.4] - 2026-07-20`
+- `docs/README.md` — updated — Findings status through Phase 3.4
+- `coreguard/sassh.php` — updated — `Version` / `CHOCTAW_WP_SECURITY_VERSION` → `1.9.3.4`
+
 ## 2026-07-20 12:50 CDT
 
 **Summary:** Locked and shipped Findings Phase **3.3** (Database options → Sassh Findings): registered `object_type=option`; required registered-site `blog_id` (reject foreign/orphaned tables before begin; archived registered sites accepted); rule-based risk (no legacy warning→suspicious); PHP Critical only on strong combinations; ≥threshold autoload Findings only; Clear History + Reset Baseline removed; fresh start; dismiss cache rehydration.

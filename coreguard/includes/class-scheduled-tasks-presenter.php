@@ -69,7 +69,8 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Presenter {
 	private function risk_label( $risk ) {
 		$map = array(
 			'info'       => __( 'Info', 'choctaw-wp-security' ),
-			'review'     => __( 'Review', 'choctaw-wp-security' ),
+			'safe'       => __( 'Safe', 'choctaw-wp-security' ),
+			'warning'    => __( 'Warning', 'choctaw-wp-security' ),
 			'suspicious' => __( 'Suspicious', 'choctaw-wp-security' ),
 			'critical'   => __( 'Critical', 'choctaw-wp-security' ),
 		);

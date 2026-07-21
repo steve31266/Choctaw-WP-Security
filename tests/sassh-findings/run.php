@@ -393,6 +393,176 @@ sassh_assert(
 	$content_fp === Sassh_Findings_Service::content_fingerprint_from_string( 'abc' )
 );
 
+// --- Phase 3.4 cron_event registry / canonicalize / risk / aggregation contracts ---
+sassh_assert(
+	'cron_event object type registered',
+	Sassh_Object_Type_Registry::is_registered( Sassh_Object_Type_Registry::TYPE_CRON_EVENT )
+);
+sassh_assert(
+	'scheduled-tasks scope key',
+	'scheduled-tasks:wp_2_options' === Sassh_Findings_Service::scheduled_tasks_scope_key( 'wp_2_options' )
+);
+sassh_assert(
+	'scheduled-tasks scanner id',
+	'scheduled-tasks' === Sassh_Findings_Service::SCANNER_SCHEDULED_TASKS
+);
+
+$cron_key_a = Sassh_Cron_Event_Key_Normalizer::object_key( 'acme_job', array( 'id' => 1 ) );
+$cron_key_b = Sassh_Cron_Event_Key_Normalizer::object_key( 'acme_job', array( 'id' => 2 ) );
+$cron_key_c = Sassh_Cron_Event_Key_Normalizer::object_key( 'acme_job', array( 'id' => 1 ) );
+sassh_assert( 'cron object_key is string', is_string( $cron_key_a ) && ! is_wp_error( $cron_key_a ) );
+sassh_assert( 'cron object_key differs by args', $cron_key_a !== $cron_key_b );
+sassh_assert( 'cron object_key stable for same args', $cron_key_a === $cron_key_c );
+sassh_assert( 'cron object_key has hook#digest form', 0 === strpos( (string) $cron_key_a, 'acme_job#' ) );
+
+// Canonicalization: types, list order, map key sort.
+$canon_bool_t = Sassh_Cron_Event_Key_Normalizer::canonicalize( true );
+$canon_bool_f = Sassh_Cron_Event_Key_Normalizer::canonicalize( false );
+$canon_int    = Sassh_Cron_Event_Key_Normalizer::canonicalize( 5 );
+$canon_str5   = Sassh_Cron_Event_Key_Normalizer::canonicalize( '5' );
+$canon_null   = Sassh_Cron_Event_Key_Normalizer::canonicalize( null );
+sassh_assert( 'canonicalize bool true', is_array( $canon_bool_t ) && 'bool' === $canon_bool_t['t'] && 1 === $canon_bool_t['v'] );
+sassh_assert( 'canonicalize bool false', is_array( $canon_bool_f ) && 'bool' === $canon_bool_f['t'] && 0 === $canon_bool_f['v'] );
+sassh_assert( 'canonicalize int vs numeric string distinct', Sassh_Cron_Event_Key_Normalizer::encode_canonical( $canon_int ) !== Sassh_Cron_Event_Key_Normalizer::encode_canonical( $canon_str5 ) );
+sassh_assert( 'canonicalize null', is_array( $canon_null ) && 'null' === $canon_null['t'] );
+
+$list_a = Sassh_Cron_Event_Key_Normalizer::canonicalize( array( 'b', 'a' ) );
+$list_b = Sassh_Cron_Event_Key_Normalizer::canonicalize( array( 'a', 'b' ) );
+sassh_assert(
+	'indexed array order preserved',
+	Sassh_Cron_Event_Key_Normalizer::encode_canonical( $list_a ) !== Sassh_Cron_Event_Key_Normalizer::encode_canonical( $list_b )
+);
+
+$map_a = Sassh_Cron_Event_Key_Normalizer::canonicalize( array( 'z' => 1, 'a' => 2 ) );
+$map_b = Sassh_Cron_Event_Key_Normalizer::canonicalize( array( 'a' => 2, 'z' => 1 ) );
+sassh_assert(
+	'associative map key sort order-independent',
+	Sassh_Cron_Event_Key_Normalizer::encode_canonical( $map_a ) === Sassh_Cron_Event_Key_Normalizer::encode_canonical( $map_b )
+);
+
+$unicode = Sassh_Cron_Event_Key_Normalizer::canonicalize( array( 'café' => '☕' ) );
+sassh_assert( 'canonicalize unicode', null !== $unicode && '' !== Sassh_Cron_Event_Key_Normalizer::encode_canonical( $unicode ) );
+
+$nested = Sassh_Cron_Event_Key_Normalizer::canonicalize(
+	array(
+		'outer' => array(
+			'inner' => array( 1, 2 ),
+			'flag'  => true,
+		),
+	)
+);
+sassh_assert( 'canonicalize nested', null !== $nested );
+
+$unhashable = Sassh_Cron_Event_Key_Normalizer::canonicalize( (object) array( 'x' => 1 ) );
+sassh_assert( 'unsupported object unhashable', null === $unhashable );
+sassh_assert( 'unhashable object_key is WP_Error', is_wp_error( Sassh_Cron_Event_Key_Normalizer::object_key( 'h', (object) array( 'x' => 1 ) ) ) );
+
+$sched_a = Sassh_Cron_Event_Key_Normalizer::encode_schedule_interval_set(
+	array(
+		array( 'schedule' => 'hourly', 'interval' => 3600 ),
+		array( 'schedule' => 'twicedaily', 'interval' => 43200 ),
+	)
+);
+$sched_b = Sassh_Cron_Event_Key_Normalizer::encode_schedule_interval_set(
+	array(
+		array( 'schedule' => 'twicedaily', 'interval' => 43200 ),
+		array( 'schedule' => 'hourly', 'interval' => 3600 ),
+		array( 'schedule' => 'hourly', 'interval' => 3600 ),
+	)
+);
+sassh_assert( 'schedule/interval set sorted unique deterministic', $sched_a === $sched_b && '' !== $sched_a );
+
+$obj_fp = Sassh_Cron_Event_Key_Normalizer::object_fingerprint(
+	'acme_job',
+	array( 'id' => 1 ),
+	array(
+		array( 'schedule' => 'hourly', 'interval' => 3600 ),
+		array( 'schedule' => 'twicedaily', 'interval' => 43200 ),
+	)
+);
+$obj_fp2 = Sassh_Cron_Event_Key_Normalizer::object_fingerprint(
+	'acme_job',
+	array( 'id' => 1 ),
+	array(
+		array( 'schedule' => 'twicedaily', 'interval' => 43200 ),
+		array( 'schedule' => 'hourly', 'interval' => 3600 ),
+	)
+);
+sassh_assert( 'object fingerprint uses sorted schedule set', is_string( $obj_fp ) && $obj_fp === $obj_fp2 );
+
+sassh_assert(
+	'stale-task risk suspicious',
+	'suspicious' === Sassh_Findings_Service::scheduled_tasks_risk_level( 'stale-task' )
+);
+sassh_assert(
+	'unknown-hook risk suspicious',
+	'suspicious' === Sassh_Findings_Service::scheduled_tasks_risk_level( 'unknown-hook' )
+);
+sassh_assert(
+	'unregistered-handler risk suspicious',
+	'suspicious' === Sassh_Findings_Service::scheduled_tasks_risk_level( 'unregistered-handler' )
+);
+sassh_assert(
+	'suspicious-hook-name risk warning',
+	'warning' === Sassh_Findings_Service::scheduled_tasks_risk_level( 'suspicious-hook-name' )
+);
+sassh_assert(
+	'suspicious-arguments url-only suspicious',
+	'suspicious' === Sassh_Findings_Service::scheduled_tasks_risk_level(
+		'suspicious-arguments',
+		array( 'signals' => array( 'external_url' ) )
+	)
+);
+sassh_assert(
+	'suspicious-arguments eval alone warning',
+	'warning' === Sassh_Findings_Service::scheduled_tasks_risk_level(
+		'suspicious-arguments',
+		array( 'signals' => array( 'eval_family' ) )
+	)
+);
+sassh_assert(
+	'suspicious-arguments eval+base64 critical',
+	'critical' === Sassh_Findings_Service::scheduled_tasks_risk_level(
+		'suspicious-arguments',
+		array( 'signals' => array( 'eval_family', 'base64_payload' ) )
+	)
+);
+sassh_assert(
+	'suspicious-arguments php+shell critical',
+	'critical' === Sassh_Findings_Service::scheduled_tasks_risk_level(
+		'suspicious-arguments',
+		array( 'signals' => array( 'php_fragment', 'shell_fragment' ) )
+	)
+);
+sassh_assert(
+	'stronger risk warning > suspicious',
+	'warning' === Sassh_Findings_Service::stronger_risk_level( 'suspicious', 'warning' )
+);
+
+// Non-core hook with several distinct argument sets → distinct object identities.
+$dup_keys = array();
+foreach ( array( array( 'a' ), array( 'b' ), array( 'c' ), array( 'a' ) ) as $args_set ) {
+	$key = Sassh_Cron_Event_Key_Normalizer::object_key( 'plugin_batch_job', $args_set );
+	sassh_assert( 'duplicate-fanout object_key ok', is_string( $key ) && ! is_wp_error( $key ) );
+	$dup_keys[ (string) $key ] = true;
+}
+sassh_assert( 'distinct args → distinct object_keys (3 unique of 4)', 3 === count( $dup_keys ) );
+
+// duplicate-task fingerprint uses threshold-family sentinel, not raw count.
+$digest = Sassh_Cron_Event_Key_Normalizer::args_digest( array( 'a' ) );
+$dup_fp_count5  = Sassh_Findings_Service::content_fingerprint_from_string( 'plugin_batch_job' . "\n" . $digest . "\n" . 'hook_name' );
+$dup_fp_count12 = Sassh_Findings_Service::content_fingerprint_from_string( 'plugin_batch_job' . "\n" . $digest . "\n" . 'hook_name' );
+$dup_fp_family  = Sassh_Findings_Service::content_fingerprint_from_string( 'plugin_batch_job' . "\n" . $digest . "\n" . 'hook_args' );
+sassh_assert( 'duplicate fingerprint stable within family (count omitted)', $dup_fp_count5 === $dup_fp_count12 );
+sassh_assert( 'duplicate fingerprint changes when threshold family changes', $dup_fp_count5 !== $dup_fp_family );
+
+$preview = Sassh_Cron_Event_Key_Normalizer::sanitize_args_preview( 'https://user:secret@example.com/path?token=abc123&ok=1' );
+sassh_assert( 'args preview redacts password', false === strpos( $preview['preview'], 'secret' ) );
+sassh_assert( 'args preview redacts token', false === strpos( $preview['preview'], 'abc123' ) );
+$long = str_repeat( 'x', 500 );
+$capped = Sassh_Cron_Event_Key_Normalizer::sanitize_args_preview( $long, 40 );
+sassh_assert( 'args preview capped', strlen( $capped['preview'] ) <= 40 && ! empty( $capped['truncated'] ) );
+
 // --- Capabilities ---
 $GLOBALS['sassh_test_is_multisite'] = false;
 $GLOBALS['sassh_test_caps']         = array( 'manage_options' => true );

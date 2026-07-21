@@ -85,6 +85,20 @@
 	color: #dba617;
 }
 
+.cws-scheduled-tasks-risk.is-warning .cws-scheduled-tasks-risk-label,
+.cws-scheduled-tasks-risk.is-warning .dashicons,
+.cws-scheduled-tasks-risk.is-warning .cws-coreguard-mark {
+	color: #dba617;
+}
+
+.cws-scheduled-tasks-inventory {
+	margin-top: 1.5em;
+}
+
+.cws-scheduled-tasks-inventory-table {
+	margin-top: 0.5em;
+}
+
 .cws-scheduled-tasks-risk.is-review .cws-scheduled-tasks-risk-label,
 .cws-scheduled-tasks-risk.is-review .dashicons,
 .cws-scheduled-tasks-risk.is-review .cws-coreguard-mark {

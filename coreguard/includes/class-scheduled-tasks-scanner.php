@@ -1,6 +1,6 @@
 <?php
 /**
- * Fact-only WP-Cron scheduled tasks scanner.
+ * WP-Cron scheduled tasks scanner (Sassh Findings producer).
  *
  * @package Choctaw_Wp_Security
  */
@@ -8,12 +8,27 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Detects and scores WP-Cron events stored in the cron option.
+ * Detects WP-Cron events and records problem-rule Findings.
  *
- * Returns structured findings (rules, signals, score, confidence, risk).
- * Does not generate UI copy — use Choctaw_Wp_Security_Scheduled_Tasks_Presenter.
+ * Recognized-only events are exposed as non-dismissible report inventory.
  */
 class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
+
+	/**
+	 * Problem rule ids (kebab) that become Findings.
+	 *
+	 * @var array<int, string>
+	 */
+	const PROBLEM_RULES = array(
+		Sassh_Findings_Service::RULE_UNKNOWN_HOOK,
+		Sassh_Findings_Service::RULE_UNREGISTERED_HANDLER,
+		Sassh_Findings_Service::RULE_MISSING_SOURCE,
+		Sassh_Findings_Service::RULE_UNUSUAL_FREQUENCY,
+		Sassh_Findings_Service::RULE_STALE_TASK,
+		Sassh_Findings_Service::RULE_DUPLICATE_TASK,
+		Sassh_Findings_Service::RULE_SUSPICIOUS_HOOK_NAME,
+		Sassh_Findings_Service::RULE_SUSPICIOUS_ARGUMENTS,
+	);
 
 	/**
 	 * Selected options table name.
@@ -51,6 +66,13 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 	private $hook_args_counts = array();
 
 	/**
+	 * Fingerprint failures during the run.
+	 *
+	 * @var int
+	 */
+	private $hash_failures = 0;
+
+	/**
 	 * @param string $options_table Requested options table name.
 	 */
 	public function __construct( $options_table = '' ) {
@@ -64,17 +86,206 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 	 * @return array<string, mixed>
 	 */
 	public function scan() {
+		Sassh_Findings_Schema::maybe_upgrade();
+
+		$this->hash_failures = 0;
+
+		$blog_id = Sassh_Option_Key_Normalizer::map_options_table_to_registered_site_blog_id( $this->options_table );
+
+		if ( is_wp_error( $blog_id ) ) {
+			return $this->build_rejection_report( $blog_id );
+		}
+
+		$blog_id = (int) $blog_id;
+
 		$cron_raw = $this->get_table_option( 'cron', array() );
-		$cron     = is_array( $cron_raw ) ? $cron_raw : array();
+
+		if ( ! is_array( $cron_raw ) ) {
+			return $this->run_failed_corrupt_cron( $blog_id );
+		}
+
+		$cron = $cron_raw;
 
 		$this->cron_option_id = $this->get_option_id_for_name( 'cron' );
 		$this->build_duplicate_counts( $cron );
 
-		$findings = array();
+		$physical    = $this->collect_physical_events( $cron );
+		$inventory   = array();
+		$agg_buckets = array();
 
-		if ( ! is_array( $cron ) || empty( $cron ) ) {
-			return $this->build_result( $findings );
+		foreach ( $physical as $event ) {
+			if ( ! empty( $event['unhashable'] ) ) {
+				++$this->hash_failures;
+				continue;
+			}
+
+			$problem_rules = isset( $event['problem_rules'] ) && is_array( $event['problem_rules'] )
+				? $event['problem_rules']
+				: array();
+
+			if ( empty( $problem_rules ) ) {
+				$inventory[] = $this->build_inventory_item( $event, $blog_id );
+				continue;
+			}
+
+			foreach ( $problem_rules as $rule_id ) {
+				$this->aggregate_problem_event( $agg_buckets, $event, (string) $rule_id );
+			}
 		}
+
+		$scope_key    = Sassh_Findings_Service::scheduled_tasks_scope_key( $this->options_table );
+		$service      = new Sassh_Findings_Service();
+		$execution_id = $service->begin_scanner_execution(
+			Sassh_Findings_Service::SCANNER_SCHEDULED_TASKS,
+			array(
+				'scope_key'  => $scope_key,
+				'run_type'   => 'individual',
+				'run_source' => 'wordpress_admin',
+				'meta'       => array(
+					'options_table'              => $this->options_table,
+					'wordpress_configured_table' => Choctaw_Wp_Security_Options_Table_Discovery::get_wordpress_configured_table(),
+					'blog_id'                    => $blog_id,
+					'inventory_count'            => count( $inventory ),
+				),
+			)
+		);
+
+		$observations = $this->build_observations_from_buckets( $agg_buckets, $blog_id );
+
+		$service->record_observations( $execution_id, $observations );
+		$service->update_execution_meta(
+			$execution_id,
+			array(
+				'recognized_inventory' => $inventory,
+				'inventory_count'      => count( $inventory ),
+			)
+		);
+
+		$errors            = array();
+		$completion_status = 'success';
+
+		if ( $this->hash_failures > 0 ) {
+			$completion_status = 'partial';
+			$errors[]          = __( 'One or more cron events could not be fingerprinted. Previously detected findings were not cleared.', 'choctaw-wp-security' );
+		}
+
+		$ok = $service->finalize_scanner_execution( $execution_id, $completion_status );
+
+		if ( 'success' === $completion_status && ! $ok ) {
+			$completion_status = 'failed';
+			$errors[]          = __( 'The scan could not be finalized.', 'choctaw-wp-security' );
+		}
+
+		return $this->build_report_from_findings(
+			$service,
+			$execution_id,
+			array(
+				'completion_status' => $completion_status,
+				'scan_incomplete'   => 'success' !== $completion_status,
+				'errors'            => $errors,
+				'inventory'         => $inventory,
+				'blog_id'           => $blog_id,
+			)
+		);
+	}
+
+	/**
+	 * Get the selected options table name.
+	 *
+	 * @return string
+	 */
+	public function get_options_table() {
+		return $this->options_table;
+	}
+
+	/**
+	 * Failed run when cron option is corrupt (not an array).
+	 *
+	 * @param int $blog_id Blog id.
+	 * @return array<string, mixed>
+	 */
+	private function run_failed_corrupt_cron( $blog_id ) {
+		$scope_key    = Sassh_Findings_Service::scheduled_tasks_scope_key( $this->options_table );
+		$service      = new Sassh_Findings_Service();
+		$execution_id = $service->begin_scanner_execution(
+			Sassh_Findings_Service::SCANNER_SCHEDULED_TASKS,
+			array(
+				'scope_key'  => $scope_key,
+				'run_type'   => 'individual',
+				'run_source' => 'wordpress_admin',
+				'meta'       => array(
+					'options_table'              => $this->options_table,
+					'wordpress_configured_table' => Choctaw_Wp_Security_Options_Table_Discovery::get_wordpress_configured_table(),
+					'blog_id'                    => (int) $blog_id,
+				),
+			)
+		);
+
+		$service->finalize_scanner_execution( $execution_id, 'failed' );
+
+		return $this->build_report_from_findings(
+			$service,
+			$execution_id,
+			array(
+				'completion_status' => 'failed',
+				'scan_incomplete'   => true,
+				'errors'            => array(
+					__( 'The cron option could not be read as an array. Previously detected findings were not cleared.', 'choctaw-wp-security' ),
+				),
+				'inventory'         => array(),
+				'blog_id'           => (int) $blog_id,
+			)
+		);
+	}
+
+	/**
+	 * Rejection payload — no Findings execution.
+	 *
+	 * @param WP_Error $error Mapping error.
+	 * @return array<string, mixed>
+	 */
+	private function build_rejection_report( WP_Error $error ) {
+		$message = $error->get_error_message();
+
+		if ( '' === $message ) {
+			$message = __( 'The selected options table is not associated with a registered WordPress site.', 'choctaw-wp-security' );
+		}
+
+		return array(
+			'success'                    => false,
+			'rejected'                   => true,
+			'findings_backend'           => 'sassh',
+			'errors'                     => array( $message ),
+			'findings'                   => array(),
+			'inventory'                  => array(),
+			'summary'                    => array(
+				'critical'   => 0,
+				'warning'    => 0,
+				'suspicious' => 0,
+				'safe'       => 0,
+				'info'       => 0,
+				'total'      => 0,
+				'flagged'    => 0,
+			),
+			'options_table'              => $this->options_table,
+			'wordpress_configured_table' => Choctaw_Wp_Security_Options_Table_Discovery::get_wordpress_configured_table(),
+			'scan_incomplete'            => false,
+			'coverage_complete'          => false,
+			'absence_reconciled'         => false,
+			'completion_status'          => 'rejected',
+			'confirmed_this_run'         => 0,
+			'scanned_at'                 => time(),
+		);
+	}
+
+	/**
+	 * Walk the cron array into physical event records.
+	 *
+	 * @param array<mixed, mixed> $cron Cron option.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function collect_physical_events( array $cron ) {
+		$out = array();
 
 		foreach ( $cron as $timestamp => $hooks ) {
 			if ( ! is_array( $hooks ) ) {
@@ -93,55 +304,743 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 						continue;
 					}
 
-					$findings[] = $this->analyze_event( $hook, (int) $timestamp, (string) $event_key, $event );
+					$out[] = $this->analyze_physical_event( $hook, (int) $timestamp, (string) $event_key, $event );
 				}
 			}
 		}
 
-		return $this->build_result( $findings );
+		return $out;
 	}
 
 	/**
-	 * Build the scan result payload.
+	 * Analyze one stored cron event into an intermediate record.
 	 *
-	 * @param array<int, array<string, mixed>> $findings Raw findings.
+	 * @param string               $hook      Hook name.
+	 * @param int                  $timestamp Next run timestamp.
+	 * @param string               $event_key Event array key.
+	 * @param array<string, mixed> $event     Event payload.
 	 * @return array<string, mixed>
 	 */
-	private function build_result( array $findings ) {
-		$presenter = new Choctaw_Wp_Security_Scheduled_Tasks_Presenter();
-		$enriched  = array();
+	private function analyze_physical_event( $hook, $timestamp, $event_key, array $event ) {
+		$args     = isset( $event['args'] ) && is_array( $event['args'] ) ? $event['args'] : array();
+		$schedule = isset( $event['schedule'] ) ? (string) $event['schedule'] : '';
+		$interval = isset( $event['interval'] ) ? (int) $event['interval'] : 0;
+		$now      = time();
+		$is_overdue = $timestamp > 0 && $timestamp < ( $now - (int) Choctaw_Wp_Security_Scheduled_Tasks_Patterns::STALE_TASK_SECONDS );
+		$overdue_seconds = $is_overdue ? ( $now - $timestamp ) : 0;
 
-		foreach ( $findings as $finding ) {
-			$enriched[] = $presenter->enrich( $finding );
+		$object_key = Sassh_Cron_Event_Key_Normalizer::object_key( $hook, $args );
+
+		if ( is_wp_error( $object_key ) ) {
+			return array(
+				'unhashable' => true,
+				'hook'       => $hook,
+				'timestamp'  => $timestamp,
+				'event_key'  => $event_key,
+			);
 		}
 
-		$summary = array(
-			'critical'   => 0,
-			'suspicious' => 0,
-			'review'     => 0,
-			'info'       => 0,
-			'total'      => count( $enriched ),
-			'flagged'    => 0,
+		$handler_registered = (bool) has_action( $hook );
+		$source             = $this->resolve_source( $hook, $handler_registered );
+		$is_core            = ( 'core' === $source['key'] );
+
+		$legacy_rules = array();
+		$signals      = array();
+		$evidence     = array(
+			'matched_arg_pattern' => '',
+			'arg_key'             => '',
+			'arg_preview'         => '',
+			'interval'            => $interval,
+			'duplicate_count'     => 0,
+			'name_heuristic'      => '',
+			'missing_source_hint' => '',
+			'event_key'           => $event_key,
+			'duplicate_family'    => '',
 		);
 
-		foreach ( $enriched as $finding ) {
-			$risk = isset( $finding['risk'] ) ? (string) $finding['risk'] : 'info';
+		if ( $is_core ) {
+			$legacy_rules[] = 'recognized_core';
+		} elseif ( 'plugin' === $source['key'] || 'theme' === $source['key'] ) {
+			$legacy_rules[] = 'recognized_plugin_theme';
+		}
 
-			if ( isset( $summary[ $risk ] ) ) {
-				++$summary[ $risk ];
-			}
+		if ( ! $is_core && ! $handler_registered ) {
+			$legacy_rules[] = 'unregistered_handler';
+		}
 
-			if ( empty( $finding['is_recognized'] ) ) {
-				++$summary['flagged'];
+		if ( ! $is_core && 'unknown' === $source['key'] ) {
+			$legacy_rules[] = 'unknown_hook';
+		}
+
+		$missing_hint = '';
+		if ( ! $is_core && ! $handler_registered ) {
+			$missing_hint = $this->detect_missing_source_hint( $hook );
+			if ( '' !== $missing_hint ) {
+				$legacy_rules[]                  = 'missing_source';
+				$evidence['missing_source_hint'] = $missing_hint;
 			}
 		}
 
+		if ( $this->is_unusual_frequency( $schedule, $interval ) ) {
+			$legacy_rules[] = 'unusual_frequency';
+		}
+
+		if ( $is_overdue ) {
+			$legacy_rules[] = 'stale_task';
+		}
+
+		$dup = $this->get_duplicate_info( $hook, $args, $is_core );
+		if ( $dup['count'] > 0 ) {
+			$legacy_rules[]              = 'duplicate_task';
+			$evidence['duplicate_count'] = $dup['count'];
+			$evidence['duplicate_family'] = $dup['family'];
+		}
+
+		$name_heuristic = $this->detect_suspicious_hook_name( $hook );
+		if ( '' !== $name_heuristic ) {
+			$legacy_rules[]                    = 'suspicious_hook_name';
+			$evidence['name_heuristic']        = $name_heuristic;
+		}
+
+		$args_serialized  = maybe_serialize( $args );
+		$event_serialized = maybe_serialize( $event );
+		$arg_scan         = $this->scan_arguments( $args, ( is_string( $args_serialized ) ? $args_serialized : '' ) . ( is_string( $event_serialized ) ? $event_serialized : '' ) );
+
+		if ( ! empty( $arg_scan['signals'] ) ) {
+			$legacy_rules[]                 = 'suspicious_arguments';
+			$signals                        = $arg_scan['signals'];
+			$evidence['matched_arg_pattern'] = $arg_scan['matched_pattern'];
+			$evidence['arg_key']             = $arg_scan['arg_key'];
+			$preview                         = Sassh_Cron_Event_Key_Normalizer::sanitize_args_preview(
+				'' !== $arg_scan['arg_preview'] ? $arg_scan['arg_preview'] : $args
+			);
+			$evidence['arg_preview'] = $preview['preview'];
+		}
+
+		$legacy_rules = array_values( array_unique( $legacy_rules ) );
+		$signals      = array_values( array_unique( $signals ) );
+
+		$problem_rules = array();
+		foreach ( $legacy_rules as $legacy ) {
+			if ( in_array( $legacy, array( 'recognized_core', 'recognized_plugin_theme' ), true ) ) {
+				continue;
+			}
+			$problem_rules[] = str_replace( '_', '-', $legacy );
+		}
+		$problem_rules = array_values( array_unique( $problem_rules ) );
+
+		$args_preview = Sassh_Cron_Event_Key_Normalizer::sanitize_args_preview( $args );
+
 		return array(
-			'success'                    => 0 === ( $summary['critical'] + $summary['suspicious'] ),
-			'findings'                   => $enriched,
-			'summary'                    => $summary,
+			'unhashable'         => false,
+			'hook'               => $hook,
+			'object_key'         => (string) $object_key,
+			'args'               => $args,
+			'schedule'           => $schedule,
+			'interval'           => $interval,
+			'timestamp'          => $timestamp,
+			'event_key'          => $event_key,
+			'is_overdue'         => $is_overdue,
+			'overdue_seconds'    => $overdue_seconds,
+			'source_key'         => $source['key'],
+			'source_name'        => $source['name'],
+			'handler_registered' => $handler_registered,
+			'is_core'            => $is_core,
+			'legacy_rules'       => $legacy_rules,
+			'problem_rules'      => $problem_rules,
+			'signals'            => $signals,
+			'evidence'           => $evidence,
+			'args_preview'       => $args_preview['preview'],
+			'args_truncated'     => ! empty( $args_preview['truncated'] ),
+			'size'               => is_string( $event_serialized ) ? strlen( $event_serialized ) : 0,
+			'option_id'          => (int) $this->cron_option_id,
+		);
+	}
+
+	/**
+	 * Aggregate a physical event into a (object_key, rule_id) bucket.
+	 *
+	 * @param array<string, array<string, mixed>> $buckets Bucket map (by ref).
+	 * @param array<string, mixed>                $event   Physical event.
+	 * @param string                              $rule_id Kebab rule id.
+	 * @return void
+	 */
+	private function aggregate_problem_event( array &$buckets, array $event, $rule_id ) {
+		$object_key = (string) $event['object_key'];
+		$key        = $object_key . "\0" . $rule_id;
+
+		if ( ! isset( $buckets[ $key ] ) ) {
+			$buckets[ $key ] = array(
+				'object_key'         => $object_key,
+				'rule_id'            => $rule_id,
+				'hook'               => (string) $event['hook'],
+				'args'               => $event['args'],
+				'source_key'         => (string) $event['source_key'],
+				'source_name'        => (string) $event['source_name'],
+				'handler_registered' => ! empty( $event['handler_registered'] ),
+				'is_core'            => ! empty( $event['is_core'] ),
+				'signals'            => array(),
+				'name_heuristics'    => array(),
+				'missing_hints'      => array(),
+				'duplicate_family'   => '',
+				'duplicate_count'    => 0,
+				'overdue'            => false,
+				'schedule_pairs'     => array(),
+				'occurrences'        => array(),
+				'occurrence_count'   => 0,
+				'overdue_count'      => 0,
+			);
+		}
+
+		$bucket = &$buckets[ $key ];
+
+		++$bucket['occurrence_count'];
+
+		if ( ! empty( $event['is_overdue'] ) ) {
+			$bucket['overdue'] = true;
+			++$bucket['overdue_count'];
+		}
+
+		$bucket['schedule_pairs'][] = array(
+			'schedule' => (string) $event['schedule'],
+			'interval' => (int) $event['interval'],
+		);
+
+		if ( ! empty( $event['signals'] ) && is_array( $event['signals'] ) ) {
+			$bucket['signals'] = array_values( array_unique( array_merge( $bucket['signals'], $event['signals'] ) ) );
+		}
+
+		$evidence = isset( $event['evidence'] ) && is_array( $event['evidence'] ) ? $event['evidence'] : array();
+
+		if ( ! empty( $evidence['name_heuristic'] ) ) {
+			$bucket['name_heuristics'][] = (string) $evidence['name_heuristic'];
+			$bucket['name_heuristics']   = array_values( array_unique( $bucket['name_heuristics'] ) );
+		}
+
+		if ( ! empty( $evidence['missing_source_hint'] ) ) {
+			$bucket['missing_hints'][] = (string) $evidence['missing_source_hint'];
+			$bucket['missing_hints']   = array_values( array_unique( $bucket['missing_hints'] ) );
+		}
+
+		if ( Sassh_Findings_Service::RULE_DUPLICATE_TASK === $rule_id ) {
+			$family = isset( $evidence['duplicate_family'] ) ? (string) $evidence['duplicate_family'] : '';
+			$count  = isset( $evidence['duplicate_count'] ) ? (int) $evidence['duplicate_count'] : 0;
+
+			// Prefer hook_args family when present; otherwise keep hook_name.
+			if ( 'hook_args' === $family || '' === $bucket['duplicate_family'] ) {
+				$bucket['duplicate_family'] = $family;
+			}
+			if ( $count > (int) $bucket['duplicate_count'] ) {
+				$bucket['duplicate_count'] = $count;
+			}
+		}
+
+		$bucket['occurrences'][] = array(
+			'timestamp'       => (int) $event['timestamp'],
+			'schedule'        => (string) $event['schedule'],
+			'interval'        => (int) $event['interval'],
+			'is_overdue'      => ! empty( $event['is_overdue'] ),
+			'event_key'       => (string) $event['event_key'],
+			'overdue_seconds' => isset( $event['overdue_seconds'] ) ? (int) $event['overdue_seconds'] : 0,
+		);
+
+		unset( $bucket );
+	}
+
+	/**
+	 * Build Findings observations from aggregation buckets.
+	 *
+	 * @param array<string, array<string, mixed>> $buckets Buckets.
+	 * @param int                                 $blog_id Blog id.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function build_observations_from_buckets( array $buckets, $blog_id ) {
+		ksort( $buckets, SORT_STRING );
+
+		$observations = array();
+		$presenter    = new Choctaw_Wp_Security_Scheduled_Tasks_Presenter();
+
+		foreach ( $buckets as $bucket ) {
+			$obs = $this->bucket_to_observation( $bucket, $blog_id, $presenter );
+
+			if ( null !== $obs ) {
+				$observations[] = $obs;
+			}
+		}
+
+		return $observations;
+	}
+
+	/**
+	 * Convert one aggregation bucket to an observation.
+	 *
+	 * @param array<string, mixed>                         $bucket    Bucket.
+	 * @param int                                          $blog_id   Blog id.
+	 * @param Choctaw_Wp_Security_Scheduled_Tasks_Presenter $presenter Presenter.
+	 * @return array<string, mixed>|null
+	 */
+	private function bucket_to_observation( array $bucket, $blog_id, $presenter ) {
+		$rule_id    = (string) $bucket['rule_id'];
+		$hook       = (string) $bucket['hook'];
+		$object_key = (string) $bucket['object_key'];
+		$args       = $bucket['args'];
+
+		$object_fp = Sassh_Cron_Event_Key_Normalizer::object_fingerprint(
+			$hook,
+			$args,
+			isset( $bucket['schedule_pairs'] ) && is_array( $bucket['schedule_pairs'] ) ? $bucket['schedule_pairs'] : array()
+		);
+
+		if ( is_wp_error( $object_fp ) ) {
+			++$this->hash_failures;
+			return null;
+		}
+
+		$signals = isset( $bucket['signals'] ) && is_array( $bucket['signals'] ) ? $bucket['signals'] : array();
+		sort( $signals, SORT_STRING );
+
+		$risk_level = Sassh_Findings_Service::scheduled_tasks_risk_level(
+			$rule_id,
+			array( 'signals' => $signals )
+		);
+
+		$content_fp = $this->finding_fingerprint_for_rule( $bucket, $rule_id, $signals );
+
+		if ( '' === $content_fp ) {
+			++$this->hash_failures;
+			return null;
+		}
+
+		$legacy_rule = str_replace( '-', '_', $rule_id );
+		$evidence    = array(
+			'interval'            => $this->primary_interval( $bucket ),
+			'duplicate_count'     => (int) $bucket['duplicate_count'],
+			'duplicate_family'    => (string) $bucket['duplicate_family'],
+			'name_heuristic'      => ! empty( $bucket['name_heuristics'][0] ) ? (string) $bucket['name_heuristics'][0] : '',
+			'missing_source_hint' => ! empty( $bucket['missing_hints'][0] ) ? (string) $bucket['missing_hints'][0] : '',
+			'matched_arg_pattern' => ! empty( $signals[0] ) ? (string) $signals[0] : '',
+			'event_key'           => '',
+		);
+
+		$args_preview = Sassh_Cron_Event_Key_Normalizer::sanitize_args_preview( $args );
+		$occurrences  = Sassh_Cron_Event_Key_Normalizer::cap_occurrences(
+			isset( $bucket['occurrences'] ) && is_array( $bucket['occurrences'] ) ? $bucket['occurrences'] : array()
+		);
+
+		$next_run = 0;
+		foreach ( $occurrences as $occ ) {
+			$ts = isset( $occ['timestamp'] ) ? (int) $occ['timestamp'] : 0;
+			if ( $ts > 0 && ( 0 === $next_run || $ts < $next_run ) ) {
+				$next_run = $ts;
+			}
+		}
+
+		$display = array(
+			'hook'               => $hook,
+			'schedule'           => $this->primary_schedule( $bucket ),
+			'interval'           => $this->primary_interval( $bucket ),
+			'next_run'           => $next_run,
+			'is_overdue'         => ! empty( $bucket['overdue'] ),
+			'overdue_seconds'    => 0,
+			'source_key'         => (string) $bucket['source_key'],
+			'source_name'        => (string) $bucket['source_name'],
+			'handler_registered' => ! empty( $bucket['handler_registered'] ),
+			'args'               => $args,
+			'args_serialized'    => '',
+			'rules'              => array( $legacy_rule ),
+			'signals'            => $signals,
+			'evidence'           => $evidence,
+			'risk'               => $risk_level,
+			'is_recognized'      => false,
+			'size'               => 0,
+		);
+
+		if ( ! empty( $bucket['overdue'] ) && $next_run > 0 ) {
+			$display['overdue_seconds'] = max( 0, time() - $next_run );
+		}
+
+		$enriched = $presenter->enrich( $display );
+
+		$category_labels = Choctaw_Wp_Security_Scheduled_Tasks_Patterns::get_category_labels();
+		$category_label  = isset( $category_labels[ $legacy_rule ] ) ? $category_labels[ $legacy_rule ] : $rule_id;
+
+		$summary = isset( $enriched['summary'] ) && is_array( $enriched['summary'] ) ? $enriched['summary'] : array();
+		$recs    = isset( $enriched['recommendations'] ) && is_array( $enriched['recommendations'] ) ? $enriched['recommendations'] : array();
+
+		$metadata = array(
+			'hook'                 => $hook,
+			'schedule'             => $display['schedule'],
+			'interval'             => $display['interval'],
+			'next_run'             => $next_run,
+			'is_overdue'           => ! empty( $bucket['overdue'] ),
+			'source_key'           => (string) $bucket['source_key'],
+			'source_name'          => (string) $bucket['source_name'],
+			'handler_registered'   => ! empty( $bucket['handler_registered'] ),
+			'category_label'       => $category_label,
+			'category_labels'      => array( $category_label ),
+			'signals'              => $signals,
+			'occurrence_count'     => (int) $bucket['occurrence_count'],
+			'overdue_count'        => (int) $bucket['overdue_count'],
+			'occurrences'          => $occurrences,
+			'args_preview'         => $args_preview['preview'],
+			'contents_truncated'   => ! empty( $args_preview['truncated'] ),
+			'why_seeing_this'      => $summary,
+			'how_to_proceed'       => $recs,
+			'recommendations'      => $recs,
+			'summary'              => $summary,
+			'schedule_label'       => isset( $enriched['schedule_label'] ) ? $enriched['schedule_label'] : '',
+			'next_run_label'       => isset( $enriched['next_run_label'] ) ? $enriched['next_run_label'] : '',
+			'next_run_relative'    => isset( $enriched['next_run_relative'] ) ? $enriched['next_run_relative'] : '',
+			'source'               => isset( $enriched['source'] ) ? $enriched['source'] : '',
+			'options_table'        => $this->options_table,
+			'option_id'            => (int) $this->cron_option_id,
+			'duplicate_family'     => (string) $bucket['duplicate_family'],
+			'duplicate_count'      => (int) $bucket['duplicate_count'],
+			'name_heuristic'       => $evidence['name_heuristic'],
+			'missing_source_hint'  => $evidence['missing_source_hint'],
+		);
+
+		if ( Sassh_Findings_Service::RULE_DUPLICATE_TASK === $rule_id && 'hook_name' === $bucket['duplicate_family'] ) {
+			$metadata['hook_wide_count']           = (int) $bucket['duplicate_count'];
+			$metadata['duplicate_threshold_family'] = 'hook_name';
+		} elseif ( Sassh_Findings_Service::RULE_DUPLICATE_TASK === $rule_id ) {
+			$metadata['duplicate_threshold_family'] = 'hook_args';
+		}
+
+		$description = ! empty( $summary[0] ) ? (string) $summary[0] : sprintf(
+			/* translators: %s: hook name */
+			__( 'Scheduled task issue for hook %s.', 'choctaw-wp-security' ),
+			$hook
+		);
+
+		return array(
+			'scanner_id'           => Sassh_Findings_Service::SCANNER_SCHEDULED_TASKS,
+			'rule_id'              => $rule_id,
+			'object_type'          => Sassh_Object_Type_Registry::TYPE_CRON_EVENT,
+			'object_key'           => $object_key,
+			'blog_id'              => (int) $blog_id,
+			'risk_level'           => $risk_level,
+			'sassh_classification' => Sassh_Findings_Service::default_classification( $risk_level ),
+			'content_fingerprint'  => $content_fp,
+			'object_fingerprint'   => $object_fp,
+			'title'                => $hook,
+			'description'          => $description,
+			'metadata'             => $metadata,
+		);
+	}
+
+	/**
+	 * Finding fingerprint for a rule bucket.
+	 *
+	 * @param array<string, mixed> $bucket  Bucket.
+	 * @param string               $rule_id Rule id.
+	 * @param array<int, string>   $signals Signals.
+	 * @return string sha256:hex or empty on failure.
+	 */
+	private function finding_fingerprint_for_rule( array $bucket, $rule_id, array $signals ) {
+		$hook       = (string) $bucket['hook'];
+		$args_dig   = Sassh_Cron_Event_Key_Normalizer::args_digest( $bucket['args'] );
+		$source_key = (string) $bucket['source_key'];
+		$handler    = ! empty( $bucket['handler_registered'] ) ? '1' : '0';
+
+		if ( '' === $args_dig ) {
+			return '';
+		}
+
+		switch ( $rule_id ) {
+			case Sassh_Findings_Service::RULE_UNKNOWN_HOOK:
+			case Sassh_Findings_Service::RULE_UNREGISTERED_HANDLER:
+			case Sassh_Findings_Service::RULE_MISSING_SOURCE:
+				$hint = ! empty( $bucket['missing_hints'][0] ) ? (string) $bucket['missing_hints'][0] : '';
+				$payload = $hook . "\n" . $source_key . "\n" . $handler . "\n" . $hint;
+				break;
+
+			case Sassh_Findings_Service::RULE_UNUSUAL_FREQUENCY:
+				$payload = $hook . "\n" . Sassh_Cron_Event_Key_Normalizer::encode_schedule_interval_set(
+					isset( $bucket['schedule_pairs'] ) && is_array( $bucket['schedule_pairs'] ) ? $bucket['schedule_pairs'] : array()
+				);
+				break;
+
+			case Sassh_Findings_Service::RULE_STALE_TASK:
+				$overdue = ! empty( $bucket['overdue'] ) ? '1' : '0';
+				$payload = $hook . "\n" . $args_dig . "\n" . $overdue;
+				break;
+
+			case Sassh_Findings_Service::RULE_DUPLICATE_TASK:
+				$family  = (string) $bucket['duplicate_family'];
+				if ( '' === $family ) {
+					$family = 'hook_args';
+				}
+				$payload = $hook . "\n" . $args_dig . "\n" . $family;
+				break;
+
+			case Sassh_Findings_Service::RULE_SUSPICIOUS_HOOK_NAME:
+				$heuristics = isset( $bucket['name_heuristics'] ) && is_array( $bucket['name_heuristics'] )
+					? $bucket['name_heuristics']
+					: array();
+				sort( $heuristics, SORT_STRING );
+				$payload = $hook . "\n" . implode( ',', $heuristics );
+				break;
+
+			case Sassh_Findings_Service::RULE_SUSPICIOUS_ARGUMENTS:
+				$canonical = Sassh_Cron_Event_Key_Normalizer::canonicalize( $bucket['args'] );
+				if ( null === $canonical ) {
+					return '';
+				}
+				$payload = Sassh_Cron_Event_Key_Normalizer::encode_canonical( $canonical ) . "\n" . implode( ',', $signals );
+				break;
+
+			default:
+				$payload = $hook . "\n" . $args_dig . "\n" . $rule_id;
+				break;
+		}
+
+		return Sassh_Findings_Service::content_fingerprint_from_string( $payload );
+	}
+
+	/**
+	 * @param array<string, mixed> $bucket Bucket.
+	 * @return string
+	 */
+	private function primary_schedule( array $bucket ) {
+		$pairs = isset( $bucket['schedule_pairs'] ) && is_array( $bucket['schedule_pairs'] ) ? $bucket['schedule_pairs'] : array();
+		$encoded = Sassh_Cron_Event_Key_Normalizer::encode_schedule_interval_set( $pairs );
+
+		if ( '' === $encoded ) {
+			return '';
+		}
+
+		$first = explode( "\n", $encoded );
+		$line  = isset( $first[0] ) ? $first[0] : '';
+		$pos   = strrpos( $line, ':' );
+
+		if ( false === $pos ) {
+			return '';
+		}
+
+		// length-prefixed schedule before final :interval
+		$before_interval = substr( $line, 0, $pos );
+		$colon           = strpos( $before_interval, ':' );
+
+		if ( false === $colon ) {
+			return '';
+		}
+
+		return substr( $before_interval, $colon + 1 );
+	}
+
+	/**
+	 * @param array<string, mixed> $bucket Bucket.
+	 * @return int
+	 */
+	private function primary_interval( array $bucket ) {
+		$pairs = isset( $bucket['schedule_pairs'] ) && is_array( $bucket['schedule_pairs'] ) ? $bucket['schedule_pairs'] : array();
+
+		if ( empty( $pairs[0]['interval'] ) ) {
+			return 0;
+		}
+
+		return (int) $pairs[0]['interval'];
+	}
+
+	/**
+	 * Build a non-Findings inventory row for a recognized-only event.
+	 *
+	 * @param array<string, mixed> $event   Physical event.
+	 * @param int                  $blog_id Blog id.
+	 * @return array<string, mixed>
+	 */
+	private function build_inventory_item( array $event, $blog_id ) {
+		$presenter = new Choctaw_Wp_Security_Scheduled_Tasks_Presenter();
+		$display   = array(
+			'hook'               => (string) $event['hook'],
+			'schedule'           => (string) $event['schedule'],
+			'interval'           => (int) $event['interval'],
+			'next_run'           => (int) $event['timestamp'],
+			'is_overdue'         => false,
+			'overdue_seconds'    => 0,
+			'source_key'         => (string) $event['source_key'],
+			'source_name'        => (string) $event['source_name'],
+			'handler_registered' => ! empty( $event['handler_registered'] ),
+			'args'               => $event['args'],
+			'args_serialized'    => '',
+			'rules'              => isset( $event['legacy_rules'] ) ? $event['legacy_rules'] : array(),
+			'signals'            => array(),
+			'evidence'           => array(),
+			'risk'               => 'info',
+			'is_recognized'      => true,
+			'size'               => isset( $event['size'] ) ? (int) $event['size'] : 0,
+		);
+
+		$enriched = $presenter->enrich( $display );
+
+		return array(
+			'hook'               => (string) $event['hook'],
+			'source_key'         => (string) $event['source_key'],
+			'source_name'        => (string) $event['source_name'],
+			'source'             => isset( $enriched['source'] ) ? $enriched['source'] : '',
+			'schedule'           => (string) $event['schedule'],
+			'schedule_label'     => isset( $enriched['schedule_label'] ) ? $enriched['schedule_label'] : '',
+			'interval'           => (int) $event['interval'],
+			'next_run'           => (int) $event['timestamp'],
+			'next_run_label'     => isset( $enriched['next_run_label'] ) ? $enriched['next_run_label'] : '',
+			'next_run_relative'  => isset( $enriched['next_run_relative'] ) ? $enriched['next_run_relative'] : '',
+			'args_preview'       => isset( $event['args_preview'] ) ? (string) $event['args_preview'] : '',
+			'contents_truncated' => ! empty( $event['args_truncated'] ),
+			'options_table'      => $this->options_table,
+			'blog_id'            => (int) $blog_id,
+			'is_recognized'      => true,
+			'inventory'          => true,
+			'risk'               => 'info',
+			'risk_level'         => 'info',
+			'risk_label'         => __( 'Info', 'choctaw-wp-security' ),
+		);
+	}
+
+	/**
+	 * Build the AJAX/report DTO from Findings + inventory.
+	 *
+	 * @param Sassh_Findings_Service $service      Service.
+	 * @param int                    $execution_id Execution id.
+	 * @param array<string, mixed>   $run_meta     Run meta.
+	 * @return array<string, mixed>
+	 */
+	private function build_report_from_findings( Sassh_Findings_Service $service, $execution_id, array $run_meta ) {
+		$completion  = isset( $run_meta['completion_status'] ) ? (string) $run_meta['completion_status'] : 'failed';
+		$coverage_ok = ( 'success' === $completion );
+		$inventory   = isset( $run_meta['inventory'] ) && is_array( $run_meta['inventory'] ) ? $run_meta['inventory'] : array();
+
+		$rows = $service->list_findings(
+			array(
+				'scanner_id'      => Sassh_Findings_Service::SCANNER_SCHEDULED_TASKS,
+				'detection_state' => 'active',
+			)
+		);
+
+		$findings   = array();
+		$critical   = 0;
+		$warning    = 0;
+		$suspicious = 0;
+		$info       = 0;
+		$safe       = 0;
+		$confirmed  = 0;
+
+		foreach ( $rows as $row ) {
+			if ( isset( $row['options_table'] ) && '' !== (string) $row['options_table'] && (string) $row['options_table'] !== $this->options_table ) {
+				continue;
+			}
+
+			$confirmed_this_run = isset( $row['last_scanner_execution_id'] )
+				&& (int) $row['last_scanner_execution_id'] === (int) $execution_id;
+
+			if ( $confirmed_this_run ) {
+				++$confirmed;
+			}
+
+			$risk = isset( $row['risk_level'] ) ? (string) $row['risk_level'] : 'info';
+
+			switch ( $risk ) {
+				case 'critical':
+					++$critical;
+					break;
+				case 'warning':
+					++$warning;
+					break;
+				case 'suspicious':
+					++$suspicious;
+					break;
+				case 'safe':
+					++$safe;
+					break;
+				default:
+					++$info;
+					break;
+			}
+
+			$hook = isset( $row['hook'] ) ? (string) $row['hook'] : (string) $row['object_key'];
+
+			$findings[] = array(
+				'id'                  => $row['finding_id'],
+				'finding_id'          => $row['finding_id'],
+				'fingerprint'         => $row['content_fingerprint'],
+				'content_fingerprint' => $row['content_fingerprint'],
+				'object_fingerprint'  => $row['object_fingerprint'],
+				'rule_id'             => isset( $row['rule_id'] ) ? $row['rule_id'] : '',
+				'rules'               => array( isset( $row['rule_id'] ) ? str_replace( '-', '_', (string) $row['rule_id'] ) : '' ),
+				'title'               => isset( $row['title'] ) ? $row['title'] : $hook,
+				'hook'                => $hook,
+				'schedule'            => isset( $row['schedule'] ) ? $row['schedule'] : '',
+				'schedule_label'      => isset( $row['schedule_label'] ) ? $row['schedule_label'] : '',
+				'interval'            => isset( $row['interval'] ) ? (int) $row['interval'] : 0,
+				'next_run'            => isset( $row['next_run'] ) ? (int) $row['next_run'] : 0,
+				'next_run_label'      => isset( $row['next_run_label'] ) ? $row['next_run_label'] : '',
+				'next_run_relative'   => isset( $row['next_run_relative'] ) ? $row['next_run_relative'] : '',
+				'is_overdue'          => ! empty( $row['is_overdue'] ),
+				'source_key'          => isset( $row['source_key'] ) ? $row['source_key'] : '',
+				'source_name'         => isset( $row['source_name'] ) ? $row['source_name'] : '',
+				'source'              => isset( $row['source'] ) ? $row['source'] : '',
+				'handler_registered'  => ! empty( $row['handler_registered'] ),
+				'category_labels'     => ( isset( $row['category_labels'] ) && is_array( $row['category_labels'] ) ) ? $row['category_labels'] : array(),
+				'category_label'      => isset( $row['category_label'] ) ? $row['category_label'] : '',
+				'detail'              => isset( $row['description'] ) ? (string) $row['description'] : '',
+				'description'         => isset( $row['description'] ) ? (string) $row['description'] : '',
+				'summary'             => ( isset( $row['summary'] ) && is_array( $row['summary'] ) ) ? $row['summary'] : array(),
+				'recommendations'     => ( isset( $row['recommendations'] ) && is_array( $row['recommendations'] ) ) ? $row['recommendations'] : array(),
+				'why_seeing_this'     => ( isset( $row['why_seeing_this'] ) && is_array( $row['why_seeing_this'] ) ) ? $row['why_seeing_this'] : array(),
+				'how_to_proceed'      => ( isset( $row['how_to_proceed'] ) && is_array( $row['how_to_proceed'] ) ) ? $row['how_to_proceed'] : array(),
+				'args_pretty'         => isset( $row['args_preview'] ) ? (string) $row['args_preview'] : '',
+				'excerpt'             => isset( $row['args_preview'] ) ? (string) $row['args_preview'] : '',
+				'contents_truncated'  => ! empty( $row['contents_truncated'] ),
+				'signals'             => ( isset( $row['signals'] ) && is_array( $row['signals'] ) ) ? $row['signals'] : array(),
+				'occurrence_count'    => isset( $row['occurrence_count'] ) ? (int) $row['occurrence_count'] : 1,
+				'risk'                => $risk,
+				'risk_level'          => $risk,
+				'risk_label'          => isset( $row['risk_label'] ) ? $row['risk_label'] : $risk,
+				'status'              => $row['effective_status'],
+				'status_label'        => $row['status_label'],
+				'effective_status'    => $row['effective_status'],
+				'options_table'       => isset( $row['options_table'] ) ? $row['options_table'] : $this->options_table,
+				'blog_id'             => isset( $row['blog_id'] ) ? (int) $row['blog_id'] : null,
+				'first_seen_at'       => $row['first_seen_at'],
+				'last_seen_at'        => $row['last_seen_at'],
+				'detection_state'     => $row['detection_state'],
+				'confirmed_this_run'  => $confirmed_this_run,
+				'findings_backend'    => 'sassh',
+				'is_recognized'       => false,
+			);
+		}
+
+		$count   = count( $findings );
+		$flagged = $critical + $warning + $suspicious;
+
+		return array(
+			'success'                    => $coverage_ok && 0 === $flagged,
+			'rejected'                   => false,
+			'coverage_complete'          => $coverage_ok,
+			'absence_reconciled'         => $coverage_ok,
+			'completion_status'          => $completion,
+			'scan_incomplete'            => ! empty( $run_meta['scan_incomplete'] ) || ! $coverage_ok,
+			'errors'                     => isset( $run_meta['errors'] ) && is_array( $run_meta['errors'] ) ? $run_meta['errors'] : array(),
+			'findings'                   => $findings,
+			'inventory'                  => $inventory,
+			'confirmed_this_run'         => $confirmed,
+			'prior_findings_only'        => ! $coverage_ok && $count > 0 && 0 === $confirmed,
+			'summary'                    => array(
+				'critical'   => $critical,
+				'warning'    => $warning,
+				'suspicious' => $suspicious,
+				'safe'       => $safe,
+				'info'       => $info,
+				'total'      => $count,
+				'flagged'    => $flagged,
+				'inventory'  => count( $inventory ),
+			),
+			'scanned_at'                 => time(),
+			'execution_id'               => $execution_id,
+			'findings_backend'           => 'sassh',
 			'options_table'              => $this->options_table,
 			'wordpress_configured_table' => Choctaw_Wp_Security_Options_Table_Discovery::get_wordpress_configured_table(),
+			'blog_id'                    => isset( $run_meta['blog_id'] ) ? (int) $run_meta['blog_id'] : null,
 		);
 	}
 
@@ -190,220 +1089,44 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 	}
 
 	/**
-	 * Analyze one stored cron event.
+	 * Duplicate count + threshold family for an event.
 	 *
-	 * @param string               $hook      Hook name.
-	 * @param int                  $timestamp Next run timestamp.
-	 * @param string               $event_key Event array key.
-	 * @param array<string, mixed> $event     Event payload.
-	 * @return array<string, mixed>
+	 * @param string $hook    Hook name.
+	 * @param array  $args    Args.
+	 * @param bool   $is_core Whether Recognized Core.
+	 * @return array{count: int, family: string}
 	 */
-	private function analyze_event( $hook, $timestamp, $event_key, array $event ) {
-		$args            = isset( $event['args'] ) && is_array( $event['args'] ) ? $event['args'] : array();
-		$schedule        = isset( $event['schedule'] ) ? (string) $event['schedule'] : '';
-		$interval        = isset( $event['interval'] ) ? (int) $event['interval'] : 0;
-		$args_serialized = maybe_serialize( $args );
-		$event_serialized = maybe_serialize( $event );
-		$now             = time();
-		$is_overdue      = $timestamp > 0 && $timestamp < ( $now - (int) Choctaw_Wp_Security_Scheduled_Tasks_Patterns::STALE_TASK_SECONDS );
-		$overdue_seconds = $is_overdue ? ( $now - $timestamp ) : 0;
+	private function get_duplicate_info( $hook, array $args, $is_core = false ) {
+		$args_key   = $hook . '|' . $this->args_hash( $args );
+		$args_count = isset( $this->hook_args_counts[ $args_key ] ) ? (int) $this->hook_args_counts[ $args_key ] : 0;
 
-		$handler_registered = (bool) has_action( $hook );
-		$source             = $this->resolve_source( $hook, $handler_registered );
-		$is_core            = ( 'core' === $source['key'] );
-
-		$rules    = array();
-		$signals  = array();
-		$evidence = array(
-			'matched_arg_pattern' => '',
-			'arg_key'             => '',
-			'arg_preview'         => '',
-			'interval'            => $interval,
-			'duplicate_count'     => 0,
-			'name_heuristic'      => '',
-			'missing_source_hint' => '',
-			'event_key'           => $event_key,
-		);
+		if ( $args_count >= (int) Choctaw_Wp_Security_Scheduled_Tasks_Patterns::DUPLICATE_HOOK_ARGS_THRESHOLD ) {
+			return array(
+				'count'  => $args_count,
+				'family' => 'hook_args',
+			);
+		}
 
 		if ( $is_core ) {
-			$rules[] = 'recognized_core';
-		} elseif ( 'plugin' === $source['key'] || 'theme' === $source['key'] ) {
-			$rules[] = 'recognized_plugin_theme';
+			return array(
+				'count'  => 0,
+				'family' => '',
+			);
 		}
 
-		// Core hooks often register handlers only when wp-cron runs, not during
-		// an admin scan request. Do not flag them as unregistered/missing.
-		if ( ! $is_core && ! $handler_registered ) {
-			$rules[] = 'unregistered_handler';
+		$hook_count = isset( $this->hook_counts[ $hook ] ) ? (int) $this->hook_counts[ $hook ] : 0;
+
+		if ( $hook_count >= (int) Choctaw_Wp_Security_Scheduled_Tasks_Patterns::DUPLICATE_HOOK_THRESHOLD ) {
+			return array(
+				'count'  => $hook_count,
+				'family' => 'hook_name',
+			);
 		}
-
-		// Known core hooks must never be classified as Unknown Hook.
-		if ( ! $is_core && 'unknown' === $source['key'] ) {
-			$rules[] = 'unknown_hook';
-		}
-
-		$missing_hint = '';
-		if ( ! $is_core && ! $handler_registered ) {
-			$missing_hint = $this->detect_missing_source_hint( $hook );
-			if ( '' !== $missing_hint ) {
-				$rules[]                         = 'missing_source';
-				$evidence['missing_source_hint'] = $missing_hint;
-			}
-		}
-
-		if ( $this->is_unusual_frequency( $schedule, $interval ) ) {
-			$rules[] = 'unusual_frequency';
-		}
-
-		if ( $is_overdue ) {
-			$rules[] = 'stale_task';
-		}
-
-		$dup_count = $this->get_duplicate_count( $hook, $args, $is_core );
-		if ( $dup_count > 0 ) {
-			$rules[]                     = 'duplicate_task';
-			$evidence['duplicate_count'] = $dup_count;
-		}
-
-		$name_heuristic = $this->detect_suspicious_hook_name( $hook );
-		if ( '' !== $name_heuristic ) {
-			$rules[]                     = 'suspicious_hook_name';
-			$evidence['name_heuristic']  = $name_heuristic;
-		}
-
-		$arg_scan = $this->scan_arguments( $args, $args_serialized . $event_serialized );
-		if ( ! empty( $arg_scan['signals'] ) ) {
-			$rules[]                          = 'suspicious_arguments';
-			$signals                          = $arg_scan['signals'];
-			$evidence['matched_arg_pattern']  = $arg_scan['matched_pattern'];
-			$evidence['arg_key']              = $arg_scan['arg_key'];
-			$evidence['arg_preview']          = $arg_scan['arg_preview'];
-		}
-
-		$rules   = array_values( array_unique( $rules ) );
-		$signals = array_values( array_unique( $signals ) );
-
-		$is_recognized = $this->is_recognized_only( $rules );
-		$score         = $this->calculate_score( $rules, $signals );
-		$confidence    = $this->calculate_confidence( $rules, $signals, $score );
-		$risk          = Choctaw_Wp_Security_Scheduled_Tasks_Patterns::risk_from_score( $score, $is_recognized );
-
-		$fingerprint = Choctaw_Wp_Security_Finding_Status_Store::fingerprint_cron_finding( $hook, $args );
 
 		return array(
-			'id'                 => $fingerprint,
-			'fingerprint'        => $fingerprint,
-			'hook'               => $hook,
-			'schedule'           => $schedule,
-			'interval'           => $interval,
-			'next_run'           => $timestamp,
-			'is_overdue'         => $is_overdue,
-			'overdue_seconds'    => $overdue_seconds,
-			'source_key'         => $source['key'],
-			'source_name'        => $source['name'],
-			'handler_registered' => (bool) $handler_registered,
-			'size'               => strlen( $event_serialized ),
-			'option_id'          => (int) $this->cron_option_id,
-			'args'               => $args,
-			'args_serialized'    => is_string( $args_serialized ) ? $args_serialized : '',
-			'rules'              => $rules,
-			'signals'            => $signals,
-			'evidence'           => $evidence,
-			'score'              => $score,
-			'confidence'         => $confidence,
-			'risk'               => $risk,
-			'is_recognized'      => $is_recognized,
+			'count'  => 0,
+			'family' => '',
 		);
-	}
-
-	/**
-	 * Whether findings only contain recognized rules.
-	 *
-	 * @param array<int, string> $rules Rule IDs.
-	 * @return bool
-	 */
-	private function is_recognized_only( array $rules ) {
-		if ( empty( $rules ) ) {
-			return false;
-		}
-
-		foreach ( $rules as $rule ) {
-			if ( ! in_array( $rule, array( 'recognized_core', 'recognized_plugin_theme' ), true ) ) {
-				return false;
-			}
-		}
-
-		return true;
-	}
-
-	/**
-	 * Calculate weighted score.
-	 *
-	 * @param array<int, string> $rules   Rule IDs.
-	 * @param array<int, string> $signals Signal IDs.
-	 * @return int
-	 */
-	private function calculate_score( array $rules, array $signals ) {
-		$weights = Choctaw_Wp_Security_Scheduled_Tasks_Patterns::get_weights();
-		$score   = 0;
-
-		foreach ( $rules as $rule ) {
-			if ( in_array( $rule, array( 'recognized_core', 'recognized_plugin_theme', 'suspicious_arguments' ), true ) ) {
-				continue;
-			}
-
-			if ( isset( $weights[ $rule ] ) ) {
-				$score += (int) $weights[ $rule ];
-			}
-		}
-
-		foreach ( $signals as $signal ) {
-			if ( isset( $weights[ $signal ] ) ) {
-				$score += (int) $weights[ $signal ];
-			}
-		}
-
-		return $score;
-	}
-
-	/**
-	 * Calculate confidence from evidence composition.
-	 *
-	 * @param array<int, string> $rules   Rule IDs.
-	 * @param array<int, string> $signals Signal IDs.
-	 * @param int                $score   Weighted score.
-	 * @return string
-	 */
-	private function calculate_confidence( array $rules, array $signals, $score ) {
-		// Recognized-only inventory: confidence is certainty of the benign classification.
-		if ( $this->is_recognized_only( $rules ) ) {
-			if ( in_array( 'recognized_core', $rules, true ) ) {
-				return 'very_high';
-			}
-
-			return 'high';
-		}
-
-		$strong         = Choctaw_Wp_Security_Scheduled_Tasks_Patterns::get_strong_signals();
-		$review_ids     = Choctaw_Wp_Security_Scheduled_Tasks_Patterns::get_review_rule_ids();
-		$strong_count   = count( array_intersect( $signals, $strong ) );
-		$review_rules   = array_values( array_intersect( $rules, $review_ids ) );
-		$review_count   = count( $review_rules );
-		$score          = (int) $score;
-
-		if ( $strong_count >= 2 || ( $score >= 100 && $strong_count >= 1 ) ) {
-			return 'very_high';
-		}
-
-		if ( $score >= 80 || $review_count >= 3 || ( $strong_count >= 1 && $review_count >= 2 ) ) {
-			return 'high';
-		}
-
-		if ( $score >= 40 || $review_count >= 2 ) {
-			return 'medium';
-		}
-
-		return 'low';
 	}
 
 	/**
@@ -417,10 +1140,7 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 	}
 
 	/**
-	 * Resolve source attribution (practical, not exhaustive).
-	 *
-	 * Core wins when the hook is allowlisted or a registered callback resolves
-	 * under wp-includes / wp-admin/includes.
+	 * Resolve source attribution.
 	 *
 	 * @param string $hook               Hook name.
 	 * @param bool   $handler_registered Whether a handler exists.
@@ -531,8 +1251,6 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 	}
 
 	/**
-	 * Whether a callback file path belongs to WordPress core.
-	 *
 	 * @param string $file Normalized absolute file path.
 	 * @return bool
 	 */
@@ -552,15 +1270,13 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 	}
 
 	/**
-	 * Resolve a callable to a file path when practical.
-	 *
 	 * @param mixed $callable Callback.
 	 * @return string
 	 */
 	private function callback_file( $callable ) {
 		try {
 			if ( is_string( $callable ) && function_exists( $callable ) ) {
-				$ref = new ReflectionFunction( $callable );
+				$ref  = new ReflectionFunction( $callable );
 				$file = $ref->getFileName();
 				return is_string( $file ) ? $file : '';
 			}
@@ -587,8 +1303,6 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 	}
 
 	/**
-	 * Get a plugin display name from its directory slug.
-	 *
 	 * @param string $slug Plugin directory slug.
 	 * @return string
 	 */
@@ -609,8 +1323,6 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 	}
 
 	/**
-	 * Detect a missing-source hint from hook prefix vs inactive plugins.
-	 *
 	 * @param string $hook Hook name.
 	 * @return string
 	 */
@@ -682,39 +1394,6 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 	}
 
 	/**
-	 * Count duplicates when thresholds are met.
-	 *
-	 * For Recognized Core hooks, only identical hook + args hashes count as
-	 * duplicates. Same-hook / different-args core events (e.g. upgrader cleanup
-	 * per attachment ID) are expected and must not be flagged.
-	 *
-	 * @param string $hook    Hook name.
-	 * @param array  $args    Args.
-	 * @param bool   $is_core Whether the hook is Recognized Core.
-	 * @return int Duplicate count when threshold met, else 0.
-	 */
-	private function get_duplicate_count( $hook, array $args, $is_core = false ) {
-		$args_key   = $hook . '|' . $this->args_hash( $args );
-		$args_count = isset( $this->hook_args_counts[ $args_key ] ) ? (int) $this->hook_args_counts[ $args_key ] : 0;
-
-		if ( $args_count >= (int) Choctaw_Wp_Security_Scheduled_Tasks_Patterns::DUPLICATE_HOOK_ARGS_THRESHOLD ) {
-			return $args_count;
-		}
-
-		if ( $is_core ) {
-			return 0;
-		}
-
-		$hook_count = isset( $this->hook_counts[ $hook ] ) ? (int) $this->hook_counts[ $hook ] : 0;
-
-		if ( $hook_count >= (int) Choctaw_Wp_Security_Scheduled_Tasks_Patterns::DUPLICATE_HOOK_THRESHOLD ) {
-			return $hook_count;
-		}
-
-		return 0;
-	}
-
-	/**
 	 * @param mixed $args Args value.
 	 * @return string
 	 */
@@ -723,10 +1402,8 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 	}
 
 	/**
-	 * Detect suspicious hook name heuristics.
-	 *
 	 * @param string $hook Hook name.
-	 * @return string Matched heuristic key, or empty.
+	 * @return string
 	 */
 	private function detect_suspicious_hook_name( $hook ) {
 		$hook_l = strtolower( $hook );
@@ -755,18 +1432,16 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 	}
 
 	/**
-	 * Scan event arguments for suspicious signals.
-	 *
 	 * @param array  $args       Args array.
 	 * @param string $serialized Serialized blob to scan.
 	 * @return array{signals: array<int, string>, matched_pattern: string, arg_key: string, arg_preview: string}
 	 */
 	private function scan_arguments( array $args, $serialized ) {
 		$result = array(
-			'signals'          => array(),
-			'matched_pattern'  => '',
-			'arg_key'          => '',
-			'arg_preview'      => '',
+			'signals'         => array(),
+			'matched_pattern' => '',
+			'arg_key'         => '',
+			'arg_preview'     => '',
 		);
 
 		$flat = $this->flatten_args( $args );
@@ -782,7 +1457,8 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 			$result['signals']         = array_merge( $result['signals'], $hit );
 			$result['matched_pattern'] = $hit[0];
 			$result['arg_key']         = (string) $key;
-			$result['arg_preview']     = $this->truncate( $value_s, 120 );
+			$preview                   = Sassh_Cron_Event_Key_Normalizer::sanitize_args_preview( $value_s );
+			$result['arg_preview']     = $preview['preview'];
 			break;
 		}
 
@@ -791,7 +1467,8 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 			if ( ! empty( $hit ) ) {
 				$result['signals']         = $hit;
 				$result['matched_pattern'] = $hit[0];
-				$result['arg_preview']     = $this->truncate( (string) $serialized, 120 );
+				$preview                   = Sassh_Cron_Event_Key_Normalizer::sanitize_args_preview( (string) $serialized );
+				$result['arg_preview']     = $preview['preview'];
 			}
 		}
 
@@ -852,9 +1529,7 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 	}
 
 	/**
-	 * Flatten nested args into key => scalar string map.
-	 *
-	 * @param mixed  $value Args value.
+	 * @param mixed  $value  Args value.
 	 * @param string $prefix Key prefix.
 	 * @return array<string, string>
 	 */
@@ -873,30 +1548,13 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 			return $out;
 		}
 
-		$key       = '' === $prefix ? '0' : $prefix;
+		$key         = '' === $prefix ? '0' : $prefix;
 		$out[ $key ] = (string) $value;
 
 		return $out;
 	}
 
 	/**
-	 * @param string $value Value.
-	 * @param int    $max   Max length.
-	 * @return string
-	 */
-	private function truncate( $value, $max ) {
-		$value = (string) $value;
-
-		if ( strlen( $value ) <= $max ) {
-			return $value;
-		}
-
-		return substr( $value, 0, $max - 3 ) . '...';
-	}
-
-	/**
-	 * Quoted options table SQL fragment.
-	 *
 	 * @return string
 	 */
 	private function get_options_table_sql() {
@@ -904,8 +1562,6 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 	}
 
 	/**
-	 * Read an option from the selected options table.
-	 *
 	 * @param string $option_name Option name.
 	 * @param mixed  $default     Default.
 	 * @return mixed

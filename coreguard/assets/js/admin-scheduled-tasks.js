@@ -19,11 +19,20 @@
 	};
 
 	var riskOrder = {
-		critical: 4,
+		critical: 5,
+		warning: 4,
 		suspicious: 3,
-		review: 2,
-		info: 1
+		info: 2,
+		safe: 1
 	};
+
+	function findingRisk(finding) {
+		return text(finding && (finding.risk_level || finding.risk) || 'info');
+	}
+
+	function findingId(finding) {
+		return text(finding && (finding.finding_id || finding.id) || '');
+	}
 
 	function ready(callback) {
 		if (document.readyState === 'loading') {
@@ -206,8 +215,8 @@
 	function riskLabel(risk) {
 		var map = {
 			critical: strings.riskCritical,
+			warning: strings.riskWarning,
 			suspicious: strings.riskSuspicious,
-			review: strings.riskReview,
 			info: strings.riskInfo
 		};
 		return map[risk] || risk || strings.riskInfo;
@@ -217,7 +226,7 @@
 		var search = text(uiState.search).toLowerCase().trim();
 
 		return findings.filter(function (finding) {
-			if (uiState.risk && finding.risk !== uiState.risk) {
+			if (uiState.risk && findingRisk(finding) !== uiState.risk) {
 				return false;
 			}
 
@@ -227,7 +236,8 @@
 
 			if (uiState.category) {
 				var rules = Array.isArray(finding.rules) ? finding.rules : [];
-				if (rules.indexOf(uiState.category) === -1) {
+				var ruleId = text(finding.rule_id).replace(/-/g, '_');
+				if (rules.indexOf(uiState.category) === -1 && ruleId !== uiState.category) {
 					return false;
 				}
 			}
@@ -257,15 +267,10 @@
 			var b;
 
 			if (key === 'risk') {
-				a = riskOrder[left.risk] || 0;
-				b = riskOrder[right.risk] || 0;
+				a = riskOrder[findingRisk(left)] || 0;
+				b = riskOrder[findingRisk(right)] || 0;
 				if (a !== b) {
 					return (a - b) * dir;
-				}
-				a = parseInt(left.score, 10) || 0;
-				b = parseInt(right.score, 10) || 0;
-				if (a !== b) {
-					return (a - b) * (uiState.sortDir === 'desc' ? 1 : -1);
 				}
 			} else if (key === 'next_run') {
 				a = parseInt(left.next_run, 10) || 0;
@@ -353,9 +358,8 @@
 		var riskOptions = [
 			{ value: '', label: strings.allRisk || 'All Risk' },
 			{ value: 'critical', label: strings.riskCritical },
-			{ value: 'suspicious', label: strings.riskSuspicious },
-			{ value: 'review', label: strings.riskReview },
-			{ value: 'info', label: strings.riskInfo }
+			{ value: 'warning', label: strings.riskWarning },
+			{ value: 'suspicious', label: strings.riskSuspicious }
 		];
 		var sourceOptions = [
 			{ value: '', label: strings.allSources || 'All Sources' },
@@ -365,8 +369,8 @@
 		];
 
 		Object.keys(categoryLabels).forEach(function (key) {
-			// Recognized Core is inventory-only; use Risk = Info / All Risk instead.
-			if (key === 'recognized_core') {
+			// Recognized inventory is shown separately — not Findings categories.
+			if (key === 'recognized_core' || key === 'recognized_plugin_theme') {
 				return;
 			}
 			categoryOptions.push({ value: key, label: categoryLabels[key] });
@@ -412,13 +416,13 @@
 	}
 
 	function renderRiskCell(finding) {
-		var cell = createElement('div', 'cws-scheduled-tasks-risk is-' + text(finding.risk || 'info'));
+		var risk = findingRisk(finding);
+		var cell = createElement('div', 'cws-scheduled-tasks-risk is-' + risk);
 		var label = createElement('span', 'cws-scheduled-tasks-risk-label');
 
 		label.appendChild(createCoreGuardMark());
-		appendText(label, finding.risk_label || riskLabel(finding.risk));
+		appendText(label, finding.risk_label || riskLabel(risk));
 		cell.appendChild(label);
-		cell.appendChild(createElement('span', 'cws-scheduled-tasks-confidence is-' + text(finding.confidence || 'low').replace(/_/g, '-'), format(strings.confidence || 'Confidence: %s', finding.confidence_label || finding.confidence || '')));
 		return cell;
 	}
 
@@ -520,6 +524,10 @@
 			});
 		}
 
+		if (window.CwsReportRelatedFindings) {
+			window.CwsReportRelatedFindings.appendRelatedFindings(right, finding);
+		}
+
 		grid.appendChild(left);
 		grid.appendChild(right);
 		return grid;
@@ -535,10 +543,15 @@
 		var actionsTd = document.createElement('td');
 		var eye = createElement('button', 'cws-scheduled-tasks-eye');
 		var eyeIcon = createElement('span', 'dashicons dashicons-visibility');
-		var isExpanded = uiState.expandedId === finding.id;
+		var id = findingId(finding);
+		var isExpanded = uiState.expandedId === id;
 
 		if (isExpanded) {
 			row.className = 'is-expanded';
+		}
+
+		if (finding.confirmed_this_run === false) {
+			row.className = (row.className ? row.className + ' ' : '') + 'cws-finding-not-reconfirmed';
 		}
 
 		riskTd.appendChild(renderRiskCell(finding));
@@ -554,6 +567,9 @@
 
 		appendHighlighted(hookCode, finding.hook || '');
 		hookTd.appendChild(hookCode);
+		if (finding.confirmed_this_run === false) {
+			hookTd.appendChild(createElement('div', 'description', strings.notReconfirmed || 'Not reconfirmed by this incomplete run'));
+		}
 		row.appendChild(hookTd);
 
 		eye.type = 'button';
@@ -562,7 +578,7 @@
 		eyeIcon.setAttribute('aria-hidden', 'true');
 		eye.appendChild(eyeIcon);
 		eye.addEventListener('click', function () {
-			uiState.expandedId = isExpanded ? '' : finding.id;
+			uiState.expandedId = isExpanded ? '' : id;
 			renderResult(resultState);
 		});
 		actionsTd.appendChild(eye);
@@ -593,24 +609,118 @@
 	function renderSummary(resultsEl, result) {
 		var summary = result.summary || {};
 		var critical = parseInt(summary.critical, 10) || 0;
+		var warning = parseInt(summary.warning, 10) || 0;
 		var suspicious = parseInt(summary.suspicious, 10) || 0;
-		var review = parseInt(summary.review, 10) || 0;
-		var info = parseInt(summary.info, 10) || 0;
-		var flagged = parseInt(summary.flagged, 10) || 0;
-		var hasProblems = critical + suspicious > 0;
-		var className = critical > 0 ? 'cws-core-checksum-results is-error' : (suspicious > 0 ? 'cws-core-checksum-results is-warning' : 'cws-core-checksum-results is-success');
-		var panel = createElement('div', className);
-		var message = hasProblems ?
-			format(strings.scanCompleteIssues, numberFormat(critical), numberFormat(suspicious), numberFormat(review), numberFormat(info), numberFormat(flagged)) :
-			format(strings.scanCompleteClean, numberFormat(review), numberFormat(info), numberFormat(flagged));
+		var incomplete = !result.rejected && (!!result.scan_incomplete || result.coverage_complete === false || (result.completion_status && result.completion_status !== 'success'));
+		var hasProblems = critical + warning + suspicious > 0;
+		var className;
+		var panel;
+		var message;
+
+		if (result.rejected) {
+			panel = createElement('div', 'cws-core-checksum-results is-error');
+			message = (Array.isArray(result.errors) && result.errors.length) ? result.errors[0] : (strings.scanRejected || 'This options table cannot be scanned.');
+			panel.appendChild(createElement('p', 'cws-core-checksum-summary', message));
+			resultsEl.appendChild(panel);
+			return;
+		}
+
+		className = incomplete
+			? 'cws-core-checksum-results is-warning'
+			: (critical > 0
+				? 'cws-core-checksum-results is-error'
+				: ((warning + suspicious) > 0 ? 'cws-core-checksum-results is-warning' : 'cws-core-checksum-results is-success'));
+		panel = createElement('div', className);
+
+		if (incomplete) {
+			message = strings.scanIncomplete || 'Scan coverage was incomplete. Previously detected findings were not cleared.';
+		} else if (hasProblems) {
+			message = format(
+				strings.scanCompleteIssues || 'Scan complete. %1$s critical, %2$s warning, %3$s suspicious findings.',
+				numberFormat(critical),
+				numberFormat(warning),
+				numberFormat(suspicious)
+			);
+		} else {
+			message = strings.scanCompleteClean || 'Scan complete. No critical, warning, or suspicious findings.';
+		}
 
 		panel.appendChild(createElement('p', 'cws-core-checksum-summary', message));
+
+		if (incomplete && result.prior_findings_only) {
+			panel.appendChild(createElement('p', 'description', strings.priorFindingsNote || 'Active findings below are from earlier successful scans and were not reconfirmed by this run.'));
+		}
+
+		if (Array.isArray(result.errors) && result.errors.length) {
+			result.errors.forEach(function (errorMessage) {
+				panel.appendChild(createElement('p', 'description', errorMessage));
+			});
+		}
 
 		if (result.wordpress_configured_table && result.options_table && result.wordpress_configured_table !== result.options_table) {
 			panel.appendChild(createElement('p', '', format(strings.configuredTable, result.wordpress_configured_table)));
 		}
 
 		resultsEl.appendChild(panel);
+	}
+
+	function renderInventory(resultsEl, inventory) {
+		var section;
+		var table;
+		var thead;
+		var headerRow;
+		var tbody;
+		var list = Array.isArray(inventory) ? inventory : [];
+
+		section = createElement('div', 'cws-report-section cws-scheduled-tasks-inventory');
+		section.appendChild(createElement('h3', '', strings.inventoryHeading || 'Recognized scheduled tasks (inventory)'));
+		section.appendChild(createElement('p', 'description', strings.inventoryHelp || 'Informational only — not Findings.'));
+
+		if (!list.length) {
+			section.appendChild(createElement('p', '', strings.noInventory || 'No recognized scheduled tasks in the scanned cron option.'));
+			resultsEl.appendChild(section);
+			return;
+		}
+
+		table = createElement('table', 'widefat striped cws-scheduled-tasks-inventory-table');
+		thead = document.createElement('thead');
+		headerRow = document.createElement('tr');
+		headerRow.appendChild(createElement('th', '', strings.hook || 'Hook'));
+		headerRow.appendChild(createElement('th', '', strings.source || 'Source'));
+		headerRow.appendChild(createElement('th', '', strings.schedule || 'Schedule'));
+		headerRow.appendChild(createElement('th', '', strings.nextRun || 'Next Run'));
+		thead.appendChild(headerRow);
+		table.appendChild(thead);
+
+		tbody = document.createElement('tbody');
+		list.forEach(function (item) {
+			var row = document.createElement('tr');
+			var hookTd = document.createElement('td');
+			var sourceTd = document.createElement('td');
+			var scheduleTd = document.createElement('td');
+			var nextTd = document.createElement('td');
+			var hookCode = createElement('code', 'cws-file-path');
+
+			appendText(hookCode, item.hook || '');
+			hookTd.appendChild(hookCode);
+			appendText(sourceTd, item.source || item.source_key || '');
+			appendText(scheduleTd, item.schedule_label || item.schedule || '');
+			appendText(nextTd, item.next_run_label || '');
+			if (item.next_run_relative) {
+				nextTd.appendChild(document.createElement('br'));
+				nextTd.appendChild(createElement('span', 'cws-scheduled-tasks-next-run-relative', item.next_run_relative));
+			}
+
+			row.appendChild(hookTd);
+			row.appendChild(sourceTd);
+			row.appendChild(scheduleTd);
+			row.appendChild(nextTd);
+			tbody.appendChild(row);
+		});
+
+		table.appendChild(tbody);
+		section.appendChild(table);
+		resultsEl.appendChild(section);
 	}
 
 	function renderTable(resultsEl, findings) {
@@ -676,8 +786,12 @@
 		}
 
 		renderSummary(resultsEl, result);
-		findings = Array.isArray(result.findings) ? result.findings : [];
-		renderTable(resultsEl, findings);
+
+		if (!result.rejected) {
+			findings = Array.isArray(result.findings) ? result.findings : [];
+			renderTable(resultsEl, findings);
+			renderInventory(resultsEl, result.inventory);
+		}
 
 		if (restoreSearch) {
 			searchInput = resultsEl.querySelector('[data-cws-report-search="1"]');

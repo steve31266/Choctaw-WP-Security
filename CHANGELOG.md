@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.3.4] - 2026-07-20
+
+### Added
+
+- **Findings Phase 3.4:** WP-Cron / Scheduled Tasks migrated to Sassh Findings (`object_type=cron_event`; registered-site `blog_id`; one Finding per fired problem-rule after aggregation). Non-dismissible recognized-task inventory in the report; Sassh dismiss/undismiss and related-on-expand; Clear History removed on that tab.
+
+### Changed
+
+- Scheduled Tasks uses rule-based canonical risk (legacy `review` / score-band authority retired). Critical reserved for documented suspicious-argument combinations. Argument previews are capped and sanitized. Incomplete runs do not reconcile absence.
+
 ## [1.9.3.3] - 2026-07-20
 
 ### Added

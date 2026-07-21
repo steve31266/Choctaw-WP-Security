@@ -22,8 +22,18 @@ class Sassh_Findings_Service {
 	const RULE_CORE_FILE_UNKNOWN     = 'core-file-unknown';
 	const SCANNER_EXPOSED_FILES      = 'exposed-files';
 	const SCANNER_DATABASE_SCAN      = 'database-scan';
+	const SCANNER_SCHEDULED_TASKS    = 'scheduled-tasks';
 	const FINGERPRINT_MISSING        = 'sha256:missing';
 	const FINGERPRINT_DIRECTORY      = 'sha256:directory';
+
+	const RULE_UNKNOWN_HOOK            = 'unknown-hook';
+	const RULE_UNREGISTERED_HANDLER    = 'unregistered-handler';
+	const RULE_MISSING_SOURCE          = 'missing-source';
+	const RULE_UNUSUAL_FREQUENCY       = 'unusual-frequency';
+	const RULE_STALE_TASK              = 'stale-task';
+	const RULE_DUPLICATE_TASK          = 'duplicate-task';
+	const RULE_SUSPICIOUS_HOOK_NAME    = 'suspicious-hook-name';
+	const RULE_SUSPICIOUS_ARGUMENTS    = 'suspicious-arguments';
 
 	const RULE_HOME_SITEURL_MISMATCH           = 'home-siteurl-mismatch';
 	const RULE_HOME_CONSTANT_MISMATCH          = 'home-constant-mismatch';
@@ -506,6 +516,16 @@ class Sassh_Findings_Service {
 	}
 
 	/**
+	 * Scope key for WP-Cron / scheduled-tasks (options-table bounded).
+	 *
+	 * @param string $options_table Options table name.
+	 * @return string
+	 */
+	public static function scheduled_tasks_scope_key( $options_table ) {
+		return 'scheduled-tasks:' . (string) $options_table;
+	}
+
+	/**
 	 * SHA-256 fingerprint for an arbitrary string payload.
 	 *
 	 * @param string $value Raw bytes/string.
@@ -513,6 +533,99 @@ class Sassh_Findings_Service {
 	 */
 	public static function content_fingerprint_from_string( $value ) {
 		return 'sha256:' . hash( 'sha256', (string) $value );
+	}
+
+	/**
+	 * Higher of two risk levels (canonical severity order).
+	 *
+	 * @param string $a Risk level.
+	 * @param string $b Risk level.
+	 * @return string
+	 */
+	public static function stronger_risk_level( $a, $b ) {
+		$a = (string) $a;
+		$b = (string) $b;
+		$ra = isset( self::$risk_rank[ $a ] ) ? self::$risk_rank[ $a ] : -1;
+		$rb = isset( self::$risk_rank[ $b ] ) ? self::$risk_rank[ $b ] : -1;
+
+		return $ra >= $rb ? $a : $b;
+	}
+
+	/**
+	 * Rule-based risk_level for scheduled-tasks (Phase 3.4).
+	 *
+	 * @param string               $rule_id  Rule id.
+	 * @param array<string, mixed> $evidence Optional evidence (signals, …).
+	 * @return string
+	 */
+	public static function scheduled_tasks_risk_level( $rule_id, array $evidence = array() ) {
+		$rule_id = (string) $rule_id;
+
+		switch ( $rule_id ) {
+			case self::RULE_UNKNOWN_HOOK:
+			case self::RULE_UNREGISTERED_HANDLER:
+			case self::RULE_MISSING_SOURCE:
+			case self::RULE_UNUSUAL_FREQUENCY:
+			case self::RULE_STALE_TASK:
+			case self::RULE_DUPLICATE_TASK:
+				return 'suspicious';
+
+			case self::RULE_SUSPICIOUS_HOOK_NAME:
+				return 'warning';
+
+			case self::RULE_SUSPICIOUS_ARGUMENTS:
+				$signals = isset( $evidence['signals'] ) && is_array( $evidence['signals'] )
+					? $evidence['signals']
+					: array();
+
+				return self::suspicious_arguments_risk_from_signals( $signals );
+
+			default:
+				return 'suspicious';
+		}
+	}
+
+	/**
+	 * Risk for suspicious-arguments from the complete signal set.
+	 *
+	 * @param array<int, string> $signals Signal ids.
+	 * @return string
+	 */
+	public static function suspicious_arguments_risk_from_signals( array $signals ) {
+		$set = array();
+
+		foreach ( $signals as $signal ) {
+			$signal = (string) $signal;
+			if ( '' !== $signal ) {
+				$set[ $signal ] = $signal;
+			}
+		}
+
+		$has_eval   = isset( $set['eval_family'] );
+		$has_php    = isset( $set['php_fragment'] );
+		$has_shell  = isset( $set['shell_fragment'] );
+		$has_b64    = isset( $set['base64_payload'] );
+		$has_js     = isset( $set['js_fragment'] );
+		$has_url_ip = isset( $set['external_url'] ) || isset( $set['ip_address'] );
+
+		// Documented Critical combinations only.
+		if ( $has_eval && ( $has_b64 || $has_php || $has_shell ) ) {
+			return 'critical';
+		}
+
+		if ( $has_php && $has_shell ) {
+			return 'critical';
+		}
+
+		if ( $has_eval || $has_php || $has_shell || $has_b64 || $has_js ) {
+			return 'warning';
+		}
+
+		if ( $has_url_ip ) {
+			return 'suspicious';
+		}
+
+		return 'suspicious';
 	}
 
 	/**

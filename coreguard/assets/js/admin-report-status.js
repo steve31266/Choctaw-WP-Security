@@ -59,6 +59,7 @@
 			|| scanType === 'verify-checksums'
 			|| scanType === 'exposed-files'
 			|| scanType === 'database-scan'
+			|| scanType === 'scheduled-tasks'
 			|| (finding && finding.findings_backend === 'sassh');
 	}
 
