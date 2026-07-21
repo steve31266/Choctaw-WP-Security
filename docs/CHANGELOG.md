@@ -19,6 +19,19 @@ Newest entries first.
 
 ---
 
+## 2026-07-20 20:45 CDT
+
+**Summary:** Locked and shipped Findings Phase **3.4.5** (object-level Findings): Finding identity excludes `rule_id`; first-class `sassh_finding_categories`; directional dismissal + carry-forward; success-only negative reconcile with incomplete-run strengthening; structured guidance composer + subset recipes; schema v2 reset. Supersedes rule-identity assumptions from Phases 1–3.4 (including Phase 3.4 Q1 A).
+
+**Documents:**
+- `docs/CoreGuard Findings System.md` — updated — §3.11 / §5.2 / §5.7 / §18 Phase 3.4.5
+- `.cursor/plans/findings_phase_3_4_5_grouped_report.plan.md` — updated — approved + implemented
+- `.cursor/plans/findings_phase_3x_index.plan.md` — updated — 3.4.5 status
+- Historical phase plans 1/2–3.4 — supersession notices
+- `CHANGELOG.md` — updated — `[1.9.3.5]`
+- `docs/README.md` — updated — Findings status through Phase 3.4.5
+- `coreguard/sassh.php` — updated — `Version` / `CHOCTAW_WP_SECURITY_VERSION` → `1.9.3.5`
+
 ## 2026-07-20 18:40 CDT
 
 **Summary:** Locked and shipped Findings Phase **3.4** (WP-Cron / Scheduled Tasks → Sassh Findings): registered `object_type=cron_event`; registered-site `blog_id` gate; per problem-rule Findings after aggregation; recognized-only report inventory; rule-based risk; Clear History removed; fresh start; capped/sanitized argument previews.

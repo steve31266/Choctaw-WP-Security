@@ -1218,6 +1218,10 @@ class Choctaw_Wp_Security_Options_Table_Scanner {
 				'detection_state'     => $row['detection_state'],
 				'confirmed_this_run'  => $confirmed_this_run,
 				'findings_backend'    => 'sassh',
+				'categories'          => ( isset( $row['categories'] ) && is_array( $row['categories'] ) ) ? $row['categories'] : array(),
+				'category_label_display' => isset( $row['category_label_display'] ) ? $row['category_label_display'] : ( isset( $row['category_label'] ) ? $row['category_label'] : '' ),
+				'extra_rule_count'    => isset( $row['extra_rule_count'] ) ? (int) $row['extra_rule_count'] : 0,
+				'guidance'            => ( isset( $row['guidance'] ) && is_array( $row['guidance'] ) ) ? $row['guidance'] : array(),
 			);
 		}
 

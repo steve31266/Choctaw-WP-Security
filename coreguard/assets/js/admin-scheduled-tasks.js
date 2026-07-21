@@ -428,6 +428,11 @@
 
 	function renderCategoryPills(finding) {
 		var wrap = createElement('div', 'cws-scheduled-tasks-pills');
+		var display = text(finding.category_label_display || '');
+		if (display) {
+			wrap.appendChild(createElement('span', 'cws-scheduled-tasks-pill', display));
+			return wrap;
+		}
 		var rules = Array.isArray(finding.rules) ? finding.rules : [];
 		var labels = Array.isArray(finding.category_labels) ? finding.category_labels : [];
 
@@ -497,7 +502,10 @@
 		left.appendChild(argsBlock);
 
 		whyBlock.appendChild(createElement('h4', '', strings.whySeeingThis || 'Why you are seeing this'));
-		(Array.isArray(finding.summary) ? finding.summary : []).forEach(function (line) {
+		var whyLines = Array.isArray(finding.why_seeing_this) && finding.why_seeing_this.length
+			? finding.why_seeing_this
+			: (Array.isArray(finding.summary) ? finding.summary : []);
+		whyLines.forEach(function (line) {
 			whyList.appendChild(createElement('li', '', line));
 		});
 		if (!whyList.childNodes.length) {
@@ -506,7 +514,10 @@
 		whyBlock.appendChild(whyList);
 
 		howBlock.appendChild(createElement('h4', '', strings.howToProceed || 'How to proceed'));
-		(Array.isArray(finding.recommendations) ? finding.recommendations : []).forEach(function (line) {
+		var howLines = Array.isArray(finding.how_to_proceed) && finding.how_to_proceed.length
+			? finding.how_to_proceed
+			: (Array.isArray(finding.recommendations) ? finding.recommendations : []);
+		howLines.forEach(function (line) {
 			howList.appendChild(createElement('li', '', line));
 		});
 		if (!howList.childNodes.length) {
@@ -516,6 +527,20 @@
 
 		right.appendChild(whyBlock);
 		right.appendChild(howBlock);
+
+		var cats = Array.isArray(finding.categories) ? finding.categories : [];
+		if (cats.length) {
+			var catBlock = createElement('div', 'cws-scheduled-tasks-categories-block');
+			catBlock.appendChild(createElement('h4', '', strings.categories || 'Categories'));
+			var catList = document.createElement('ul');
+			cats.forEach(function (cat) {
+				var label = text(cat.category_label || cat.title || cat.rule_id || '');
+				var risk = text(cat.risk_level || cat.risk || '');
+				catList.appendChild(createElement('li', '', label + (risk ? ' · ' + risk : '')));
+			});
+			catBlock.appendChild(catList);
+			right.appendChild(catBlock);
+		}
 
 		if (window.CwsReportStatus) {
 			window.CwsReportStatus.appendDismissControls(right, finding, config.scanType || 'scheduled-tasks', function () {

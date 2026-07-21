@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.3.5] - 2026-07-20
+
+### Added
+
+- **Findings Phase 3.4.5:** Object-level Findings architecture — one Finding per scanner assessment of one object; first-class `sassh_finding_categories`; structured guidance composer with subset recipes (cron `unknown-hook` + `unregistered-handler` reference); directional dismissal with `dismissal_carried_forward` on successful weakening.
+
+### Changed
+
+- Finding identity no longer includes `rule_id` (schema v2; destructive Sassh Findings table reset; `sassh_installation_id` retained). Incomplete runs may strengthen Findings (new category / risk increase / reopen dismissal) but never clear categories, lower aggregates from missing coverage, mark absence, or carry dismissals forward. All six Findings-backed scanners use the same contract. Supersedes Phase 3.4 per-rule Finding cardinality (Q1 A).
+
 ## [1.9.3.4] - 2026-07-20
 
 ### Added

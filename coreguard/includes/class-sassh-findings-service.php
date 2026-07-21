@@ -1,6 +1,6 @@
 <?php
 /**
- * Sassh Findings service — persistence, finalize, dismissals, related findings.
+ * Sassh Findings service — object-level Findings + categories (Phase 3.4.5).
  *
  * @package Choctaw_Wp_Security
  */
@@ -66,11 +66,18 @@ class Sassh_Findings_Service {
 	);
 
 	/**
-	 * Identity keys observed during the current execution (memory).
+	 * Finding identity keys observed during the current execution.
 	 *
 	 * @var array<int, array<string, true>>
 	 */
 	private $observed_identity_keys = array();
+
+	/**
+	 * Category keys (identity_key + "\0" + rule_id) confirmed during the current execution.
+	 *
+	 * @var array<int, array<string, true>>
+	 */
+	private $observed_category_keys = array();
 
 	/**
 	 * Begin a scanner execution.
@@ -105,14 +112,15 @@ class Sassh_Findings_Service {
 
 		$execution_id = (int) $wpdb->insert_id;
 		$this->observed_identity_keys[ $execution_id ] = array();
+		$this->observed_category_keys[ $execution_id ] = array();
 
 		return $execution_id;
 	}
 
 	/**
-	 * Record observations for an open execution.
+	 * Record observations for an open execution (object-level; coalesces categories).
 	 *
-	 * @param int                  $execution_id Execution id.
+	 * @param int                              $execution_id Execution id.
 	 * @param array<int, array<string, mixed>> $observations Observations.
 	 * @return void
 	 */
@@ -123,19 +131,49 @@ class Sassh_Findings_Service {
 			return;
 		}
 
+		$grouped = array();
+
 		foreach ( $observations as $observation ) {
 			if ( ! is_array( $observation ) ) {
 				continue;
 			}
-			$this->upsert_observation( $execution_id, $execution, $observation );
+			$normalized = $this->normalize_object_observation( $observation, $execution );
+			if ( null === $normalized ) {
+				continue;
+			}
+			$key = $normalized['_identity_key'];
+			if ( ! isset( $grouped[ $key ] ) ) {
+				$grouped[ $key ] = $normalized;
+				continue;
+			}
+			// Merge categories by rule_id (later observation wins).
+			foreach ( $normalized['categories'] as $rule_id => $cat ) {
+				$grouped[ $key ]['categories'][ $rule_id ] = $cat;
+			}
+			if ( '' !== (string) $normalized['object_fingerprint'] ) {
+				$grouped[ $key ]['object_fingerprint'] = $normalized['object_fingerprint'];
+			}
+			if ( '' !== (string) $normalized['title'] ) {
+				$grouped[ $key ]['title'] = $normalized['title'];
+			}
+			if ( '' !== (string) $normalized['description'] ) {
+				$grouped[ $key ]['description'] = $normalized['description'];
+			}
+			if ( ! empty( $normalized['metadata'] ) && is_array( $normalized['metadata'] ) ) {
+				$grouped[ $key ]['metadata'] = array_merge( $grouped[ $key ]['metadata'], $normalized['metadata'] );
+			}
+		}
+
+		foreach ( $grouped as $observation ) {
+			$this->upsert_object_observation( $execution_id, $execution, $observation );
 		}
 	}
 
 	/**
-	 * Finalize execution: absence processing, events, then success — or fail.
+	 * Finalize execution.
 	 *
-	 * @param int    $execution_id Execution id.
-	 * @param string $desired_status success|failed|partial|interrupted — success only applied after finalize steps.
+	 * @param int    $execution_id   Execution id.
+	 * @param string $desired_status success|failed|partial|interrupted.
 	 * @return bool True if marked success.
 	 */
 	public function finalize_scanner_execution( $execution_id, $desired_status = 'success' ) {
@@ -165,7 +203,9 @@ class Sassh_Findings_Service {
 		}
 
 		try {
+			$this->reconcile_categories_on_success( $execution_id, $execution );
 			$this->mark_absent_within_scope( $execution_id, $execution );
+			$this->apply_success_dismissal_reconciliation( $execution_id, $execution );
 		} catch ( Exception $e ) {
 			$wpdb->update(
 				$table,
@@ -195,11 +235,11 @@ class Sassh_Findings_Service {
 	}
 
 	/**
-	 * Dismiss a finding for the reviewed finding fingerprint.
+	 * Dismiss a finding for the current review fingerprint.
 	 *
 	 * @param string               $finding_id           Finding id.
-	 * @param string               $reviewed_fingerprint Finding content fingerprint.
-	 * @param array<string, mixed> $actor                actor_type, actor_identifier, action_source, reason.
+	 * @param string               $reviewed_fingerprint Finding review fingerprint.
+	 * @param array<string, mixed> $actor                Actor context.
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function dismiss( $finding_id, $reviewed_fingerprint, array $actor = array() ) {
@@ -262,8 +302,6 @@ class Sassh_Findings_Service {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function undismiss( $finding_id, array $actor = array() ) {
-		global $wpdb;
-
 		$finding = $this->get_finding( $finding_id );
 
 		if ( ! $finding ) {
@@ -276,30 +314,7 @@ class Sassh_Findings_Service {
 			return $this->enrich_finding_row( $finding );
 		}
 
-		$now   = current_time( 'mysql', true );
-		$table = Sassh_Findings_Schema::table( 'sassh_dismissal_decisions' );
-
-		$wpdb->update(
-			$table,
-			array(
-				'invalidated_at'      => $now,
-				'invalidation_reason' => 'undismissed',
-				'updated_at'          => $now,
-			),
-			array( 'dismissal_id' => (int) $valid['dismissal_id'] ),
-			array( '%s', '%s', '%s' ),
-			array( '%d' )
-		);
-
-		$this->record_event(
-			$finding_id,
-			'dismissal_invalidated',
-			'valid',
-			'undismissed',
-			null,
-			null,
-			array( 'reason' => 'undismissed' )
-		);
+		$this->invalidate_dismissal( $finding_id, 'undismissed', null, null );
 
 		return $this->enrich_finding_row( $this->get_finding( $finding_id ) );
 	}
@@ -325,7 +340,7 @@ class Sassh_Findings_Service {
 	}
 
 	/**
-	 * Get one finding with effective status / labels applied.
+	 * Get one finding with effective status / labels / categories applied.
 	 *
 	 * @param string $finding_id Finding id.
 	 * @return array<string, mixed>|null
@@ -415,7 +430,7 @@ class Sassh_Findings_Service {
 		$enriched  = array();
 
 		foreach ( $rows as $row ) {
-			$item = $this->enrich_finding_row( $row );
+			$item     = $this->enrich_finding_row( $row );
 			$other_fp = (string) $row['object_fingerprint'];
 
 			if ( '' === $object_fp || '' === $other_fp ) {
@@ -455,12 +470,6 @@ class Sassh_Findings_Service {
 		return array_slice( $enriched, 0, 10 );
 	}
 
-	/**
-	 * Build Uploads scope key from uploads basedir.
-	 *
-	 * @param string $basedir Absolute uploads basedir.
-	 * @return string
-	 */
 	public static function uploads_scope_key( $basedir ) {
 		$normalized = Sassh_Object_Path_Normalizer::normalize_in_root( $basedir );
 
@@ -948,22 +957,30 @@ class Sassh_Findings_Service {
 	 * @param array<string, mixed> $observation  Observation.
 	 * @return void
 	 */
-	private function upsert_observation( $execution_id, array $execution, array $observation ) {
-		global $wpdb;
 
+	/**
+	 * Normalize an observation to object + categories map keyed by rule_id.
+	 *
+	 * @param array<string, mixed> $observation Observation.
+	 * @param array<string, mixed> $execution   Execution row.
+	 * @return array<string, mixed>|null
+	 */
+	private function normalize_object_observation( array $observation, array $execution ) {
 		$installation_id = Sassh_Installation_Identity::get_id();
 		$scanner_id      = isset( $observation['scanner_id'] ) ? (string) $observation['scanner_id'] : (string) $execution['scanner_id'];
-		$rule_id         = isset( $observation['rule_id'] ) ? (string) $observation['rule_id'] : '';
 		$object_type     = isset( $observation['object_type'] ) ? (string) $observation['object_type'] : '';
 		$object_key      = isset( $observation['object_key'] ) ? (string) $observation['object_key'] : '';
 		$blog_id         = array_key_exists( 'blog_id', $observation ) ? $observation['blog_id'] : null;
 		$blog_part       = ( null === $blog_id || '' === $blog_id ) ? '' : (string) (int) $blog_id;
 
+		if ( '' === $object_type || '' === $object_key ) {
+			return null;
+		}
+
 		$identity_key = self::hash_tuple(
 			array(
 				$installation_id,
 				$scanner_id,
-				$rule_id,
 				$object_type,
 				$blog_part,
 				$object_key,
@@ -971,23 +988,108 @@ class Sassh_Findings_Service {
 		);
 
 		$correlation_parts = array( $installation_id, $object_type );
-
 		if ( '' !== $blog_part ) {
 			$correlation_parts[] = $blog_part;
 		}
-
-		$correlation_parts[]   = $object_key;
+		$correlation_parts[]    = $object_key;
 		$object_correlation_key = self::hash_tuple( $correlation_parts );
 
-		$risk_level    = isset( $observation['risk_level'] ) ? (string) $observation['risk_level'] : 'info';
-		$classification = isset( $observation['sassh_classification'] )
-			? (string) $observation['sassh_classification']
-			: self::default_classification( $risk_level );
-		$content_fp = isset( $observation['content_fingerprint'] ) ? (string) $observation['content_fingerprint'] : '';
-		$object_fp  = isset( $observation['object_fingerprint'] ) ? (string) $observation['object_fingerprint'] : '';
-		$scope_key  = (string) $execution['scope_key'];
-		$now        = current_time( 'mysql', true );
-		$table      = Sassh_Findings_Schema::table( 'sassh_findings' );
+		$categories = array();
+
+		if ( isset( $observation['categories'] ) && is_array( $observation['categories'] ) ) {
+			foreach ( $observation['categories'] as $cat ) {
+				if ( ! is_array( $cat ) ) {
+					continue;
+				}
+				$rule_id = isset( $cat['rule_id'] ) ? (string) $cat['rule_id'] : '';
+				if ( '' === $rule_id ) {
+					continue;
+				}
+				$risk = isset( $cat['risk_level'] ) ? (string) $cat['risk_level'] : 'info';
+				$fp   = isset( $cat['category_fingerprint'] ) ? (string) $cat['category_fingerprint'] : '';
+				if ( '' === $fp && isset( $cat['content_fingerprint'] ) ) {
+					$fp = (string) $cat['content_fingerprint'];
+				}
+				$categories[ $rule_id ] = array(
+					'rule_id'                 => $rule_id,
+					'risk_level'              => $risk,
+					'sassh_classification'    => isset( $cat['sassh_classification'] )
+						? (string) $cat['sassh_classification']
+						: self::default_classification( $risk ),
+					'category_fingerprint'    => $fp,
+					'title'                   => isset( $cat['title'] ) ? (string) $cat['title'] : $rule_id,
+					'metadata'                => isset( $cat['metadata'] ) && is_array( $cat['metadata'] ) ? $cat['metadata'] : array(),
+					'guidance_contributions'  => isset( $cat['guidance_contributions'] ) && is_array( $cat['guidance_contributions'] )
+						? $cat['guidance_contributions']
+						: array(),
+				);
+			}
+		} elseif ( ! empty( $observation['rule_id'] ) ) {
+			$rule_id = (string) $observation['rule_id'];
+			$risk    = isset( $observation['risk_level'] ) ? (string) $observation['risk_level'] : 'info';
+			$fp      = isset( $observation['content_fingerprint'] ) ? (string) $observation['content_fingerprint'] : '';
+			$meta    = isset( $observation['metadata'] ) && is_array( $observation['metadata'] ) ? $observation['metadata'] : array();
+			$categories[ $rule_id ] = array(
+				'rule_id'                => $rule_id,
+				'risk_level'             => $risk,
+				'sassh_classification'   => isset( $observation['sassh_classification'] )
+					? (string) $observation['sassh_classification']
+					: self::default_classification( $risk ),
+				'category_fingerprint'   => $fp,
+				'title'                  => isset( $observation['title'] ) ? (string) $observation['title'] : $rule_id,
+				'metadata'               => $meta,
+				'guidance_contributions' => isset( $observation['guidance_contributions'] ) && is_array( $observation['guidance_contributions'] )
+					? $observation['guidance_contributions']
+					: array(),
+			);
+		}
+
+		if ( empty( $categories ) ) {
+			return null;
+		}
+
+		return array(
+			'_identity_key'           => $identity_key,
+			'_object_correlation_key' => $object_correlation_key,
+			'_installation_id'        => $installation_id,
+			'_blog_part'              => $blog_part,
+			'scanner_id'              => $scanner_id,
+			'object_type'             => $object_type,
+			'object_key'              => $object_key,
+			'blog_id'                 => $blog_id,
+			'object_fingerprint'      => isset( $observation['object_fingerprint'] ) ? (string) $observation['object_fingerprint'] : '',
+			'title'                   => isset( $observation['title'] ) ? (string) $observation['title'] : $object_key,
+			'description'             => isset( $observation['description'] ) ? (string) $observation['description'] : '',
+			'metadata'                => isset( $observation['metadata'] ) && is_array( $observation['metadata'] ) ? $observation['metadata'] : array(),
+			'categories'              => $categories,
+		);
+	}
+
+	/**
+	 * Upsert one object-level observation with categories (positive path).
+	 *
+	 * @param int                  $execution_id Execution id.
+	 * @param array<string, mixed> $execution    Execution row.
+	 * @param array<string, mixed> $observation  Normalized observation.
+	 * @return void
+	 */
+	private function upsert_object_observation( $execution_id, array $execution, array $observation ) {
+		global $wpdb;
+
+		$identity_key           = (string) $observation['_identity_key'];
+		$object_correlation_key = (string) $observation['_object_correlation_key'];
+		$installation_id        = (string) $observation['_installation_id'];
+		$scanner_id             = (string) $observation['scanner_id'];
+		$object_type            = (string) $observation['object_type'];
+		$object_key             = (string) $observation['object_key'];
+		$blog_id                = $observation['blog_id'];
+		$object_fp              = (string) $observation['object_fingerprint'];
+		$title                  = (string) $observation['title'];
+		$description            = (string) $observation['description'];
+		$metadata               = is_array( $observation['metadata'] ) ? $observation['metadata'] : array();
+		$scope_key              = (string) $execution['scope_key'];
+		$now                    = current_time( 'mysql', true );
+		$table                  = Sassh_Findings_Schema::table( 'sassh_findings' );
 
 		$existing = $wpdb->get_row(
 			$wpdb->prepare( "SELECT * FROM {$table} WHERE identity_key = %s", $identity_key ),
@@ -996,103 +1098,512 @@ class Sassh_Findings_Service {
 
 		$this->observed_identity_keys[ $execution_id ][ $identity_key ] = true;
 
-		$title       = isset( $observation['title'] ) ? (string) $observation['title'] : $object_key;
-		$description = isset( $observation['description'] ) ? (string) $observation['description'] : '';
-		$metadata    = isset( $observation['metadata'] ) && is_array( $observation['metadata'] ) ? $observation['metadata'] : array();
-		$meta_json   = wp_json_encode( $metadata );
-
-		if ( ! $existing ) {
+		$is_new = ! $existing;
+		if ( $is_new ) {
 			$finding_id = 'ssf_' . bin2hex( random_bytes( 12 ) );
-
 			$wpdb->insert(
 				$table,
 				array(
-					'finding_id'                 => $finding_id,
-					'installation_id'            => $installation_id,
-					'blog_id'                    => ( null === $blog_id || '' === $blog_id ) ? null : (int) $blog_id,
-					'scanner_id'                 => $scanner_id,
-					'rule_id'                    => $rule_id,
-					'object_type'                => $object_type,
-					'object_key'                 => $object_key,
-					'object_correlation_key'     => $object_correlation_key,
-					'identity_key'               => $identity_key,
-					'title'                      => $title,
-					'description'                => $description,
-					'risk_level'                 => $risk_level,
-					'sassh_classification'       => $classification,
-					'content_fingerprint'        => $content_fp,
-					'object_fingerprint'         => $object_fp,
-					'rule_fingerprint'           => isset( $observation['rule_fingerprint'] ) ? (string) $observation['rule_fingerprint'] : null,
-					'first_seen_at'              => $now,
-					'last_seen_at'               => $now,
-					'last_scanner_execution_id'  => $execution_id,
-					'last_scan_run_id'           => $execution['scan_run_id'],
-					'last_scope_key'             => $scope_key,
-					'detection_state'            => 'active',
-					'metadata'                   => $meta_json,
-					'created_at'                 => $now,
-					'updated_at'                 => $now,
+					'finding_id'                => $finding_id,
+					'installation_id'           => $installation_id,
+					'blog_id'                   => ( null === $blog_id || '' === $blog_id ) ? null : (int) $blog_id,
+					'scanner_id'                => $scanner_id,
+					'object_type'               => $object_type,
+					'object_key'                => $object_key,
+					'object_correlation_key'    => $object_correlation_key,
+					'identity_key'              => $identity_key,
+					'title'                     => $title,
+					'description'               => $description,
+					'risk_level'                => 'info',
+					'sassh_classification'      => 'needs_review',
+					'content_fingerprint'       => '',
+					'object_fingerprint'        => $object_fp,
+					'first_seen_at'             => $now,
+					'last_seen_at'              => $now,
+					'last_scanner_execution_id' => $execution_id,
+					'last_scan_run_id'          => $execution['scan_run_id'],
+					'last_scope_key'            => $scope_key,
+					'detection_state'           => 'active',
+					'metadata'                  => wp_json_encode( $metadata ),
+					'created_at'                => $now,
+					'updated_at'                => $now,
 				)
 			);
-
 			$this->record_event( $finding_id, 'created', null, 'active', $execution_id, $execution['scan_run_id'], null );
-			return;
+			$existing = $this->get_finding( $finding_id );
+		} else {
+			$finding_id     = (string) $existing['finding_id'];
+			$prev_detection = (string) $existing['detection_state'];
+			$prev_object_fp = (string) $existing['object_fingerprint'];
+
+			$wpdb->update(
+				$table,
+				array(
+					'title'                     => $title,
+					'description'               => $description,
+					'object_fingerprint'        => '' !== $object_fp ? $object_fp : $prev_object_fp,
+					'last_seen_at'              => $now,
+					'last_scanner_execution_id' => $execution_id,
+					'last_scan_run_id'          => $execution['scan_run_id'],
+					'last_scope_key'            => $scope_key,
+					'detection_state'           => 'active',
+					'metadata'                  => wp_json_encode( $metadata ),
+					'updated_at'                => $now,
+					'blog_id'                   => ( null === $blog_id || '' === $blog_id ) ? null : (int) $blog_id,
+				),
+				array( 'finding_id' => $finding_id )
+			);
+
+			if ( 'not_detected' === $prev_detection ) {
+				$this->record_event( $finding_id, 'reappeared', $prev_detection, 'active', $execution_id, $execution['scan_run_id'], null );
+			}
+
+			if ( '' !== $object_fp && self::normalize_fingerprint( $prev_object_fp ) !== self::normalize_fingerprint( $object_fp ) ) {
+				$this->invalidate_dismissal( $finding_id, 'object_fingerprint_changed', $execution_id, $execution['scan_run_id'] );
+			}
+
+			$existing = $this->get_finding( $finding_id );
 		}
 
-		$finding_id     = (string) $existing['finding_id'];
-		$prev_fp        = (string) $existing['content_fingerprint'];
-		$prev_risk      = (string) $existing['risk_level'];
-		$prev_class     = (string) $existing['sassh_classification'];
-		$prev_detection = (string) $existing['detection_state'];
+		$prev_risk  = (string) $existing['risk_level'];
+		$strengthen = false;
+
+		foreach ( $observation['categories'] as $rule_id => $cat ) {
+			$cat_key = $identity_key . "\0" . $rule_id;
+			$this->observed_category_keys[ $execution_id ][ $cat_key ] = true;
+
+			$result = $this->upsert_category( $finding_id, $cat, $execution_id, $execution['scan_run_id'], $now );
+			if ( ! empty( $result['strengthen'] ) ) {
+				$strengthen = true;
+			}
+			if ( ! empty( $result['new_category'] ) ) {
+				$strengthen = true;
+				$this->invalidate_dismissal( $finding_id, 'category_added', $execution_id, $execution['scan_run_id'] );
+			}
+			if ( ! empty( $result['material_non_weakening'] ) ) {
+				$strengthen = true;
+				$this->invalidate_dismissal( $finding_id, 'category_fingerprint_changed', $execution_id, $execution['scan_run_id'] );
+			}
+		}
+
+		// Reappearance with missing-style evidence reopens.
+		if ( ! $is_new && 'not_detected' === ( isset( $prev_detection ) ? $prev_detection : '' ) ) {
+			$active_cats = $this->get_categories_for_finding( $finding_id, 'active' );
+			foreach ( $active_cats as $ac ) {
+				if ( self::should_invalidate_dismissal_on_reappearance( $ac['rule_id'], $ac['category_fingerprint'] ) ) {
+					$this->invalidate_dismissal( $finding_id, 'reappeared_after_absence', $execution_id, $execution['scan_run_id'] );
+					break;
+				}
+			}
+		}
+
+		$this->recompute_finding_aggregates( $finding_id, $execution_id, $execution['scan_run_id'], true );
+
+		$updated = $this->get_finding( $finding_id );
+		if ( $updated && $this->risk_increased( $prev_risk, (string) $updated['risk_level'] ) ) {
+			$this->invalidate_dismissal( $finding_id, 'risk_increased', $execution_id, $execution['scan_run_id'] );
+		}
+
+		unset( $strengthen );
+	}
+
+	/**
+	 * Upsert one category row.
+	 *
+	 * @param string               $finding_id   Finding id.
+	 * @param array<string, mixed> $cat          Category payload.
+	 * @param int                  $execution_id Execution id.
+	 * @param string|null          $scan_run_id  Scan run id.
+	 * @param string               $now          Timestamp.
+	 * @return array<string, bool>
+	 */
+	private function upsert_category( $finding_id, array $cat, $execution_id, $scan_run_id, $now ) {
+		global $wpdb;
+
+		$table   = Sassh_Findings_Schema::table( 'sassh_finding_categories' );
+		$rule_id = (string) $cat['rule_id'];
+		$out     = array(
+			'new_category'            => false,
+			'material_non_weakening'  => false,
+			'strengthen'              => false,
+		);
+
+		$existing = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE finding_id = %s AND rule_id = %s",
+				$finding_id,
+				$rule_id
+			),
+			ARRAY_A
+		);
+
+		$risk  = (string) $cat['risk_level'];
+		$class = (string) $cat['sassh_classification'];
+		$fp    = (string) $cat['category_fingerprint'];
+		$title = (string) $cat['title'];
+		$meta  = is_array( $cat['metadata'] ) ? $cat['metadata'] : array();
+		if ( ! empty( $cat['guidance_contributions'] ) ) {
+			$meta['guidance_contributions'] = $cat['guidance_contributions'];
+		}
+
+		if ( ! $existing ) {
+			$category_id = 'ssc_' . bin2hex( random_bytes( 12 ) );
+			$wpdb->insert(
+				$table,
+				array(
+					'category_id'               => $category_id,
+					'finding_id'                => $finding_id,
+					'rule_id'                   => $rule_id,
+					'risk_level'                => $risk,
+					'sassh_classification'      => $class,
+					'category_fingerprint'      => $fp,
+					'title'                     => $title,
+					'detection_state'           => 'active',
+					'first_seen_at'             => $now,
+					'last_seen_at'              => $now,
+					'last_scanner_execution_id' => $execution_id,
+					'metadata'                  => wp_json_encode( $meta ),
+					'created_at'                => $now,
+					'updated_at'                => $now,
+				)
+			);
+			$this->record_event(
+				$finding_id,
+				'category_added',
+				null,
+				$rule_id,
+				$execution_id,
+				$scan_run_id,
+				array( 'rule_id' => $rule_id, 'category_id' => $category_id )
+			);
+			$out['new_category'] = true;
+			$out['strengthen']   = true;
+			return $out;
+		}
+
+		$prev_fp   = (string) $existing['category_fingerprint'];
+		$prev_risk = (string) $existing['risk_level'];
+		$prev_det  = (string) $existing['detection_state'];
 
 		$wpdb->update(
 			$table,
 			array(
+				'risk_level'                => $risk,
+				'sassh_classification'      => $class,
+				'category_fingerprint'      => $fp,
 				'title'                     => $title,
-				'description'               => $description,
-				'risk_level'                => $risk_level,
-				'sassh_classification'      => $classification,
-				'content_fingerprint'       => $content_fp,
-				'object_fingerprint'        => $object_fp,
+				'detection_state'           => 'active',
 				'last_seen_at'              => $now,
 				'last_scanner_execution_id' => $execution_id,
-				'last_scan_run_id'          => $execution['scan_run_id'],
-				'last_scope_key'            => $scope_key,
-				'detection_state'           => 'active',
-				'metadata'                  => $meta_json,
+				'metadata'                  => wp_json_encode( $meta ),
 				'updated_at'                => $now,
-				'blog_id'                   => ( null === $blog_id || '' === $blog_id ) ? null : (int) $blog_id,
+			),
+			array( 'category_id' => (string) $existing['category_id'] )
+		);
+
+		if ( 'not_detected' === $prev_det ) {
+			$this->record_event(
+				$finding_id,
+				'category_added',
+				'not_detected',
+				'active',
+				$execution_id,
+				$scan_run_id,
+				array( 'rule_id' => $rule_id, 'reactivated' => true )
+			);
+			$out['new_category'] = true;
+			$out['strengthen']   = true;
+		}
+
+		if ( self::normalize_fingerprint( $prev_fp ) !== self::normalize_fingerprint( $fp ) ) {
+			$this->record_event(
+				$finding_id,
+				'category_fingerprint_changed',
+				$prev_fp,
+				$fp,
+				$execution_id,
+				$scan_run_id,
+				array( 'rule_id' => $rule_id )
+			);
+			if ( $this->risk_increased( $prev_risk, $risk ) || ! $this->risk_decreased( $prev_risk, $risk ) ) {
+				// Fingerprint changed without a risk decrease → treat as material non-weakening (or same risk material change).
+				if ( ! $this->risk_decreased( $prev_risk, $risk ) ) {
+					$out['material_non_weakening'] = true;
+					$out['strengthen']             = true;
+				}
+			}
+		}
+
+		if ( $this->risk_increased( $prev_risk, $risk ) ) {
+			$out['strengthen'] = true;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Recompute finding aggregates from active categories.
+	 *
+	 * @param string      $finding_id     Finding id.
+	 * @param int|null    $execution_id   Execution id.
+	 * @param string|null $scan_run_id    Scan run id.
+	 * @param bool        $ratchet_only   If true, never lower risk/classification.
+	 * @return void
+	 */
+	private function recompute_finding_aggregates( $finding_id, $execution_id = null, $scan_run_id = null, $ratchet_only = false ) {
+		global $wpdb;
+
+		$finding = $this->get_finding( $finding_id );
+		if ( ! $finding ) {
+			return;
+		}
+
+		$active = $this->get_categories_for_finding( $finding_id, 'active' );
+		$prev_risk  = (string) $finding['risk_level'];
+		$prev_class = (string) $finding['sassh_classification'];
+		$prev_fp    = (string) $finding['content_fingerprint'];
+
+		if ( empty( $active ) ) {
+			$risk  = $prev_risk;
+			$class = $prev_class;
+			if ( ! $ratchet_only ) {
+				$risk  = 'info';
+				$class = 'no_action_needed';
+			}
+		} else {
+			$risk  = 'safe';
+			$class = 'no_action_needed';
+			foreach ( $active as $cat ) {
+				$risk = self::stronger_risk_level( $risk, (string) $cat['risk_level'] );
+				if ( 'needs_review' === (string) $cat['sassh_classification'] ) {
+					$class = 'needs_review';
+				}
+			}
+			if ( $ratchet_only ) {
+				$risk = self::stronger_risk_level( $prev_risk, $risk );
+				if ( 'needs_review' === $prev_class ) {
+					$class = 'needs_review';
+				}
+			}
+		}
+
+		$review_fp = self::compute_review_fingerprint(
+			(string) $finding['object_fingerprint'],
+			$risk,
+			$active
+		);
+
+		$table = Sassh_Findings_Schema::table( 'sassh_findings' );
+		$wpdb->update(
+			$table,
+			array(
+				'risk_level'           => $risk,
+				'sassh_classification' => $class,
+				'content_fingerprint'  => $review_fp,
+				'updated_at'           => current_time( 'mysql', true ),
 			),
 			array( 'finding_id' => $finding_id )
 		);
 
-		if ( 'not_detected' === $prev_detection ) {
-			$this->record_event( $finding_id, 'reappeared', $prev_detection, 'active', $execution_id, $execution['scan_run_id'], null );
+		if ( $prev_risk !== $risk ) {
+			$this->record_event( $finding_id, 'risk_changed', $prev_risk, $risk, $execution_id, $scan_run_id, null );
+		}
+		if ( $prev_class !== $class ) {
+			$this->record_event( $finding_id, 'classification_changed', $prev_class, $class, $execution_id, $scan_run_id, null );
+		}
+		if ( self::normalize_fingerprint( $prev_fp ) !== self::normalize_fingerprint( $review_fp ) ) {
+			$this->record_event( $finding_id, 'fingerprint_changed', $prev_fp, $review_fp, $execution_id, $scan_run_id, null );
+		}
+	}
 
-			// Sentinel fingerprints (e.g. missing files) cannot distinguish episodes; reopen review.
-			if ( self::should_invalidate_dismissal_on_reappearance( $rule_id, $content_fp ) ) {
-				$this->invalidate_dismissal( $finding_id, 'reappeared_after_absence', $execution_id, $execution['scan_run_id'] );
+	/**
+	 * Compute Finding review fingerprint (dismissal version).
+	 *
+	 * @param string                    $object_fp Object fingerprint.
+	 * @param string                    $risk      Aggregate risk.
+	 * @param array<int, array<string, mixed>> $active_categories Active categories.
+	 * @return string
+	 */
+	public static function compute_review_fingerprint( $object_fp, $risk, array $active_categories ) {
+		$parts = array();
+		foreach ( $active_categories as $cat ) {
+			$parts[] = (string) $cat['rule_id'] . '=' . self::normalize_fingerprint( $cat['category_fingerprint'] );
+		}
+		sort( $parts, SORT_STRING );
+
+		return 'sha256:' . self::hash_tuple(
+			array_merge(
+				array( (string) $object_fp, (string) $risk ),
+				$parts
+			)
+		);
+	}
+
+	/**
+	 * Categories for a finding.
+	 *
+	 * @param string      $finding_id Finding id.
+	 * @param string|null $state      Optional detection_state filter.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function get_categories_for_finding( $finding_id, $state = null ) {
+		global $wpdb;
+
+		$table = Sassh_Findings_Schema::table( 'sassh_finding_categories' );
+
+		if ( null === $state ) {
+			$rows = $wpdb->get_results(
+				$wpdb->prepare( "SELECT * FROM {$table} WHERE finding_id = %s ORDER BY rule_id ASC", $finding_id ),
+				ARRAY_A
+			);
+		} else {
+			$rows = $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT * FROM {$table} WHERE finding_id = %s AND detection_state = %s ORDER BY rule_id ASC",
+					$finding_id,
+					$state
+				),
+				ARRAY_A
+			);
+		}
+
+		return is_array( $rows ) ? $rows : array();
+	}
+
+	/**
+	 * Select primary category from active rows.
+	 *
+	 * @param array<int, array<string, mixed>> $categories Categories.
+	 * @return array<string, mixed>|null
+	 */
+	public static function select_primary_category( array $categories ) {
+		$best = null;
+		foreach ( $categories as $cat ) {
+			if ( 'active' !== (string) ( isset( $cat['detection_state'] ) ? $cat['detection_state'] : 'active' ) ) {
+				continue;
+			}
+			if ( null === $best ) {
+				$best = $cat;
+				continue;
+			}
+			$br = isset( self::$risk_rank[ $best['risk_level'] ] ) ? self::$risk_rank[ $best['risk_level'] ] : -1;
+			$cr = isset( self::$risk_rank[ $cat['risk_level'] ] ) ? self::$risk_rank[ $cat['risk_level'] ] : -1;
+			if ( $cr > $br ) {
+				$best = $cat;
+				continue;
+			}
+			if ( $cr < $br ) {
+				continue;
+			}
+			$bc = ( 'needs_review' === (string) $best['sassh_classification'] ) ? 1 : 0;
+			$cc = ( 'needs_review' === (string) $cat['sassh_classification'] ) ? 1 : 0;
+			if ( $cc > $bc ) {
+				$best = $cat;
+				continue;
+			}
+			if ( $cc < $bc ) {
+				continue;
+			}
+			if ( strcmp( (string) $cat['rule_id'], (string) $best['rule_id'] ) < 0 ) {
+				$best = $cat;
 			}
 		}
+		return $best;
+	}
 
-		if ( self::normalize_fingerprint( $prev_fp ) !== self::normalize_fingerprint( $content_fp ) ) {
-			$this->record_event( $finding_id, 'fingerprint_changed', $prev_fp, $content_fp, $execution_id, $execution['scan_run_id'], null );
-			$this->invalidate_dismissal( $finding_id, 'fingerprint_changed', $execution_id, $execution['scan_run_id'] );
+	/**
+	 * On success: clear unobserved categories; absent findings with no active cats.
+	 *
+	 * @param int                  $execution_id Execution id.
+	 * @param array<string, mixed> $execution    Execution row.
+	 * @return void
+	 */
+	private function reconcile_categories_on_success( $execution_id, array $execution ) {
+		global $wpdb;
+
+		$confirmed = isset( $this->observed_category_keys[ $execution_id ] )
+			? $this->observed_category_keys[ $execution_id ]
+			: array();
+		$observed_identities = isset( $this->observed_identity_keys[ $execution_id ] )
+			? $this->observed_identity_keys[ $execution_id ]
+			: array();
+
+		$findings_table = Sassh_Findings_Schema::table( 'sassh_findings' );
+		$cat_table      = Sassh_Findings_Schema::table( 'sassh_finding_categories' );
+		$scanner_id     = (string) $execution['scanner_id'];
+		$scope_key      = (string) $execution['scope_key'];
+		$now            = current_time( 'mysql', true );
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$findings = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$findings_table}
+				WHERE scanner_id = %s AND detection_state = %s AND last_scope_key = %s",
+				$scanner_id,
+				'active',
+				$scope_key
+			),
+			ARRAY_A
+		);
+
+		if ( ! is_array( $findings ) ) {
+			return;
 		}
 
-		if ( $prev_risk !== $risk_level ) {
-			$this->record_event( $finding_id, 'risk_changed', $prev_risk, $risk_level, $execution_id, $execution['scan_run_id'], null );
+		foreach ( $findings as $finding ) {
+			$finding_id   = (string) $finding['finding_id'];
+			$identity_key = (string) $finding['identity_key'];
 
-			if ( $this->risk_increased( $prev_risk, $risk_level ) ) {
-				$this->invalidate_dismissal( $finding_id, 'risk_increased', $execution_id, $execution['scan_run_id'] );
+			if ( ! isset( $observed_identities[ $identity_key ] ) ) {
+				continue; // Handled by mark_absent_within_scope.
 			}
-		}
 
-		if ( $prev_class !== $classification ) {
-			$this->record_event( $finding_id, 'classification_changed', $prev_class, $classification, $execution_id, $execution['scan_run_id'], null );
+			$cats = $this->get_categories_for_finding( $finding_id, 'active' );
+			foreach ( $cats as $cat ) {
+				$cat_key = $identity_key . "\0" . $cat['rule_id'];
+				if ( isset( $confirmed[ $cat_key ] ) ) {
+					continue;
+				}
+				$wpdb->update(
+					$cat_table,
+					array(
+						'detection_state' => 'not_detected',
+						'updated_at'      => $now,
+					),
+					array( 'category_id' => (string) $cat['category_id'] )
+				);
+				$this->record_event(
+					$finding_id,
+					'category_cleared',
+					'active',
+					'not_detected',
+					$execution_id,
+					$execution['scan_run_id'],
+					array( 'rule_id' => $cat['rule_id'] )
+				);
+			}
 
-			if ( 'needs_review' === $prev_class && 'no_action_needed' === $classification ) {
-				$this->invalidate_dismissal( $finding_id, 'classification_changed', $execution_id, $execution['scan_run_id'] );
+			$remaining = $this->get_categories_for_finding( $finding_id, 'active' );
+			if ( empty( $remaining ) ) {
+				$wpdb->update(
+					$findings_table,
+					array(
+						'detection_state' => 'not_detected',
+						'updated_at'      => $now,
+					),
+					array( 'finding_id' => $finding_id )
+				);
+				$this->record_event(
+					$finding_id,
+					'marked_not_detected',
+					'active',
+					'not_detected',
+					$execution_id,
+					$execution['scan_run_id'],
+					array( 'reason' => 'no_active_categories' )
+				);
+			} else {
+				$this->recompute_finding_aggregates( $finding_id, $execution_id, $execution['scan_run_id'], false );
 			}
 		}
 	}
@@ -1110,7 +1621,7 @@ class Sassh_Findings_Service {
 		$scanner_id = (string) $execution['scanner_id'];
 		$scope_key  = (string) $execution['scope_key'];
 		$observed   = isset( $this->observed_identity_keys[ $execution_id ] )
-			? array_keys( $this->observed_identity_keys[ $execution_id ] )
+			? $this->observed_identity_keys[ $execution_id ]
 			: array();
 
 		$table = Sassh_Findings_Schema::table( 'sassh_findings' );
@@ -1119,7 +1630,7 @@ class Sassh_Findings_Service {
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT finding_id, identity_key FROM {$table}
+				"SELECT finding_id, identity_key, detection_state FROM {$table}
 				WHERE scanner_id = %s AND detection_state = %s AND last_scope_key = %s",
 				$scanner_id,
 				'active',
@@ -1132,27 +1643,44 @@ class Sassh_Findings_Service {
 			return;
 		}
 
-		$observed_lookup = array_fill_keys( $observed, true );
-
 		foreach ( $rows as $row ) {
 			$identity = (string) $row['identity_key'];
-
-			if ( isset( $observed_lookup[ $identity ] ) ) {
+			if ( isset( $observed[ $identity ] ) ) {
 				continue;
 			}
 
 			$finding_id = (string) $row['finding_id'];
-
 			$wpdb->update(
 				$table,
 				array(
 					'detection_state' => 'not_detected',
 					'updated_at'      => $now,
 				),
-				array( 'finding_id' => $finding_id ),
-				array( '%s', '%s' ),
-				array( '%s' )
+				array( 'finding_id' => $finding_id )
 			);
+
+			// Clear active categories on fully absent object.
+			$cat_table = Sassh_Findings_Schema::table( 'sassh_finding_categories' );
+			$active_cats = $this->get_categories_for_finding( $finding_id, 'active' );
+			foreach ( $active_cats as $cat ) {
+				$wpdb->update(
+					$cat_table,
+					array(
+						'detection_state' => 'not_detected',
+						'updated_at'      => $now,
+					),
+					array( 'category_id' => (string) $cat['category_id'] )
+				);
+				$this->record_event(
+					$finding_id,
+					'category_cleared',
+					'active',
+					'not_detected',
+					$execution_id,
+					$execution['scan_run_id'],
+					array( 'rule_id' => $cat['rule_id'], 'reason' => 'finding_absent' )
+				);
+			}
 
 			$this->record_event(
 				$finding_id,
@@ -1167,12 +1695,77 @@ class Sassh_Findings_Service {
 	}
 
 	/**
+	 * After success reconcile: carry-forward or keep dismissals.
+	 *
+	 * @param int                  $execution_id Execution id.
+	 * @param array<string, mixed> $execution    Execution row.
+	 * @return void
+	 */
+	private function apply_success_dismissal_reconciliation( $execution_id, array $execution ) {
+		global $wpdb;
+
+		$observed = isset( $this->observed_identity_keys[ $execution_id ] )
+			? $this->observed_identity_keys[ $execution_id ]
+			: array();
+
+		if ( empty( $observed ) ) {
+			return;
+		}
+
+		$table = Sassh_Findings_Schema::table( 'sassh_findings' );
+		foreach ( array_keys( $observed ) as $identity_key ) {
+			$finding = $wpdb->get_row(
+				$wpdb->prepare( "SELECT * FROM {$table} WHERE identity_key = %s", $identity_key ),
+				ARRAY_A
+			);
+			if ( ! is_array( $finding ) || 'active' !== $finding['detection_state'] ) {
+				continue;
+			}
+
+			$finding_id = (string) $finding['finding_id'];
+			$valid      = $this->get_valid_dismissal( $finding_id );
+			if ( ! $valid ) {
+				continue;
+			}
+
+			// Strengthening already invalidated during record. Remaining = same or weakening.
+			$current_fp = self::normalize_fingerprint( $finding['content_fingerprint'] );
+			$reviewed   = self::normalize_fingerprint( $valid['reviewed_fingerprint'] );
+
+			if ( $current_fp === $reviewed ) {
+				continue;
+			}
+
+			// Carry forward onto weaker/cleared-category review fingerprint.
+			$now = current_time( 'mysql', true );
+			$dtable = Sassh_Findings_Schema::table( 'sassh_dismissal_decisions' );
+			$wpdb->update(
+				$dtable,
+				array(
+					'reviewed_fingerprint' => $current_fp,
+					'updated_at'           => $now,
+				),
+				array( 'dismissal_id' => (int) $valid['dismissal_id'] )
+			);
+			$this->record_event(
+				$finding_id,
+				'dismissal_carried_forward',
+				$reviewed,
+				$current_fp,
+				$execution_id,
+				$execution['scan_run_id'],
+				array( 'reason' => 'weakening_or_category_removal' )
+			);
+		}
+	}
+
+	/**
 	 * Invalidate current dismissal if present.
 	 *
-	 * @param string     $finding_id   Finding id.
-	 * @param string     $reason       Reason.
-	 * @param int|null   $execution_id Execution id.
-	 * @param string|null $scan_run_id Scan run id.
+	 * @param string      $finding_id   Finding id.
+	 * @param string      $reason       Reason.
+	 * @param int|null    $execution_id Execution id.
+	 * @param string|null $scan_run_id  Scan run id.
 	 * @return void
 	 */
 	private function invalidate_dismissal( $finding_id, $reason, $execution_id = null, $scan_run_id = null ) {
@@ -1256,14 +1849,14 @@ class Sassh_Findings_Service {
 		$wpdb->insert(
 			$table,
 			array(
-				'finding_id'            => $finding_id,
-				'scanner_execution_id'  => $execution_id,
-				'scan_run_id'           => $scan_run_id,
-				'event_type'            => $event_type,
-				'previous_value'        => is_string( $previous ) || null === $previous ? $previous : wp_json_encode( $previous ),
-				'current_value'         => is_string( $current ) || null === $current ? $current : wp_json_encode( $current ),
-				'occurred_at'           => current_time( 'mysql', true ),
-				'metadata'              => null === $metadata ? null : wp_json_encode( $metadata ),
+				'finding_id'           => $finding_id,
+				'scanner_execution_id' => $execution_id,
+				'scan_run_id'          => $scan_run_id,
+				'event_type'           => $event_type,
+				'previous_value'       => is_string( $previous ) || null === $previous ? $previous : wp_json_encode( $previous ),
+				'current_value'        => is_string( $current ) || null === $current ? $current : wp_json_encode( $current ),
+				'occurred_at'          => current_time( 'mysql', true ),
+				'metadata'             => null === $metadata ? null : wp_json_encode( $metadata ),
 			)
 		);
 	}
@@ -1281,7 +1874,19 @@ class Sassh_Findings_Service {
 	}
 
 	/**
-	 * Enrich finding with effective_status and labels.
+	 * @param string $from Previous risk.
+	 * @param string $to   New risk.
+	 * @return bool
+	 */
+	private function risk_decreased( $from, $to ) {
+		$from_rank = isset( self::$risk_rank[ $from ] ) ? self::$risk_rank[ $from ] : -1;
+		$to_rank   = isset( self::$risk_rank[ $to ] ) ? self::$risk_rank[ $to ] : -1;
+
+		return $to_rank < $from_rank;
+	}
+
+	/**
+	 * Enrich finding with effective_status, categories, guidance, labels.
 	 *
 	 * @param array<string, mixed>|null $row Finding row.
 	 * @return array<string, mixed>|null
@@ -1291,17 +1896,65 @@ class Sassh_Findings_Service {
 			return null;
 		}
 
+		$finding_id = (string) $row['finding_id'];
+		$all_cats   = $this->get_categories_for_finding( $finding_id );
+		$active     = array();
+		$cleared    = array();
+
+		foreach ( $all_cats as $cat ) {
+			$decoded = array();
+			if ( ! empty( $cat['metadata'] ) && is_string( $cat['metadata'] ) ) {
+				$tmp = json_decode( $cat['metadata'], true );
+				if ( is_array( $tmp ) ) {
+					$decoded = $tmp;
+				}
+			}
+			$item = array(
+				'category_id'            => $cat['category_id'],
+				'rule_id'                => $cat['rule_id'],
+				'risk_level'             => $cat['risk_level'],
+				'risk'                   => $cat['risk_level'],
+				'sassh_classification'   => $cat['sassh_classification'],
+				'category_fingerprint'   => $cat['category_fingerprint'],
+				'title'                  => $cat['title'],
+				'detection_state'        => $cat['detection_state'],
+				'first_seen_at'          => $cat['first_seen_at'],
+				'last_seen_at'           => $cat['last_seen_at'],
+				'metadata'               => $decoded,
+				'category_label'         => isset( $decoded['category_label'] ) ? $decoded['category_label'] : $cat['title'],
+			);
+			foreach ( $decoded as $k => $v ) {
+				if ( ! isset( $item[ $k ] ) ) {
+					$item[ $k ] = $v;
+				}
+			}
+			if ( 'active' === $cat['detection_state'] ) {
+				$active[] = $item;
+			} else {
+				$cleared[] = $item;
+			}
+		}
+
+		$primary = self::select_primary_category( $active );
+		$row['categories']            = $active;
+		$row['previously_detected']   = $cleared;
+		$row['extra_rule_count']      = max( 0, count( $active ) - 1 );
+		$row['primary_rule_id']       = $primary ? (string) $primary['rule_id'] : '';
+		$row['category_label']        = $primary
+			? ( isset( $primary['category_label'] ) ? (string) $primary['category_label'] : (string) $primary['title'] )
+			: '';
+		if ( $row['extra_rule_count'] > 0 && '' !== $row['category_label'] ) {
+			$row['category_label_display'] = $row['category_label'] . ' +' . $row['extra_rule_count'];
+		} else {
+			$row['category_label_display'] = $row['category_label'];
+		}
+
 		$classification = (string) $row['sassh_classification'];
 		$effective      = $classification;
 
 		if ( 'needs_review' === $classification ) {
-			$dismissal = $this->get_valid_dismissal( (string) $row['finding_id'] );
-
-			if (
-				$dismissal
-				&& self::normalize_fingerprint( $dismissal['reviewed_fingerprint'] )
-					=== self::normalize_fingerprint( $row['content_fingerprint'] )
-			) {
+			$dismissal = $this->get_valid_dismissal( $finding_id );
+			if ( $dismissal ) {
 				$effective = 'dismissed';
 				$row['dismissal'] = array(
 					'dismissed_at'         => $dismissal['dismissed_at'],
@@ -1326,6 +1979,28 @@ class Sassh_Findings_Service {
 						$row[ $key ] = $value;
 					}
 				}
+			}
+		}
+
+		// Prefer composed guidance; fall back to legacy metadata strings.
+		if ( class_exists( 'Sassh_Finding_Guidance_Composer' ) ) {
+			$guidance = Sassh_Finding_Guidance_Composer::compose( $active, (string) $row['scanner_id'] );
+			$row['guidance'] = $guidance;
+			if ( ! empty( $guidance['why'] ) ) {
+				$row['why_seeing_this'] = array_map(
+					static function ( $item ) {
+						return is_array( $item ) && isset( $item['text'] ) ? $item['text'] : (string) $item;
+					},
+					$guidance['why']
+				);
+			}
+			if ( ! empty( $guidance['how_to_proceed'] ) ) {
+				$row['how_to_proceed'] = array_map(
+					static function ( $item ) {
+						return is_array( $item ) && isset( $item['text'] ) ? $item['text'] : (string) $item;
+					},
+					$guidance['how_to_proceed']
+				);
 			}
 		}
 

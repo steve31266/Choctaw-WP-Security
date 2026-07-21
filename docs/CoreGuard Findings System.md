@@ -234,11 +234,13 @@ Identity examples (canonical tuples; not naïve string concatenation):
 
 ```text
 Shared file:
-  installation_id + scanner_id + rule_id + object_type:file + normalized_file_path
+  installation_id + scanner_id + object_type:file + normalized_file_path
 
 Subsite-owned database object:
-  installation_id + scanner_id + rule_id + object_type + blog_id + normalized_object_key
+  installation_id + scanner_id + object_type + blog_id + normalized_object_key
 ```
+
+**Phase 3.4.5:** `rule_id` is **not** part of Finding identity. Multiple rules on one object are **categories** on one Finding (see §5.2).
 
 Examples of normalized keys including blog identity: `blog:2 + option:siteurl`, `blog:3 + post:42`.
 
@@ -246,7 +248,9 @@ Object correlation for shared files uses installation + object type + path. Obje
 
 ### 3.11 Object correlation (not cross-scan suppression)
 
-Findings and dismissals remain **scanner- and rule-specific**. Dismissing a finding for an object does not dismiss another scanner’s or rule’s finding for the same object.
+Findings and dismissals remain **scanner-specific**. Dismissing a Finding for an object does not dismiss another scanner’s Finding for the same object.
+
+**Phase 3.4.5:** Within one scanner, multiple rules on the same object are **categories** of one Finding — not separate dismissible Findings. Object-level dismissal applies to the Finding’s aggregate reviewed state (see §5 / §7).
 
 CoreGuard shall also maintain an **object correlation key** so that related findings can be discovered and shown as context:
 
@@ -262,23 +266,24 @@ Conceptual layers:
 
 ```text
 Security scope         = installation_id
-Finding identity       = installation_id + scanner_id + rule_id + object_type + (blog_id if subsite-owned) + normalized_object_key
+Finding identity       = installation_id + scanner_id + object_type + (blog_id if subsite-owned) + normalized_object_key
 Object correlation     = installation_id + object_type + (blog_id if subsite-owned) + normalized_object_key
+Categories             = rule_id rows under the Finding (evidence / risk / fingerprints; not independently dismissible)
 Object fingerprint     = whole-object version; used for related-finding context
-Finding fingerprint    = rule-specific reviewed version; used for dismissal validity
-Review decision        = applies only to the specific finding (network-wide for that finding)
+Finding review fingerprint = composite of active category fingerprints + object fingerprint + aggregate risk; dismissal validity
+Review decision        = applies to the Finding (network-wide for that finding)
 ```
 
 Identity and correlation formulas represent **canonical tuples**, not naïve string concatenation. The implementation must use separately stored normalized fields or an unambiguous canonical encoding before hashing. It must not concatenate variable-length values without defined separators, escaping, or length encoding.
 
-Example (illustrative only — Shell Scan is a future consumer, not part of Findings delivery):
+Example:
 
-1. MU-Plugins reports `wp-content/mu-plugins/example.php` and the administrator dismisses that finding.
-2. A later scanner reports a different rule on the same file.
-3. The new finding remains Needs Review.
-4. Its detail / `findings get` context may indicate that MU-Plugins previously reported and dismissed the same object while the object fingerprint matched.
+1. MU-Plugins reports `wp-content/mu-plugins/example.php` and the administrator dismisses that Finding.
+2. Exposed Files later reports a different scanner Finding on a shared path.
+3. The Exposed Files Finding remains Needs Review.
+4. Related Findings may indicate the MU-Plugins Finding was dismissed while the object fingerprint matched.
 
-A future explicit `review_scope_id` or rule-equivalence group may allow shared review for rules that genuinely represent the same condition. CoreGuard must never infer equivalence merely because two findings reference the same path or object.
+A future explicit `review_scope_id` or rule-equivalence group may allow shared review across scanners for rules that genuinely represent the same condition. Sassh must never infer cross-scanner equivalence merely because two Findings reference the same path or object.
 
 ---
 
@@ -380,17 +385,21 @@ The current finding fingerprint shall not be embedded in the permanent finding i
 A normalized identity key should be derived from the canonical tuple:
 
 ```text
-installation_id + scanner_id + rule_id + object_type + (blog_id if subsite-owned) + normalized_object_key
+installation_id + scanner_id + object_type + (blog_id if subsite-owned) + normalized_object_key
 ```
+
+**Phase 3.4.5 (locked):** `rule_id` is **not** part of Finding identity. One Finding is one scanner’s assessment of one object. Fired rules are stored as **categories** (`sassh_finding_categories`) under that Finding.
 
 The stored `finding_id` may be an opaque identifier. The implementation should also enforce uniqueness for the normalized identity components where appropriate. Canonical encoding rules in §3.11 apply.
 
 Consequences:
 
-- Same object, same rule, unchanged finding fingerprint: same finding and same version.
-- Same object, same rule, changed finding fingerprint: same finding with a new version.
-- Same object, different rule: separate finding (correlation may link them; dismissals do not merge).
-- Different normalized object key: normally a different finding.
+- Same object, same scanner, unchanged review fingerprint: same Finding and same reviewed version.
+- Same object, same scanner, changed review fingerprint: same Finding with a new reviewed version.
+- Same object, multiple rules in one scanner: **one** Finding with multiple categories (not separate Findings).
+- Same object, different scanner: separate Findings (Related Findings may link them).
+- Different normalized object key: normally a different Finding.
+- Categories are not independently user-dismissible; dismissal is object-level for the Finding.
 
 ### 5.3 Object type registry
 
@@ -447,9 +456,11 @@ Each scanner integrated with the system shall document its object-key normalizat
 
 **Phase 3.3:** Database options (`database-scan`) registers `object_type=option` (first non-file Findings type). Identity includes a required registered-site `blog_id`. Related-on-expand is wired; natural cross-scanner peers for options are uncommon until later phases. Same-option multi-rule rows within this scanner may correlate.
 
-**Phase 3.4:** WP-Cron (`scheduled-tasks`) registers `object_type=cron_event`. Identity includes required registered-site `blog_id` (same options-table gate as 3.3). One Finding per fired problem-rule after aggregating physical entries that share `object_key`; recognized-only events are report inventory only. Related-on-expand may show same-event multi-rule peers within this scanner.
+**Phase 3.4:** WP-Cron (`scheduled-tasks`) registers `object_type=cron_event`. Identity includes required registered-site `blog_id` (same options-table gate as 3.3). Recognized-only events are report inventory only. *(Historical note: Phase 3.4 originally emitted one Finding per problem-rule; Phase **3.4.5** superseded that with object-level Findings + categories.)*
 
-**CLI/JSON (Phase 4):** Include related context on `findings get`. Do not include related findings in list responses by default.
+**Phase 3.4.5:** Object-level Findings across all migrated scanners. Admin Related Findings show **cross-scanner** peers only; same-scanner multi-rule reasons appear as categories (`+N` / detail). Structured guidance composition replaces concatenated per-rule paragraphs.
+
+**CLI/JSON (Phase 4):** Include related context on `findings get`. Do not include related findings in list responses by default. Public envelope uses object-level Findings with `categories[]`.
 
 Related summary requirements:
 
@@ -1174,22 +1185,35 @@ At minimum, automated tests shall cover:
 
 - Migrate `scheduled-tasks` onto `Sassh_Findings_Service`; register `object_type=cron_event`.
 - Identity: `hook#` + canonical args digest; required registered-site `blog_id` (reject foreign/orphaned options tables before begin).
-- Aggregate physical cron rows sharing an `object_key` → ≤1 observation per `object_key` + `rule_id`; object fingerprint uses sorted unique schedule/interval pairs.
-- One Finding per fired problem-rule; recognized-only events are non-dismissible report inventory (not Findings / not absence participants).
-- Rule-based risk (`stale-task` / `unknown-hook` / `unregistered-handler` → Suspicious); Critical only for documented `suspicious-arguments` combinations; legacy `review` and score-band authority retired.
-- `duplicate-task` retains `cron_event` identity; hook-name threshold fans out per hook+args object with threshold-family fingerprint (not raw count).
-- Sassh dismiss/undismiss; related-on-expand; Clear History removed; fresh start; dismiss cache rehydration; capped/sanitized argument previews.
+- Aggregate physical cron rows sharing an `object_key` → ≤1 observation per `object_key` + `rule_id` at producer time (later coalesced to object-level Findings in **3.4.5**).
+- Recognized-only events are non-dismissible report inventory (not Findings / not absence participants).
+- Rule-based risk; Sassh dismiss/undismiss; Clear History removed; fresh start.
+
+### Phase 3.4.5: Object-level Findings + structured guidance — **complete (2026-07-20)**
+
+Holistic Findings-system revision (not a cron-only fix):
+
+- Finding identity = `installation_id + scanner_id + object_type + (blog_id) + object_key` (**no** `rule_id`).
+- First-class `sassh_finding_categories`; Finding owns aggregate risk, classification, dismissal, absence.
+- Success-only negative category reconciliation; incomplete runs may **strengthen** (new category / risk up / reopen) but never weaken, clear, absent, or carry-forward dismissals.
+- Directional dismissal validity + `dismissal_carried_forward` audit on successful weakening.
+- Structured guidance contributions + subset recipe registry + fallback composer (required fixture: `unknown-hook` + `unregistered-handler` [+ `missing-source`]).
+- Destructive advice rendered conditionally; contribution-id conflicts fail validation.
+- Schema v2 destructive reset (retain `sassh_installation_id`); all six migrated scanners on the same contract.
+- Supersedes Phase 3.4 Q1 A (one Finding per problem-rule) and earlier rule-in-identity assumptions from Phases 1–3.4.
+- Next = Phase **3.5** (only after regression matrix + docs consistency).
 
 ### Phase 3.5–3.8: Remaining scanner migrations and closeout — **pending**
 
-Narrowly scoped plans, one phase at a time (same pattern as 3.0–3.4). Registry expansion travels with the first consumer. See §11.
+Narrowly scoped plans, one phase at a time (same pattern as 3.0–3.4). Registry expansion travels with the first consumer. See §11. **Phase 3.5 must not begin until Phase 3.4.5 regression acceptance passes.**
 
 | Phase | Scope | Status |
 | --- | --- | --- |
-| **3.1** | Core checksums (`verify-checksums`) | complete (2026-07-19) |
-| **3.2** | Exposed sensitive files (`exposed-files`) | complete (2026-07-19) |
-| **3.3** | Database options (`database-scan`); register `option` | complete (2026-07-20) |
-| **3.4** | WP-Cron (`scheduled-tasks`); register `cron_event` | complete (2026-07-20) |
+| **3.1** | Core checksums (`verify-checksums`) | complete (2026-07-19); converted to object-level in 3.4.5 |
+| **3.2** | Exposed sensitive files (`exposed-files`) | complete (2026-07-19); converted to object-level in 3.4.5 |
+| **3.3** | Database options (`database-scan`); register `option` | complete (2026-07-20); converted to object-level in 3.4.5 |
+| **3.4** | WP-Cron (`scheduled-tasks`); register `cron_event` | complete (2026-07-20); object-level supersession in 3.4.5 |
+| **3.4.5** | Object-level Findings + categories + guidance | complete (2026-07-20) |
 | **3.5** | Vulnerabilities / unrecognized components | pending |
 | **3.6** | Directory Browsing (`exposed-folders`); exposure/config object type | pending |
 | **3.7** | wp_posts (`wp-posts`) — optional | pending |
@@ -1197,12 +1221,12 @@ Narrowly scoped plans, one phase at a time (same pattern as 3.0–3.4). Registry
 
 ### Phase 4: CLI and JSON contract — **after 3.x progress (not blocked on 3.8)**
 
-- Define a versioned JSON schema for the common finding envelope (`risk_level`, classification, effective status).
+- Define a versioned JSON schema for the common finding envelope (`risk_level`, classification, effective status, `categories[]`).
 - Implement list, get (with related), dismiss, and undismiss commands.
 - Add filtering, pagination, and structured errors.
 - Test concurrency and stale-fingerprint rejection.
 
-Prefer migrating at least **3.1** and **3.2** before freezing the public CLI surface so related findings and multi-scanner list/get are meaningful; Phase 4 may start earlier if product priority requires it.
+Prefer migrating at least **3.1** and **3.2** before freezing the public CLI surface so related findings and multi-scanner list/get are meaningful; Phase 4 may start earlier if product priority requires it. Envelope must match Phase **3.4.5** object-level Findings.
 
 ### Phase 5: Desktop integration
 
@@ -1216,7 +1240,7 @@ Prefer migrating at least **3.1** and **3.2** before freezing the public CLI sur
 
 - Scan Site aggregate orchestration, scheduled scans, email notifications, Home summary (§12).
 
-**Next deliverable:** Phase **3.5** implementation plan (Vulnerabilities / unrecognized components → Findings), then implementation after approval.
+**Next deliverable:** Phase **3.5** implementation plan (Vulnerabilities / unrecognized components → Findings), then implementation after approval — **only after** Phase 3.4.5 acceptance.
 
 ---
 

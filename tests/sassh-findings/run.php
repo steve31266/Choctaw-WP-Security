@@ -563,6 +563,86 @@ $long = str_repeat( 'x', 500 );
 $capped = Sassh_Cron_Event_Key_Normalizer::sanitize_args_preview( $long, 40 );
 sassh_assert( 'args preview capped', strlen( $capped['preview'] ) <= 40 && ! empty( $capped['truncated'] ) );
 
+// --- Phase 3.4.5 object-level helpers / guidance ---
+$object_id_a = Sassh_Findings_Service::hash_tuple( array( 'inst', 'scheduled-tasks', 'cron_event', '1', 'hook#abc' ) );
+$object_id_b = Sassh_Findings_Service::hash_tuple( array( 'inst', 'scheduled-tasks', 'cron_event', '1', 'hook#abc' ) );
+$rule_id_legacy = Sassh_Findings_Service::hash_tuple( array( 'inst', 'scheduled-tasks', 'unknown-hook', 'cron_event', '1', 'hook#abc' ) );
+sassh_assert( 'object identity excludes rule_id (stable)', $object_id_a === $object_id_b );
+sassh_assert( 'object identity differs from legacy rule identity', $object_id_a !== $rule_id_legacy );
+
+$primary = Sassh_Findings_Service::select_primary_category(
+	array(
+		array(
+			'rule_id'              => 'unknown-hook',
+			'risk_level'           => 'suspicious',
+			'sassh_classification' => 'needs_review',
+			'detection_state'      => 'active',
+			'category_fingerprint' => 'sha256:a',
+		),
+		array(
+			'rule_id'              => 'suspicious-hook-name',
+			'risk_level'           => 'warning',
+			'sassh_classification' => 'needs_review',
+			'detection_state'      => 'active',
+			'category_fingerprint' => 'sha256:b',
+		),
+	)
+);
+sassh_assert( 'primary category prefers higher risk', is_array( $primary ) && 'suspicious-hook-name' === $primary['rule_id'] );
+
+$review_fp = Sassh_Findings_Service::compute_review_fingerprint(
+	'sha256:obj',
+	'warning',
+	array(
+		array( 'rule_id' => 'unknown-hook', 'category_fingerprint' => 'sha256:a' ),
+		array( 'rule_id' => 'unregistered-handler', 'category_fingerprint' => 'sha256:b' ),
+	)
+);
+$review_fp2 = Sassh_Findings_Service::compute_review_fingerprint(
+	'sha256:obj',
+	'warning',
+	array(
+		array( 'rule_id' => 'unregistered-handler', 'category_fingerprint' => 'sha256:b' ),
+		array( 'rule_id' => 'unknown-hook', 'category_fingerprint' => 'sha256:a' ),
+	)
+);
+sassh_assert( 'review fingerprint order-independent for categories', $review_fp === $review_fp2 );
+
+$guidance = Sassh_Finding_Guidance_Composer::compose(
+	array(
+		array( 'rule_id' => 'unknown-hook', 'detection_state' => 'active' ),
+		array( 'rule_id' => 'unregistered-handler', 'detection_state' => 'active' ),
+	),
+	'scheduled-tasks'
+);
+sassh_assert( 'cron recipe selected for unknown-hook+unregistered-handler', 'scheduled-tasks/unknown-hook+unregistered-handler' === $guidance['recipe_id'] );
+sassh_assert( 'cron recipe why non-empty', ! empty( $guidance['why'] ) );
+sassh_assert( 'cron recipe how non-empty', ! empty( $guidance['how_to_proceed'] ) );
+
+$guidance3 = Sassh_Finding_Guidance_Composer::compose(
+	array(
+		array( 'rule_id' => 'unknown-hook', 'detection_state' => 'active' ),
+		array( 'rule_id' => 'unregistered-handler', 'detection_state' => 'active' ),
+		array( 'rule_id' => 'missing-source', 'detection_state' => 'active' ),
+	),
+	'scheduled-tasks'
+);
+sassh_assert( 'subset recipe still applies with missing-source', 'scheduled-tasks/unknown-hook+unregistered-handler' === $guidance3['recipe_id'] );
+
+$dual = Sassh_Finding_Guidance_Composer::compose(
+	array(
+		array( 'rule_id' => 'unknown-hook', 'detection_state' => 'active' ),
+	),
+	'scheduled-tasks'
+);
+sassh_assert( 'single unknown-hook uses lower-priority or fallback recipe', in_array( $dual['recipe_id'], array( 'scheduled-tasks/unknown-hook-only', 'fallback' ), true ) );
+
+$how_text = '';
+foreach ( $guidance['how_to_proceed'] as $step ) {
+	$how_text .= is_array( $step ) ? (string) $step['text'] : (string) $step;
+}
+sassh_assert( 'destructive cron advice is conditional', false !== stripos( $how_text, 'if you confirm' ) );
+
 // --- Capabilities ---
 $GLOBALS['sassh_test_is_multisite'] = false;
 $GLOBALS['sassh_test_caps']         = array( 'manage_options' => true );

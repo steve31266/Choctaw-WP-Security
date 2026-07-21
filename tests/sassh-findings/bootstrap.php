@@ -66,6 +66,7 @@ require_once $root . '/coreguard/includes/class-sassh-object-path-normalizer.php
 require_once $root . '/coreguard/includes/class-sassh-object-type-registry.php';
 require_once $root . '/coreguard/includes/class-sassh-option-key-normalizer.php';
 require_once $root . '/coreguard/includes/class-sassh-findings-service.php';
+require_once $root . '/coreguard/includes/class-sassh-finding-guidance-composer.php';
 require_once $root . '/coreguard/includes/class-sassh-cron-event-key-normalizer.php';
 require_once $root . '/coreguard/includes/class-exposed-files-patterns.php';
 require_once $root . '/coreguard/includes/class-options-scan-patterns.php';

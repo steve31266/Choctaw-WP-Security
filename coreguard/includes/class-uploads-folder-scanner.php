@@ -175,6 +175,10 @@ class Choctaw_Wp_Security_Uploads_Folder_Scanner {
 				'first_seen_at'       => $row['first_seen_at'],
 				'last_seen_at'        => $row['last_seen_at'],
 				'detection_state'     => $row['detection_state'],
+				'categories'          => ( isset( $row['categories'] ) && is_array( $row['categories'] ) ) ? $row['categories'] : array(),
+				'category_label_display' => isset( $row['category_label_display'] ) ? $row['category_label_display'] : ( isset( $row['category_label'] ) ? $row['category_label'] : '' ),
+				'extra_rule_count'    => isset( $row['extra_rule_count'] ) ? (int) $row['extra_rule_count'] : 0,
+				'guidance'            => ( isset( $row['guidance'] ) && is_array( $row['guidance'] ) ) ? $row['guidance'] : array(),
 			);
 
 			if ( 'warning' === $finding['risk_level'] || 'critical' === $finding['risk_level'] ) {
