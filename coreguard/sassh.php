@@ -3,7 +3,7 @@
  * Plugin Name:       Sassh Security
  * Plugin URI:        https://github.com/steve31266/Choctaw-WP-Security
  * Description:       Cleans core files from malware infections, makes it extremely difficult for hackers and malware to get in, scans your website for infected files and database records.
- * Version:           1.9.3.5
+ * Version:           1.9.3.6
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Sashtastic, LLC
@@ -16,7 +16,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'CHOCTAW_WP_SECURITY_VERSION', '1.9.3.5' );
+define( 'CHOCTAW_WP_SECURITY_VERSION', '1.9.3.6' );
 define( 'CHOCTAW_WP_SECURITY_FILE', __FILE__ );
 define( 'CHOCTAW_WP_SECURITY_PATH', plugin_dir_path( __FILE__ ) );
 define( 'CHOCTAW_WP_SECURITY_URL', plugin_dir_url( __FILE__ ) );
@@ -32,6 +32,9 @@ require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-sassh-findings-schema.ph
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-sassh-findings-service.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-sassh-finding-guidance-composer.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-sassh-cron-event-key-normalizer.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-sassh-component-key-normalizer.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-sassh-directory-exposure-key-normalizer.php';
+require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-sassh-recognized-components-registry.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-plugin.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-directory-browsing-scanner.php';
 require_once CHOCTAW_WP_SECURITY_PATH . 'includes/class-admin-help-content.php';

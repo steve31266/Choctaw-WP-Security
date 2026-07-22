@@ -17,7 +17,8 @@
 
 	var riskOrder = {
 		critical: 5,
-		review: 4,
+		warning: 4,
+		suspicious: 3,
 		info: 2,
 		safe: 1
 	};
@@ -157,7 +158,8 @@
 	function riskLabel(risk) {
 		var map = {
 			critical: strings.riskCritical || 'Critical',
-			review: strings.riskReview || 'Review',
+			warning: strings.riskWarning || 'Warning',
+			suspicious: strings.riskSuspicious || 'Suspicious',
 			safe: strings.riskSafe || 'Safe',
 			info: strings.riskInfo || 'Info'
 		};
@@ -282,8 +284,8 @@
 
 		riskLabelEl.appendChild(createElement('span', 'screen-reader-text', strings.risk || 'Risk'));
 		riskSelect.appendChild(new Option(strings.allRisks || 'All risks', ''));
-		riskSelect.appendChild(new Option(strings.riskCritical || 'Critical', 'critical'));
-		riskSelect.appendChild(new Option(strings.riskReview || 'Review', 'review'));
+		riskSelect.appendChild(new Option(strings.riskWarning || 'Warning', 'warning'));
+		riskSelect.appendChild(new Option(strings.riskSuspicious || 'Suspicious', 'suspicious'));
 		riskSelect.appendChild(new Option(strings.riskSafe || 'Safe', 'safe'));
 		riskSelect.appendChild(new Option(strings.riskInfo || 'Info', 'info'));
 		riskSelect.value = uiState.risk;
@@ -373,6 +375,10 @@
 				uiState.expandedId = '';
 				renderResult(resultState);
 			});
+		}
+
+		if (window.CwsReportRelatedFindings && typeof window.CwsReportRelatedFindings.appendRelatedFindings === 'function') {
+			window.CwsReportRelatedFindings.appendRelatedFindings(right, finding);
 		}
 
 		grid.appendChild(left);
@@ -473,25 +479,40 @@
 
 	function renderSummary(resultsEl, result) {
 		var summary = result.summary || {};
-		var critical = parseInt(summary.critical, 10) || 0;
-		var review = parseInt(summary.review, 10) || 0;
+		var warning = parseInt(summary.warning, 10) || 0;
+		var suspicious = parseInt(summary.suspicious, 10) || 0;
 		var safe = parseInt(summary.safe, 10) || 0;
 		var info = parseInt(summary.info, 10) || 0;
-		var className = (critical > 0 || review > 0) ? 'cws-core-checksum-results is-error' : 'cws-core-checksum-results is-success';
+		var incomplete = !!(result.scan_incomplete || result.completion_status === 'partial' || result.completion_status === 'failed');
+		var confirmed = parseInt(result.confirmed_this_run, 10) || 0;
+		var total = collectFindings(result).length;
+		var retained = Math.max(0, total - confirmed);
+		var className = incomplete
+			? 'cws-core-checksum-results is-warning'
+			: ((warning > 0 || suspicious > 0) ? 'cws-core-checksum-results is-error' : 'cws-core-checksum-results is-success');
 		var panel = createElement('div', className);
 		var message;
 
-		if (critical > 0 || review > 0) {
+		if (incomplete) {
 			message = format(
-				strings.scanCompleteIssues || 'Scan complete. %1$s critical, %2$s review, %3$s safe, and %4$s informational finding(s).',
-				numberFormat(critical),
-				numberFormat(review),
+				strings.scanIncomplete || 'Scan incomplete. Previously detected findings were not cleared. Confirmed this run: %1$s. Retained from earlier runs: %2$s.',
+				numberFormat(confirmed),
+				numberFormat(retained)
+			);
+			if (result.errors && result.errors.length) {
+				message += ' ' + text(result.errors[0]);
+			}
+		} else if (warning > 0 || suspicious > 0) {
+			message = format(
+				strings.scanCompleteIssues || 'Scan complete. %1$s warning, %2$s suspicious, %3$s safe, and %4$s informational finding(s).',
+				numberFormat(warning),
+				numberFormat(suspicious),
 				numberFormat(safe),
 				numberFormat(info)
 			);
 		} else {
 			message = format(
-				strings.scanCompleteClean || 'Scan complete. No critical or review findings. %1$s safe and %2$s informational item(s) reported.',
+				strings.scanCompleteClean || 'Scan complete. No warning or suspicious findings. %1$s safe and %2$s informational item(s) reported.',
 				numberFormat(safe),
 				numberFormat(info)
 			);

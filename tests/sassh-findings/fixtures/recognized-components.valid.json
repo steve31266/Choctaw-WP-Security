@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "main_file": "coreguard/sassh.php",
+      "name": "Sassh Security",
+      "vendor": "Sashtastic, LLC"
+    },
+    {
+      "main_file": "acme\\\\widget\\\\plugin.php",
+      "name": "Acme Widget"
+    },
+    {
+      "main_file": "../evil.php",
+      "name": "Traversal Reject"
+    },
+    {
+      "name": "Missing Main File"
+    },
+    {
+      "main_file": "dup/plugin.php",
+      "name": "First Dup"
+    },
+    {
+      "main_file": "dup/plugin.php",
+      "name": "Second Dup"
+    }
+  ],
+  "themes": [
+    {
+      "stylesheet": "generatepress_child",
+      "name": "GeneratePress Child",
+      "vendor": "Tom Usborne"
+    },
+    {
+      "stylesheet": "bad/path",
+      "name": "Path Theme"
+    },
+    {
+      "stylesheet": "dup-theme",
+      "name": "First Theme Dup"
+    },
+    {
+      "stylesheet": "dup-theme",
+      "name": "Second Theme Dup"
+    }
+  ]
+}

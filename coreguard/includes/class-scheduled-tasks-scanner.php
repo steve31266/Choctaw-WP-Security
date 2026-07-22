@@ -1016,6 +1016,8 @@ class Choctaw_Wp_Security_Scheduled_Tasks_Scanner {
 				'status'                  => $row['effective_status'],
 				'status_label'            => $row['status_label'],
 				'effective_status'        => $row['effective_status'],
+				'can_dismiss'             => ! empty( $row['can_dismiss'] ),
+				'dismissal_control_state' => isset( $row['dismissal_control_state'] ) ? $row['dismissal_control_state'] : Sassh_Findings_Service::dismissal_control_state( $row ),
 				'options_table'           => isset( $row['options_table'] ) ? $row['options_table'] : $this->options_table,
 				'blog_id'                 => isset( $row['blog_id'] ) ? (int) $row['blog_id'] : null,
 				'first_seen_at'           => $row['first_seen_at'],

@@ -43,6 +43,7 @@ class Choctaw_Wp_Security_Settings {
 		add_action( 'wp_ajax_choctaw_wp_security_mu_plugins_scan', array( $this, 'ajax_mu_plugins_scan' ) );
 		add_action( 'wp_ajax_choctaw_wp_security_core_checksum_scan', array( $this, 'ajax_core_checksum_scan' ) );
 		add_action( 'wp_ajax_choctaw_wp_security_exposed_files_scan', array( $this, 'ajax_exposed_files_scan' ) );
+		add_action( 'wp_ajax_choctaw_wp_security_component_scan', array( $this, 'ajax_component_scan' ) );
 		add_action( 'wp_ajax_choctaw_wp_security_directory_browsing_scan', array( $this, 'ajax_directory_browsing_scan' ) );
 		add_action( 'wp_ajax_choctaw_wp_security_users_table_load', array( $this, 'ajax_users_table_load' ) );
 		add_action( 'wp_ajax_choctaw_wp_security_user_activity_load', array( $this, 'ajax_user_activity_load' ) );
@@ -2064,6 +2065,39 @@ class Choctaw_Wp_Security_Settings {
 	}
 
 	/**
+	 * Handle an AJAX component vulnerability scan request.
+	 *
+	 * @return void
+	 */
+	public function ajax_component_scan() {
+		if ( ! Sassh_Capabilities::current_user_can_manage() ) {
+			wp_send_json_error(
+				array(
+					'message' => __( 'You do not have permission to run vulnerability scans.', 'choctaw-wp-security' ),
+				),
+				403
+			);
+		}
+
+		check_ajax_referer( 'choctaw_wp_security_component_scan_ajax', 'nonce' );
+
+		$scanner = new Choctaw_Wp_Security_Component_Vulnerability_Scanner();
+		$result  = $scanner->scan();
+
+		$result = $this->save_report_result(
+			$this->get_component_scan_result_transient_key(),
+			Choctaw_Wp_Security_Utils::USER_META_COMPONENT_SCAN_RESULT,
+			$result
+		);
+
+		wp_send_json_success(
+			array(
+				'result' => $result,
+			)
+		);
+	}
+
+	/**
 	 * Handle a manual exposed folders scan request.
 	 *
 	 * @return void
@@ -2786,6 +2820,7 @@ class Choctaw_Wp_Security_Settings {
 					'dismissed'         => __( 'Dismissed', 'choctaw-wp-security' ),
 					'allStatuses'       => __( 'All statuses', 'choctaw-wp-security' ),
 					'dismissThisItem'   => __( 'Dismiss this item', 'choctaw-wp-security' ),
+					'notDismissible'    => __( 'This finding does not require review and cannot be dismissed.', 'choctaw-wp-security' ),
 					'submit'            => __( 'Submit', 'choctaw-wp-security' ),
 					'statusError'       => __( 'The status could not be updated.', 'choctaw-wp-security' ),
 					'clearHistory'      => __( 'Clear History', 'choctaw-wp-security' ),
@@ -3415,7 +3450,7 @@ class Choctaw_Wp_Security_Settings {
 			wp_enqueue_script(
 				'choctaw-wp-security-directory-browsing',
 				CHOCTAW_WP_SECURITY_URL . 'assets/js/admin-directory-browsing.js',
-				array( 'choctaw-wp-security-admin-help', 'choctaw-wp-security-report-status', 'choctaw-wp-security-report-pagination' ),
+				array( 'choctaw-wp-security-admin-help', 'choctaw-wp-security-report-status', 'choctaw-wp-security-report-related-findings', 'choctaw-wp-security-report-pagination' ),
 				(string) filemtime( CHOCTAW_WP_SECURITY_PATH . 'assets/js/admin-directory-browsing.js' ),
 				true
 			);
@@ -3447,7 +3482,8 @@ class Choctaw_Wp_Security_Settings {
 						'actions'               => __( 'Action', 'choctaw-wp-security' ),
 						'allRisks'              => __( 'All risks', 'choctaw-wp-security' ),
 						'riskCritical'          => __( 'Critical', 'choctaw-wp-security' ),
-						'riskReview'            => __( 'Review', 'choctaw-wp-security' ),
+						'riskWarning'           => __( 'Warning', 'choctaw-wp-security' ),
+						'riskSuspicious'        => __( 'Suspicious', 'choctaw-wp-security' ),
 						'riskSafe'              => __( 'Safe', 'choctaw-wp-security' ),
 						'riskInfo'              => __( 'Info', 'choctaw-wp-security' ),
 						'infoPanel'             => __( 'Info', 'choctaw-wp-security' ),
@@ -3461,82 +3497,118 @@ class Choctaw_Wp_Security_Settings {
 						'hideDetails'           => __( 'Hide details', 'choctaw-wp-security' ),
 						'search'                => __( 'Search', 'choctaw-wp-security' ),
 						'searchPlaceholder'     => __( 'Search path…', 'choctaw-wp-security' ),
-						'scanCompleteIssues'    => __( 'Scan complete. %1$s critical, %2$s review, %3$s safe, and %4$s informational finding(s).', 'choctaw-wp-security' ),
-						'scanCompleteClean'     => __( 'Scan complete. No critical or review findings. %1$s safe and %2$s informational item(s) reported.', 'choctaw-wp-security' ),
+						'scanCompleteIssues'    => __( 'Scan complete. %1$s warning, %2$s suspicious, %3$s safe, and %4$s informational finding(s).', 'choctaw-wp-security' ),
+						'scanCompleteClean'     => __( 'Scan complete. No warning or suspicious findings. %1$s safe and %2$s informational item(s) reported.', 'choctaw-wp-security' ),
+						'scanIncomplete'        => __( 'Scan incomplete. Previously detected findings were not cleared. Confirmed this run: %1$s. Retained from earlier runs: %2$s.', 'choctaw-wp-security' ),
+						'listingNotObserved'    => __( 'Directory listing not observed', 'choctaw-wp-security' ),
+						'listingOpen'           => __( 'Listing open', 'choctaw-wp-security' ),
+						'listingUnknown'        => __( 'Unknown', 'choctaw-wp-security' ),
 					),
 				)
 			);
 		}
 
 		if ( 'component-scan' === $this->get_active_admin_tab() ) {
-			$component_result = false;
-
-			if ( isset( $_GET['component_scan_run'] ) ) {
-				$component_result = $this->load_report_result(
-					$this->get_component_scan_result_transient_key(),
-					Choctaw_Wp_Security_Utils::USER_META_COMPONENT_SCAN_RESULT
-				);
-			}
-
-			$unrecognized_result = null;
-
-			if ( is_array( $component_result ) ) {
-				$unrecognized_result = array(
-					'findings' => isset( $component_result['findings'] ) && is_array( $component_result['findings'] )
-						? $component_result['findings']
-						: array(),
-				);
-			}
-
 			wp_enqueue_style(
-				'choctaw-wp-security-unrecognized-components',
-				CHOCTAW_WP_SECURITY_URL . 'assets/css/admin-unrecognized-components.css',
+				'choctaw-wp-security-component-scan',
+				CHOCTAW_WP_SECURITY_URL . 'assets/css/admin-component-scan.css',
 				array( 'choctaw-wp-security-report-risk' ),
-				(string) filemtime( CHOCTAW_WP_SECURITY_PATH . 'assets/css/admin-unrecognized-components.css' )
+				(string) filemtime( CHOCTAW_WP_SECURITY_PATH . 'assets/css/admin-component-scan.css' )
 			);
 
 			wp_enqueue_script(
-				'choctaw-wp-security-unrecognized-components',
-				CHOCTAW_WP_SECURITY_URL . 'assets/js/admin-unrecognized-components.js',
-				array( 'choctaw-wp-security-admin-help', 'choctaw-wp-security-report-status', 'choctaw-wp-security-report-pagination' ),
-				(string) filemtime( CHOCTAW_WP_SECURITY_PATH . 'assets/js/admin-unrecognized-components.js' ),
+				'choctaw-wp-security-component-scan',
+				CHOCTAW_WP_SECURITY_URL . 'assets/js/admin-component-scan.js',
+				array( 'choctaw-wp-security-admin-help', 'choctaw-wp-security-report-status', 'choctaw-wp-security-report-related-findings', 'choctaw-wp-security-report-pagination' ),
+				(string) filemtime( CHOCTAW_WP_SECURITY_PATH . 'assets/js/admin-component-scan.js' ),
 				true
 			);
 
 			wp_localize_script(
-				'choctaw-wp-security-unrecognized-components',
-				'choctawWpSecurityUnrecognizedComponents',
+				'choctaw-wp-security-component-scan',
+				'choctawWpSecurityComponentScan',
 				array(
-					'scanType'      => 'unrecognized-components',
+					'ajaxUrl'       => admin_url( 'admin-ajax.php' ),
+					'nonce'         => wp_create_nonce( 'choctaw_wp_security_component_scan_ajax' ),
+					'scanType'      => 'component-scan',
 					'pageSize'      => $this->get_report_page_size(),
-					'itemNoun'      => __( 'components', 'choctaw-wp-security' ),
-					'initialResult' => $unrecognized_result,
+					'itemNoun'      => __( 'findings', 'choctaw-wp-security' ),
+					'initialResult' => $this->load_report_result(
+						$this->get_component_scan_result_transient_key(),
+						Choctaw_Wp_Security_Utils::USER_META_COMPONENT_SCAN_RESULT
+					),
 					'strings'       => array(
-						'noFindings'            => __( 'No unrecognized components matched the current filters.', 'choctaw-wp-security' ),
-						'allRecognized'         => __( 'All installed plugins and themes were recognized by the API.', 'choctaw-wp-security' ),
-						'risk'                  => __( 'Risk', 'choctaw-wp-security' ),
-						'status'                => __( 'Status', 'choctaw-wp-security' ),
-						'category'              => __( 'Category', 'choctaw-wp-security' ),
-						'name'                  => __( 'Name', 'choctaw-wp-security' ),
-						'state'                 => __( 'State', 'choctaw-wp-security' ),
-						'actions'               => __( 'Action', 'choctaw-wp-security' ),
-						'allRisks'              => __( 'All risks', 'choctaw-wp-security' ),
-						'allCategories'         => __( 'All categories', 'choctaw-wp-security' ),
-						'riskInfo'              => __( 'Info', 'choctaw-wp-security' ),
-						'categoryPlugin'        => __( 'Plugin', 'choctaw-wp-security' ),
-						'categoryTheme'         => __( 'Theme', 'choctaw-wp-security' ),
-						'infoPanel'             => __( 'Info', 'choctaw-wp-security' ),
-						'slug'                  => __( 'Slug', 'choctaw-wp-security' ),
-						'version'               => __( 'Version', 'choctaw-wp-security' ),
-						'contentsHeading'       => __( 'Contents', 'choctaw-wp-security' ),
-						'whySeeingThis'         => __( 'Why you are seeing this', 'choctaw-wp-security' ),
-						'howToProceed'          => __( 'How to proceed', 'choctaw-wp-security' ),
-						'whySeeingThisFallback' => __( 'This component could not be identified by the WPVulnerability API.', 'choctaw-wp-security' ),
-						'howToProceedFallback'  => __( 'Review this component and dismiss it if you believe it is safe.', 'choctaw-wp-security' ),
-						'viewDetails'           => __( 'View details', 'choctaw-wp-security' ),
-						'hideDetails'           => __( 'Hide details', 'choctaw-wp-security' ),
-						'search'                => __( 'Search', 'choctaw-wp-security' ),
-						'searchPlaceholder'     => __( 'Search name…', 'choctaw-wp-security' ),
+						'scanButton'              => __( 'Scan Now', 'choctaw-wp-security' ),
+						'rescanButton'            => __( 'Rescan', 'choctaw-wp-security' ),
+						'scanning'                => __( 'Scanning installed components for known vulnerabilities...', 'choctaw-wp-security' ),
+						'scanError'               => __( 'The vulnerability scan could not be completed.', 'choctaw-wp-security' ),
+						'noFindings'              => __( 'No findings matched the current filters.', 'choctaw-wp-security' ),
+						'risk'                    => __( 'Risk', 'choctaw-wp-security' ),
+						'status'                  => __( 'Status', 'choctaw-wp-security' ),
+						'category'                => __( 'Category', 'choctaw-wp-security' ),
+						'type'                    => __( 'Type', 'choctaw-wp-security' ),
+						'allRisks'                => __( 'All risks', 'choctaw-wp-security' ),
+						'allTypes'                => __( 'All types', 'choctaw-wp-security' ),
+						'typeVulnerability'       => __( 'Known Vulnerability', 'choctaw-wp-security' ),
+						'typeUnrecognized'        => __( 'Unrecognized Component', 'choctaw-wp-security' ),
+						'riskWarning'             => __( 'Warning', 'choctaw-wp-security' ),
+						'riskSuspicious'          => __( 'Suspicious', 'choctaw-wp-security' ),
+						'component'               => __( 'Component', 'choctaw-wp-security' ),
+						'version'                 => __( 'Version', 'choctaw-wp-security' ),
+						'componentVersion'        => __( 'Version %s', 'choctaw-wp-security' ),
+						'actions'                 => __( 'Action', 'choctaw-wp-security' ),
+						'infoPanel'               => __( 'Info', 'choctaw-wp-security' ),
+						'kind'                    => __( 'Kind', 'choctaw-wp-security' ),
+						'kindCore'                => __( 'WordPress Core', 'choctaw-wp-security' ),
+						'kindTheme'               => __( 'Theme', 'choctaw-wp-security' ),
+						'kindPlugin'              => __( 'Plugin', 'choctaw-wp-security' ),
+						'slug'                    => __( 'Slug', 'choctaw-wp-security' ),
+						'file'                    => __( 'File', 'choctaw-wp-security' ),
+						'stylesheet'              => __( 'Stylesheet', 'choctaw-wp-security' ),
+						'pluginUri'               => __( 'Plugin URI', 'choctaw-wp-security' ),
+						'themeUri'                => __( 'Theme URI', 'choctaw-wp-security' ),
+						'author'                  => __( 'Author', 'choctaw-wp-security' ),
+						'authorUri'               => __( 'Author URI', 'choctaw-wp-security' ),
+						'updateUri'               => __( 'Update URI', 'choctaw-wp-security' ),
+						'updateHostname'          => __( 'Update Host', 'choctaw-wp-security' ),
+						'installedPath'           => __( 'Installed Path', 'choctaw-wp-security' ),
+						'identityInformational'   => __( 'Header and path fields below are informational only. They help you review the component and are not used by themselves to recognize or whitelist it.', 'choctaw-wp-security' ),
+						'recognitionSource'       => __( 'Recognition Source', 'choctaw-wp-security' ),
+						'registryName'            => __( 'Registry Name', 'choctaw-wp-security' ),
+						'registryVendor'          => __( 'Registry Vendor', 'choctaw-wp-security' ),
+						'opensInNewTab'           => __( ' (opens in a new tab)', 'choctaw-wp-security' ),
+						'active'                  => __( 'Active', 'choctaw-wp-security' ),
+						'networkActive'           => __( 'Network Active', 'choctaw-wp-security' ),
+						'activeVia'               => __( 'Active Via', 'choctaw-wp-security' ),
+						'activeViaChildTheme'     => __( 'Child theme "%s"', 'choctaw-wp-security' ),
+						'yes'                     => __( 'Yes', 'choctaw-wp-security' ),
+						'no'                      => __( 'No', 'choctaw-wp-security' ),
+						'advisories'              => __( 'Advisories', 'choctaw-wp-security' ),
+						'unrecognizedNote'        => __( 'This component was not recognized by the WPVulnerability API.', 'choctaw-wp-security' ),
+						'affectedVersions'        => __( 'Affected versions: %s', 'choctaw-wp-security' ),
+						'unfixedNote'             => __( 'No fixed version has been published yet for this advisory.', 'choctaw-wp-security' ),
+						'closedNote'              => __( 'This advisory record is marked closed by the provider.', 'choctaw-wp-security' ),
+						'sources'                 => __( 'Sources:', 'choctaw-wp-security' ),
+						'cvssWithScore'           => __( 'CVSS %1$s (%2$s)', 'choctaw-wp-security' ),
+						'cvssWithoutScore'        => __( 'CVSS %s', 'choctaw-wp-security' ),
+						'exposureNote'            => __( 'This reflects a known public vulnerability advisory for the installed version (exposure / unpatched risk) — it is not confirmation that this site has been compromised or that malware is present.', 'choctaw-wp-security' ),
+						'whySeeingThis'           => __( 'Why you are seeing this', 'choctaw-wp-security' ),
+						'howToProceed'            => __( 'How to proceed', 'choctaw-wp-security' ),
+						'viewDetails'             => __( 'View details', 'choctaw-wp-security' ),
+						'hideDetails'             => __( 'Hide details', 'choctaw-wp-security' ),
+						'search'                  => __( 'Search', 'choctaw-wp-security' ),
+						'searchPlaceholder'       => __( 'Search components…', 'choctaw-wp-security' ),
+						'scanIncomplete'          => __( 'Scan coverage was incomplete. Previously detected findings were not cleared.', 'choctaw-wp-security' ),
+						'priorFindingsNote'       => __( 'Active findings below are from earlier successful scans and were not reconfirmed by this run.', 'choctaw-wp-security' ),
+						'notConfirmedThisRun'     => __( 'Not reconfirmed by this incomplete scan', 'choctaw-wp-security' ),
+						'scanCompleteIssues'      => __( 'Scan complete. %1$s warning and %2$s suspicious finding(s) among %3$s component(s).', 'choctaw-wp-security' ),
+						'scanCompleteClean'       => __( 'Scan complete. No known vulnerabilities or unrecognized components were found.', 'choctaw-wp-security' ),
+						'inventoryHeading'        => __( 'Recognized, No Known Vulnerabilities', 'choctaw-wp-security' ),
+						'inventoryDescription'    => __( 'These components were recognized by the WPVulnerability API or the Sassh recognized-components registry and have no known vulnerability advisories for the installed version. Recognition is not a safety or integrity guarantee. This inventory is informational and cannot be dismissed.', 'choctaw-wp-security' ),
+						'inventoryCore'           => __( '%s (core)', 'choctaw-wp-security' ),
+						'inventoryTheme'          => __( '%1$s %2$s (theme)', 'choctaw-wp-security' ),
+						'inventoryPlugin'         => __( '%1$s %2$s (plugin)', 'choctaw-wp-security' ),
+						'inventoryRegistryNote'   => __( 'Recognition Source: %s', 'choctaw-wp-security' ),
 					),
 				)
 			);
@@ -3775,7 +3847,7 @@ class Choctaw_Wp_Security_Settings {
 			return;
 		}
 
-		$scan_types = array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files', 'database-scan', 'scheduled-tasks' );
+		$scan_types = array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files', 'database-scan', 'scheduled-tasks', 'component-scan', 'directory-browsing' );
 
 		foreach ( $scan_types as $scan_type ) {
 			$storage = $this->get_report_storage_for_scan_type( $scan_type );
@@ -3847,6 +3919,8 @@ class Choctaw_Wp_Security_Settings {
 				'exposed-files',
 				'database-scan',
 				'scheduled-tasks',
+				'component-scan',
+				'directory-browsing',
 			),
 			true
 		);
@@ -3868,7 +3942,7 @@ class Choctaw_Wp_Security_Settings {
 			Choctaw_Wp_Security_Utils::USER_META_MU_PLUGINS_RESULT      => 'mu-plugins',
 			Choctaw_Wp_Security_Utils::USER_META_CORE_CHECKSUM_RESULT   => 'verify-checksums',
 			Choctaw_Wp_Security_Utils::USER_META_EXPOSED_FOLDERS_RESULT => 'directory-browsing',
-			Choctaw_Wp_Security_Utils::USER_META_COMPONENT_SCAN_RESULT  => 'unrecognized-components',
+			Choctaw_Wp_Security_Utils::USER_META_COMPONENT_SCAN_RESULT  => 'component-scan',
 		);
 
 		$user_meta_key = (string) $user_meta_key;
@@ -3921,6 +3995,10 @@ class Choctaw_Wp_Security_Settings {
 			'directory-browsing' => array(
 				'transient' => $this->get_exposed_folders_result_transient_key(),
 				'user_meta' => Choctaw_Wp_Security_Utils::USER_META_EXPOSED_FOLDERS_RESULT,
+			),
+			'component-scan'     => array(
+				'transient' => $this->get_component_scan_result_transient_key(),
+				'user_meta' => Choctaw_Wp_Security_Utils::USER_META_COMPONENT_SCAN_RESULT,
 			),
 		);
 
@@ -3985,7 +4063,7 @@ class Choctaw_Wp_Security_Settings {
 
 		$scan_type = isset( $_POST['scan_type'] ) ? sanitize_key( wp_unslash( $_POST['scan_type'] ) ) : '';
 
-		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files', 'database-scan', 'scheduled-tasks' ), true ) ) {
+		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files', 'database-scan', 'scheduled-tasks', 'component-scan', 'unrecognized-components', 'directory-browsing' ), true ) ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'Clear History is not available for Sassh Findings-backed scans.', 'choctaw-wp-security' ),
@@ -4035,7 +4113,7 @@ class Choctaw_Wp_Security_Settings {
 		$scan_type   = isset( $_POST['scan_type'] ) ? sanitize_text_field( wp_unslash( $_POST['scan_type'] ) ) : '';
 		$fingerprint = isset( $_POST['fingerprint'] ) ? sanitize_text_field( wp_unslash( $_POST['fingerprint'] ) ) : '';
 
-		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files', 'database-scan', 'scheduled-tasks' ), true ) ) {
+		if ( in_array( $scan_type, array( 'uploads-folder', 'mu-plugins', 'verify-checksums', 'exposed-files', 'database-scan', 'scheduled-tasks', 'component-scan', 'unrecognized-components', 'directory-browsing' ), true ) ) {
 			wp_send_json_error(
 				array(
 					'message' => __( 'These findings must be dismissed through Sassh Findings.', 'choctaw-wp-security' ),
@@ -4277,20 +4355,41 @@ class Choctaw_Wp_Security_Settings {
 	}
 
 	/**
-	 * Render dismiss checkbox + Submit for PHP detail panels.
+	 * Render dismiss controls for PHP detail panels (shared Findings rule).
 	 *
-	 * @param string $scan_type   Scan type key.
-	 * @param string $fingerprint Finding fingerprint.
-	 * @param string $status      Current status.
-	 * @param string $finding_id  Optional Sassh finding id (uses sassh_finding_* AJAX when set).
+	 * @param string                    $scan_type   Scan type key.
+	 * @param string                    $fingerprint Finding fingerprint.
+	 * @param string                    $status      Current effective status.
+	 * @param string                    $finding_id  Optional Sassh finding id (uses sassh_finding_* AJAX when set).
+	 * @param array<string, mixed>|null $finding     Optional finding DTO for canonical can_dismiss state.
 	 * @return void
 	 */
-	private function render_dismiss_controls( $scan_type, $fingerprint, $status, $finding_id = '' ) {
-		$is_dismissed = 'dismissed' === $status || Choctaw_Wp_Security_Finding_Status_Store::STATUS_DISMISSED === $status;
+	private function render_dismiss_controls( $scan_type, $fingerprint, $status, $finding_id = '', $finding = null ) {
+		$state_source = is_array( $finding )
+			? $finding
+			: array(
+				'effective_status' => (string) $status,
+				'status'           => (string) $status,
+			);
+		$control_state = Sassh_Findings_Service::dismissal_control_state( $state_source );
+
+		if ( 'not_dismissible' === $control_state ) {
+			?>
+			<div class="cws-report-dismiss is-not-dismissible" data-dismiss-state="not_dismissible">
+				<p class="cws-report-dismiss-note description">
+					<?php esc_html_e( 'This finding does not require review and cannot be dismissed.', 'choctaw-wp-security' ); ?>
+				</p>
+			</div>
+			<?php
+			return;
+		}
+
+		$is_dismissed = 'dismissed' === $control_state;
 		?>
 		<div
 			class="cws-report-dismiss"
 			data-cws-dismiss-block="1"
+			data-dismiss-state="<?php echo esc_attr( $control_state ); ?>"
 			data-scan-type="<?php echo esc_attr( (string) $scan_type ); ?>"
 			data-fingerprint="<?php echo esc_attr( (string) $fingerprint ); ?>"
 			data-status="<?php echo esc_attr( (string) $status ); ?>"
@@ -4322,14 +4421,6 @@ class Choctaw_Wp_Security_Settings {
 	 * @return array<string, mixed>
 	 */
 	private function sanitize_loaded_report_result( array $result, $user_meta_key ) {
-		if ( Choctaw_Wp_Security_Utils::USER_META_COMPONENT_SCAN_RESULT === $user_meta_key ) {
-			if ( empty( $result['findings'] ) || ! is_array( $result['findings'] ) ) {
-				$result['findings'] = Choctaw_Wp_Security_Component_Vulnerability_Scanner::build_unrecognized_findings( $result );
-			}
-
-			return $result;
-		}
-
 		if ( Choctaw_Wp_Security_Utils::USER_META_DATABASE_SCAN_RESULT !== $user_meta_key ) {
 			return $result;
 		}
@@ -4383,7 +4474,6 @@ class Choctaw_Wp_Security_Settings {
 					<?php wp_nonce_field( 'choctaw_wp_security_exposed_folders_scan_form' ); ?>
 					<input type="hidden" name="cws_tab" value="exposed-folders" />
 					<?php submit_button( __( 'Scan Now', 'choctaw-wp-security' ), 'secondary', 'choctaw_wp_security_exposed_folders_scan', false ); ?>
-					<?php $this->render_clear_history_button( 'directory-browsing' ); ?>
 				</form>
 
 				<div id="cws-directory-browsing-js-notices" aria-live="polite"></div>
@@ -4460,30 +4550,68 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	private function render_component_scan_section() {
-		$result = false;
+		$result          = false;
+		$results_missing = false;
 
 		if ( isset( $_GET['component_scan_run'] ) ) {
 			$result = $this->load_report_result(
 				$this->get_component_scan_result_transient_key(),
 				Choctaw_Wp_Security_Utils::USER_META_COMPONENT_SCAN_RESULT
 			);
+
+			if ( false === $result ) {
+				$results_missing = true;
+			} elseif ( is_array( $result ) && empty( $result['findings_backend'] ) ) {
+				// Pre-migration payloads used core/active_theme/active_plugins/…; require a fresh scan.
+				$result          = false;
+				$results_missing = true;
+			}
 		}
+
+		$stored_result = $this->load_report_result(
+			$this->get_component_scan_result_transient_key(),
+			Choctaw_Wp_Security_Utils::USER_META_COMPONENT_SCAN_RESULT
+		);
+		$has_result = ( is_array( $result ) && ! empty( $result['findings_backend'] ) )
+			|| ( is_array( $stored_result ) && ! empty( $stored_result['findings_backend'] ) );
 		?>
-		<div class="cws-admin-tab-panel">
+		<div class="cws-admin-tab-panel cws-component-scan-panel">
 			<div class="cws-report-section">
 				<h2><?php esc_html_e( 'Vulnerabilities', 'choctaw-wp-security' ); ?></h2>
 				<?php Choctaw_Wp_Security_Admin_Help::render_tab_intro( 'component_scan' ); ?>
 
-				<form method="post">
+				<?php if ( $results_missing ) : ?>
+					<div class="notice notice-warning">
+						<p><?php esc_html_e( 'The previous vulnerability scan results are no longer available. Run Scan Now to generate a fresh report.', 'choctaw-wp-security' ); ?></p>
+					</div>
+				<?php endif; ?>
+
+				<form method="post" class="cws-component-scan-form" id="cws-component-scan-form">
 					<?php wp_nonce_field( 'choctaw_wp_security_component_scan' ); ?>
-					<input type="hidden" name="choctaw_wp_security_component_scan" value="1" />
 					<input type="hidden" name="cws_tab" value="component-scan" />
-					<?php submit_button( __( 'Scan Now', 'choctaw-wp-security' ), 'secondary', 'submit', false ); ?>
+					<?php submit_button( __( 'Scan Now', 'choctaw-wp-security' ), 'secondary', 'choctaw_wp_security_component_scan', false ); ?>
 				</form>
 
-				<?php if ( is_array( $result ) ) : ?>
-					<?php $this->render_component_scan_results( $result ); ?>
-				<?php endif; ?>
+				<div id="cws-component-scan-js-notices" aria-live="polite"></div>
+				<div id="cws-component-scan-js-results"></div>
+
+				<div id="cws-component-scan-fallback-results">
+					<?php if ( is_array( $result ) && ! empty( $result['findings_backend'] ) ) : ?>
+						<?php $this->render_component_scan_results( $result ); ?>
+					<?php endif; ?>
+				</div>
+
+				<div
+					id="cws-component-scan-help-boxes"
+					class="cws-help-boxes cws-component-scan-help-boxes"
+					<?php echo $has_result ? '' : ' hidden'; ?>
+				>
+					<?php
+					$this->render_component_scan_about(
+						is_array( $stored_result ) && isset( $stored_result['api_updated'] ) ? (int) $stored_result['api_updated'] : null
+					);
+					?>
+				</div>
 			</div>
 		</div>
 		<?php
@@ -4524,27 +4652,51 @@ class Choctaw_Wp_Security_Settings {
 	 * @return void
 	 */
 	private function render_component_scan_results( $result ) {
-		$has_vulnerabilities = empty( $result['success'] );
-		$panel_class         = $has_vulnerabilities ? 'cws-core-checksum-results is-error' : 'cws-core-checksum-results is-success';
-		$summary             = isset( $result['summary'] ) && is_array( $result['summary'] ) ? $result['summary'] : array();
+		$findings   = isset( $result['findings'] ) && is_array( $result['findings'] ) ? $result['findings'] : array();
+		$summary    = isset( $result['summary'] ) && is_array( $result['summary'] ) ? $result['summary'] : array();
+		$warning    = isset( $summary['warning'] ) ? (int) $summary['warning'] : 0;
+		$suspicious = isset( $summary['suspicious'] ) ? (int) $summary['suspicious'] : 0;
+		$total      = isset( $summary['total'] ) ? (int) $summary['total'] : count( $findings );
+		$incomplete = ! empty( $result['scan_incomplete'] )
+			|| ( isset( $result['coverage_complete'] ) && ! $result['coverage_complete'] )
+			|| ( isset( $result['completion_status'] ) && 'success' !== (string) $result['completion_status'] );
+
+		if ( $incomplete ) {
+			$panel = 'cws-core-checksum-results is-warning';
+		} elseif ( ( $warning + $suspicious ) > 0 ) {
+			$panel = 'cws-core-checksum-results is-warning';
+		} else {
+			$panel = 'cws-core-checksum-results is-success';
+		}
 		?>
-		<div class="<?php echo esc_attr( $panel_class ); ?>">
+		<div class="<?php echo esc_attr( $panel ); ?>">
 			<p class="cws-core-checksum-summary">
-				<?php if ( $has_vulnerabilities ) : ?>
-					<?php esc_html_e( 'Known vulnerabilities were found in one or more scanned components.', 'choctaw-wp-security' ); ?>
-				<?php else : ?>
-					<?php esc_html_e( 'No known vulnerabilities were found in the scanned components.', 'choctaw-wp-security' ); ?>
-				<?php endif; ?>
+				<?php
+				if ( $incomplete ) {
+					esc_html_e( 'Scan coverage was incomplete. Previously detected findings were not cleared.', 'choctaw-wp-security' );
+				} elseif ( 0 === $total ) {
+					esc_html_e( 'Scan complete. No known vulnerabilities or unrecognized components were found.', 'choctaw-wp-security' );
+				} else {
+					echo esc_html(
+						sprintf(
+							/* translators: 1: warning count, 2: suspicious count, 3: total finding count */
+							__( 'Scan complete. %1$s warning and %2$s suspicious finding(s) among %3$s component(s).', 'choctaw-wp-security' ),
+							number_format_i18n( $warning ),
+							number_format_i18n( $suspicious ),
+							number_format_i18n( $total )
+						)
+					);
+				}
+				?>
 			</p>
 
-			<?php if ( ! empty( $result['scan_incomplete'] ) ) : ?>
+			<?php if ( $incomplete && ! empty( $result['prior_findings_only'] ) ) : ?>
 				<p class="description">
-					<?php esc_html_e( 'The scan stopped early because it reached its time budget. Review the partial results below and run the scan again if needed.', 'choctaw-wp-security' ); ?>
+					<?php esc_html_e( 'Active findings below are from earlier successful scans and were not reconfirmed by this run.', 'choctaw-wp-security' ); ?>
 				</p>
 			<?php endif; ?>
 
 			<?php if ( ! empty( $result['errors'] ) && is_array( $result['errors'] ) ) : ?>
-				<h3><?php esc_html_e( 'Errors', 'choctaw-wp-security' ); ?></h3>
 				<ul class="cws-core-checksum-list">
 					<?php foreach ( $result['errors'] as $error_message ) : ?>
 						<li><?php echo esc_html( (string) $error_message ); ?></li>
@@ -4553,214 +4705,78 @@ class Choctaw_Wp_Security_Settings {
 			<?php endif; ?>
 		</div>
 
-		<div class="cws-report-section cws-component-scan-report">
-			<h3><?php esc_html_e( 'WordPress Core', 'choctaw-wp-security' ); ?></h3>
-			<?php
-			if ( isset( $result['core'] ) && is_array( $result['core'] ) ) {
-				$this->render_component_scan_component_details(
-					array(
-						'label'           => sprintf(
-							/* translators: %s: WordPress version */
-							__( 'WordPress %s', 'choctaw-wp-security' ),
-							isset( $result['core']['version'] ) ? (string) $result['core']['version'] : ''
-						),
-						'status'          => isset( $result['core']['status'] ) ? (string) $result['core']['status'] : 'error',
-						'vulnerabilities' => isset( $result['core']['vulnerabilities'] ) && is_array( $result['core']['vulnerabilities'] ) ? $result['core']['vulnerabilities'] : array(),
-					)
-				);
-			}
-			?>
-		</div>
-
-		<div class="cws-report-section cws-component-scan-report">
-			<h3><?php esc_html_e( 'Active Theme', 'choctaw-wp-security' ); ?></h3>
-			<?php if ( ! empty( $result['active_theme'] ) && is_array( $result['active_theme'] ) ) : ?>
-				<?php
-				$theme = $result['active_theme'];
-				$this->render_component_scan_component_details(
-					array(
-						'label'           => sprintf(
-							'%s (%s)',
-							isset( $theme['name'] ) ? (string) $theme['name'] : '',
-							isset( $theme['version'] ) ? (string) $theme['version'] : ''
-						),
-						'status'          => isset( $theme['status'] ) ? (string) $theme['status'] : 'error',
-						'vulnerabilities' => isset( $theme['vulnerabilities'] ) && is_array( $theme['vulnerabilities'] ) ? $theme['vulnerabilities'] : array(),
-					)
-				);
-				?>
-				<?php if ( ! empty( $theme['via_child_theme'] ) ) : ?>
-					<p class="description">
+		<?php if ( empty( $findings ) ) : ?>
+			<p><?php esc_html_e( 'No known vulnerabilities or unrecognized components were found.', 'choctaw-wp-security' ); ?></p>
+		<?php else : ?>
+			<?php $pagination = $this->paginate_report_items( $findings, $this->get_report_page_number( 'cws_component_scan' ) ); ?>
+			<table class="widefat striped cws-core-checksum-table cws-component-scan-table">
+				<thead>
+					<tr>
+						<th scope="col"><?php esc_html_e( 'Risk', 'choctaw-wp-security' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Status', 'choctaw-wp-security' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Category', 'choctaw-wp-security' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Component', 'choctaw-wp-security' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Action', 'choctaw-wp-security' ); ?></th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ( $pagination['items'] as $index => $finding ) : ?>
 						<?php
-						echo esc_html(
-							sprintf(
-								/* translators: %s: child theme name */
-								__( 'Reported as active because the selected child theme “%s” uses this parent theme.', 'choctaw-wp-security' ),
-								(string) $theme['via_child_theme']
-							)
-						);
+						$row_id       = 'cws-component-scan-fallback-' . (int) $index;
+						$risk         = isset( $finding['risk'] ) ? (string) $finding['risk'] : 'info';
+						$risk_label   = isset( $finding['risk_label'] ) ? (string) $finding['risk_label'] : $risk;
+						$status       = isset( $finding['status'] ) ? (string) $finding['status'] : 'needs_review';
+						$status_label = isset( $finding['status_label'] ) ? (string) $finding['status_label'] : '';
+						$meta         = isset( $finding['metadata'] ) && is_array( $finding['metadata'] ) ? $finding['metadata'] : array();
+						$title        = isset( $finding['title'] ) ? (string) $finding['title'] : '';
+						$version      = isset( $meta['version'] ) ? (string) $meta['version'] : '';
+						$confirmed    = ! isset( $finding['confirmed_this_run'] ) || (bool) $finding['confirmed_this_run'];
 						?>
-					</p>
-				<?php endif; ?>
-			<?php else : ?>
-				<p class="description">
-					<?php esc_html_e( 'No API-recognized active theme was scanned. If your active theme (or its parent theme) is custom or unlisted, it appears in Unrecognized Components below.', 'choctaw-wp-security' ); ?>
-				</p>
-			<?php endif; ?>
-		</div>
-
-		<div class="cws-report-section cws-component-scan-report">
-			<h3>
-				<?php esc_html_e( 'Inactive Themes', 'choctaw-wp-security' ); ?>
-				<span class="cws-component-scan-count">
-					<?php
-					echo esc_html(
-						sprintf(
-							/* translators: 1: number scanned, 2: number vulnerable */
-							__( '(%1$d scanned, %2$d vulnerable)', 'choctaw-wp-security' ),
-							isset( $summary['inactive_themes_scanned'] ) ? (int) $summary['inactive_themes_scanned'] : 0,
-							isset( $summary['inactive_themes_vulnerable'] ) ? (int) $summary['inactive_themes_vulnerable'] : 0
-						)
-					);
-					?>
-				</span>
-			</h3>
-			<?php if ( ! empty( $result['inactive_themes'] ) && is_array( $result['inactive_themes'] ) ) : ?>
-				<div class="cws-component-scan-list">
-					<?php foreach ( $result['inactive_themes'] as $theme ) : ?>
-						<?php
-						$this->render_component_scan_component_details(
-							array(
-								'label'           => sprintf(
-									'%s (%s)',
-									isset( $theme['name'] ) ? (string) $theme['name'] : '',
-									isset( $theme['version'] ) ? (string) $theme['version'] : ''
-								),
-								'status'          => isset( $theme['status'] ) ? (string) $theme['status'] : 'error',
-								'vulnerabilities' => isset( $theme['vulnerabilities'] ) && is_array( $theme['vulnerabilities'] ) ? $theme['vulnerabilities'] : array(),
-							)
-						);
-						?>
+						<tr<?php echo $confirmed ? '' : ' class="cws-finding-not-confirmed"'; ?>>
+							<td><?php $this->render_risk_badge( $risk, $risk_label ); ?></td>
+							<td><?php $this->render_status_badge( $status, $status_label ); ?></td>
+							<td><span class="cws-report-pill"><?php echo esc_html( isset( $finding['category_label_display'] ) ? (string) $finding['category_label_display'] : '' ); ?></span></td>
+							<td>
+								<?php echo esc_html( $title ); ?>
+								<?php if ( '' !== $version ) : ?>
+									<p class="description">
+										<?php
+										echo esc_html(
+											sprintf(
+												/* translators: %s: version number */
+												__( 'Version %s', 'choctaw-wp-security' ),
+												$version
+											)
+										);
+										?>
+									</p>
+								<?php endif; ?>
+								<?php if ( ! $confirmed ) : ?>
+									<p class="description"><?php esc_html_e( 'Not reconfirmed by this incomplete scan', 'choctaw-wp-security' ); ?></p>
+								<?php endif; ?>
+							</td>
+							<td>
+								<button type="button" class="cws-report-eye" data-expand-target="<?php echo esc_attr( $row_id ); ?>" aria-expanded="false" aria-label="<?php esc_attr_e( 'View details', 'choctaw-wp-security' ); ?>">
+									<span class="dashicons dashicons-visibility" aria-hidden="true"></span>
+								</button>
+							</td>
+						</tr>
+						<tr class="cws-report-detail-row" id="<?php echo esc_attr( $row_id ); ?>" hidden>
+							<td colspan="5">
+								<?php $this->render_component_scan_finding_detail( $finding ); ?>
+							</td>
+						</tr>
 					<?php endforeach; ?>
-				</div>
-			<?php else : ?>
-				<p class="description">
-					<?php esc_html_e( 'No API-recognized inactive themes were scanned.', 'choctaw-wp-security' ); ?>
-				</p>
-			<?php endif; ?>
-		</div>
+				</tbody>
+			</table>
+			<?php $this->render_report_pagination( 'cws_component_scan', $pagination, __( 'findings', 'choctaw-wp-security' ) ); ?>
+		<?php endif; ?>
 
-		<div class="cws-report-section cws-component-scan-report">
-			<h3>
-				<?php esc_html_e( 'Active Plugins', 'choctaw-wp-security' ); ?>
-				<span class="cws-component-scan-count">
-					<?php
-					echo esc_html(
-						sprintf(
-							/* translators: 1: number scanned, 2: number vulnerable */
-							__( '(%1$d scanned, %2$d vulnerable)', 'choctaw-wp-security' ),
-							isset( $summary['active_plugins_scanned'] ) ? (int) $summary['active_plugins_scanned'] : 0,
-							isset( $summary['active_plugins_vulnerable'] ) ? (int) $summary['active_plugins_vulnerable'] : 0
-						)
-					);
-					?>
-				</span>
-			</h3>
-			<?php if ( ! empty( $result['active_plugins'] ) && is_array( $result['active_plugins'] ) ) : ?>
-				<div class="cws-component-scan-list">
-					<?php foreach ( $result['active_plugins'] as $plugin ) : ?>
-						<?php
-						$this->render_component_scan_component_details(
-							array(
-								'label'           => sprintf(
-									'%s (%s)',
-									isset( $plugin['name'] ) ? (string) $plugin['name'] : '',
-									isset( $plugin['version'] ) ? (string) $plugin['version'] : ''
-								),
-								'status'          => isset( $plugin['status'] ) ? (string) $plugin['status'] : 'error',
-								'vulnerabilities' => isset( $plugin['vulnerabilities'] ) && is_array( $plugin['vulnerabilities'] ) ? $plugin['vulnerabilities'] : array(),
-							)
-						);
-						?>
-					<?php endforeach; ?>
-				</div>
-			<?php else : ?>
-				<p class="description">
-					<?php esc_html_e( 'No API-recognized active plugins were scanned.', 'choctaw-wp-security' ); ?>
-				</p>
-			<?php endif; ?>
-		</div>
-
-		<div class="cws-report-section cws-component-scan-report">
-			<h3>
-				<?php esc_html_e( 'Inactive Plugins', 'choctaw-wp-security' ); ?>
-				<span class="cws-component-scan-count">
-					<?php
-					echo esc_html(
-						sprintf(
-							/* translators: 1: number scanned, 2: number vulnerable */
-							__( '(%1$d scanned, %2$d vulnerable)', 'choctaw-wp-security' ),
-							isset( $summary['inactive_plugins_scanned'] ) ? (int) $summary['inactive_plugins_scanned'] : 0,
-							isset( $summary['inactive_plugins_vulnerable'] ) ? (int) $summary['inactive_plugins_vulnerable'] : 0
-						)
-					);
-					?>
-				</span>
-			</h3>
-			<?php if ( ! empty( $result['inactive_plugins'] ) && is_array( $result['inactive_plugins'] ) ) : ?>
-				<div class="cws-component-scan-list">
-					<?php foreach ( $result['inactive_plugins'] as $plugin ) : ?>
-						<?php
-						$this->render_component_scan_component_details(
-							array(
-								'label'           => sprintf(
-									'%s (%s)',
-									isset( $plugin['name'] ) ? (string) $plugin['name'] : '',
-									isset( $plugin['version'] ) ? (string) $plugin['version'] : ''
-								),
-								'status'          => isset( $plugin['status'] ) ? (string) $plugin['status'] : 'error',
-								'vulnerabilities' => isset( $plugin['vulnerabilities'] ) && is_array( $plugin['vulnerabilities'] ) ? $plugin['vulnerabilities'] : array(),
-							)
-						);
-						?>
-					<?php endforeach; ?>
-				</div>
-			<?php else : ?>
-				<p class="description">
-					<?php esc_html_e( 'No API-recognized inactive plugins were scanned.', 'choctaw-wp-security' ); ?>
-				</p>
-			<?php endif; ?>
-		</div>
-
-		<div class="cws-report-section cws-component-scan-report cws-unrecognized-components-section">
-			<div class="cws-unrecognized-components-heading">
-				<h3>
-					<?php esc_html_e( 'Unrecognized Components', 'choctaw-wp-security' ); ?>
-					<span class="cws-component-scan-count">
-						<?php
-						echo esc_html(
-							sprintf(
-								/* translators: 1: plugin count, 2: theme count */
-								__( '(%1$d plugins, %2$d themes)', 'choctaw-wp-security' ),
-								isset( $summary['unrecognized_plugins'] ) ? (int) $summary['unrecognized_plugins'] : 0,
-								isset( $summary['unrecognized_themes'] ) ? (int) $summary['unrecognized_themes'] : 0
-							)
-						);
-						?>
-					</span>
-				</h3>
-				<?php $this->render_clear_history_button( 'unrecognized-components' ); ?>
-			</div>
-			<p class="description">
-				<?php esc_html_e( 'These installed plugins and themes are not in the WPVulnerability database, so no CVE report could be generated for them. This does not mean they are unsafe — only that the API has no record for their slug.', 'choctaw-wp-security' ); ?>
-			</p>
-			<div id="cws-unrecognized-components-js-results"></div>
-			<div id="cws-unrecognized-components-fallback-results">
-				<?php $this->render_component_scan_unrecognized_table( $result ); ?>
-			</div>
-		</div>
-
-		<?php $this->render_component_scan_about( isset( $result['api_updated'] ) ? (int) $result['api_updated'] : null ); ?>
+		<?php
+		$this->render_component_scan_inventory(
+			isset( $result['inventory'] ) && is_array( $result['inventory'] ) ? $result['inventory'] : array()
+		);
+		?>
 		<?php
 	}
 
@@ -4783,230 +4799,510 @@ class Choctaw_Wp_Security_Settings {
 	}
 
 	/**
-	 * Render one expandable component result row.
+	 * Human label for a component kind.
 	 *
-	 * @param array<string, mixed> $component Component result data.
+	 * @param string $kind core|theme|plugin.
+	 * @return string
+	 */
+	private function component_scan_kind_label( $kind ) {
+		switch ( (string) $kind ) {
+			case 'core':
+				return __( 'WordPress Core', 'choctaw-wp-security' );
+			case 'theme':
+				return __( 'Theme', 'choctaw-wp-security' );
+			case 'plugin':
+				return __( 'Plugin', 'choctaw-wp-security' );
+			default:
+				return __( 'Unknown', 'choctaw-wp-security' );
+		}
+	}
+
+	/**
+	 * Render plugin/theme identity metadata fields for the Info panel.
+	 *
+	 * Header values are informational only (escaped / scheme-validated).
+	 *
+	 * @param array<string, mixed> $meta Finding metadata.
+	 * @param string               $kind core|plugin|theme.
 	 * @return void
 	 */
-	private function render_component_scan_component_details( array $component ) {
-		$status          = isset( $component['status'] ) ? (string) $component['status'] : 'error';
-		$label           = isset( $component['label'] ) ? (string) $component['label'] : '';
-		$vulnerabilities = isset( $component['vulnerabilities'] ) && is_array( $component['vulnerabilities'] ) ? $component['vulnerabilities'] : array();
-		$status_class    = 'is-error';
-		$status_label    = __( 'Error', 'choctaw-wp-security' );
+	private function render_component_scan_identity_fields( array $meta, $kind ) {
+		$kind = (string) $kind;
 
-		if ( 'clean' === $status ) {
-			$status_class = 'is-clean';
-			$status_label = __( 'No known vulnerabilities', 'choctaw-wp-security' );
-		} elseif ( 'vulnerable' === $status ) {
-			$status_class = 'is-vulnerable';
-			$status_label = sprintf(
-				/* translators: %d: vulnerability count */
-				_n( '%d known vulnerability', '%d known vulnerabilities', count( $vulnerabilities ), 'choctaw-wp-security' ),
-				count( $vulnerabilities )
-			);
-		} elseif ( 'unrecognized' === $status ) {
-			$status_class = 'is-neutral';
-			$status_label = __( 'Not recognized by API', 'choctaw-wp-security' );
+		if ( 'plugin' === $kind ) {
+			$this->render_component_scan_info_uri_row( __( 'Plugin URI', 'choctaw-wp-security' ), isset( $meta['plugin_uri'] ) ? (string) $meta['plugin_uri'] : '' );
+			$this->render_component_scan_info_text_row( __( 'Author', 'choctaw-wp-security' ), isset( $meta['author'] ) ? (string) $meta['author'] : '' );
+			$this->render_component_scan_info_uri_row( __( 'Author URI', 'choctaw-wp-security' ), isset( $meta['author_uri'] ) ? (string) $meta['author_uri'] : '' );
+			$this->render_component_scan_info_uri_row( __( 'Update URI', 'choctaw-wp-security' ), isset( $meta['update_uri'] ) ? (string) $meta['update_uri'] : '' );
+			$this->render_component_scan_info_text_row( __( 'Update Host', 'choctaw-wp-security' ), isset( $meta['update_hostname'] ) ? (string) $meta['update_hostname'] : '' );
+			$this->render_component_scan_info_code_row( __( 'Installed Path', 'choctaw-wp-security' ), isset( $meta['installed_path'] ) ? (string) $meta['installed_path'] : '' );
+			?>
+			<dt><?php esc_html_e( 'Active', 'choctaw-wp-security' ); ?></dt>
+			<dd><?php echo ! empty( $meta['active'] ) ? esc_html__( 'Yes', 'choctaw-wp-security' ) : esc_html__( 'No', 'choctaw-wp-security' ); ?></dd>
+			<dt><?php esc_html_e( 'Network Active', 'choctaw-wp-security' ); ?></dt>
+			<dd><?php echo ! empty( $meta['network_active'] ) ? esc_html__( 'Yes', 'choctaw-wp-security' ) : esc_html__( 'No', 'choctaw-wp-security' ); ?></dd>
+			<?php
+		} elseif ( 'theme' === $kind ) {
+			$this->render_component_scan_info_uri_row( __( 'Theme URI', 'choctaw-wp-security' ), isset( $meta['theme_uri'] ) ? (string) $meta['theme_uri'] : '' );
+			$this->render_component_scan_info_text_row( __( 'Author', 'choctaw-wp-security' ), isset( $meta['author'] ) ? (string) $meta['author'] : '' );
+			$this->render_component_scan_info_uri_row( __( 'Author URI', 'choctaw-wp-security' ), isset( $meta['author_uri'] ) ? (string) $meta['author_uri'] : '' );
+			$this->render_component_scan_info_uri_row( __( 'Update URI', 'choctaw-wp-security' ), isset( $meta['update_uri'] ) ? (string) $meta['update_uri'] : '' );
+			$this->render_component_scan_info_text_row( __( 'Update Host', 'choctaw-wp-security' ), isset( $meta['update_hostname'] ) ? (string) $meta['update_hostname'] : '' );
+			$this->render_component_scan_info_code_row( __( 'Installed Path', 'choctaw-wp-security' ), isset( $meta['installed_path'] ) ? (string) $meta['installed_path'] : '' );
+			?>
+			<dt><?php esc_html_e( 'Active', 'choctaw-wp-security' ); ?></dt>
+			<dd><?php echo ! empty( $meta['active'] ) ? esc_html__( 'Yes', 'choctaw-wp-security' ) : esc_html__( 'No', 'choctaw-wp-security' ); ?></dd>
+			<?php
+			if ( ! empty( $meta['via_child_theme'] ) ) {
+				?>
+				<dt><?php esc_html_e( 'Active Via', 'choctaw-wp-security' ); ?></dt>
+				<dd>
+					<?php
+					echo esc_html(
+						sprintf(
+							/* translators: %s: child theme name */
+							__( 'Child theme "%s"', 'choctaw-wp-security' ),
+							(string) $meta['via_child_theme']
+						)
+					);
+					?>
+				</dd>
+				<?php
+			}
 		}
 
-		$details_class = 'cws-component-status ' . $status_class;
+		$recognition_label = '';
+		if ( ! empty( $meta['recognition_source_label'] ) ) {
+			$recognition_label = (string) $meta['recognition_source_label'];
+		} elseif ( ! empty( $meta['recognition_source'] ) ) {
+			$recognition_label = (string) $meta['recognition_source'];
+		}
+
+		$this->render_component_scan_info_text_row( __( 'Recognition Source', 'choctaw-wp-security' ), $recognition_label );
+		$this->render_component_scan_info_text_row( __( 'Registry Name', 'choctaw-wp-security' ), isset( $meta['registry_name'] ) ? (string) $meta['registry_name'] : '' );
+		$this->render_component_scan_info_text_row( __( 'Registry Vendor', 'choctaw-wp-security' ), isset( $meta['registry_vendor'] ) ? (string) $meta['registry_vendor'] : '' );
+	}
+
+	/**
+	 * @param string $label Field label.
+	 * @param string $value Plain text value.
+	 * @return void
+	 */
+	private function render_component_scan_info_text_row( $label, $value ) {
+		$value = trim( (string) $value );
+		if ( '' === $value ) {
+			return;
+		}
 		?>
-		<details class="<?php echo esc_attr( $details_class ); ?>">
-			<summary>
-				<span class="cws-component-status-label"><?php echo esc_html( $label ); ?></span>
-				<span class="cws-component-status-badge"><?php echo esc_html( $status_label ); ?></span>
-			</summary>
-			<div class="cws-component-status-body">
-				<?php if ( 'clean' === $status ) : ?>
-					<p><?php esc_html_e( 'No known vulnerabilities were reported for the installed version.', 'choctaw-wp-security' ); ?></p>
-				<?php elseif ( 'vulnerable' === $status ) : ?>
-					<?php $this->render_component_vulnerability_list( $vulnerabilities ); ?>
-				<?php elseif ( 'unrecognized' === $status ) : ?>
-					<p><?php esc_html_e( 'This component is not listed in the WPVulnerability database.', 'choctaw-wp-security' ); ?></p>
-				<?php else : ?>
-					<p><?php esc_html_e( 'This component could not be checked.', 'choctaw-wp-security' ); ?></p>
-				<?php endif; ?>
-			</div>
-		</details>
+		<dt><?php echo esc_html( (string) $label ); ?></dt>
+		<dd><?php echo esc_html( $value ); ?></dd>
 		<?php
 	}
 
 	/**
-	 * Render a list of vulnerability findings.
-	 *
-	 * @param array<int, array<string, mixed>> $vulnerabilities Vulnerability records.
+	 * @param string $label Field label.
+	 * @param string $value Path / code value.
 	 * @return void
 	 */
-	private function render_component_vulnerability_list( array $vulnerabilities ) {
-		if ( empty( $vulnerabilities ) ) {
-			echo '<p>' . esc_html__( 'No vulnerability details were returned.', 'choctaw-wp-security' ) . '</p>';
+	private function render_component_scan_info_code_row( $label, $value ) {
+		$value = trim( (string) $value );
+		if ( '' === $value ) {
 			return;
 		}
 		?>
-		<div class="cws-component-vulnerability-list">
-			<?php foreach ( $vulnerabilities as $vulnerability ) : ?>
-				<div class="cws-component-vulnerability-item">
-					<h4><?php echo esc_html( isset( $vulnerability['name'] ) ? (string) $vulnerability['name'] : '' ); ?></h4>
+		<dt><?php echo esc_html( (string) $label ); ?></dt>
+		<dd><code class="cws-file-path"><?php echo esc_html( $value ); ?></code></dd>
+		<?php
+	}
 
-					<?php if ( ! empty( $vulnerability['description'] ) ) : ?>
-						<div class="cws-component-vulnerability-description">
-							<?php echo wp_kses_post( (string) $vulnerability['description'] ); ?>
-						</div>
+	/**
+	 * @param string $label Field label.
+	 * @param string $url   Candidate URI.
+	 * @return void
+	 */
+	private function render_component_scan_info_uri_row( $label, $url ) {
+		$safe = Sassh_Component_Key_Normalizer::sanitize_external_http_url( $url );
+		if ( '' === $safe ) {
+			return;
+		}
+		?>
+		<dt><?php echo esc_html( (string) $label ); ?></dt>
+		<dd><?php $this->render_external_http_link( $safe, $safe ); ?></dd>
+		<?php
+	}
+
+	/**
+	 * Render a validated http(s) external link with accessible “opens in a new tab” cue.
+	 *
+	 * @param string $url   Already-sanitized http(s) URL.
+	 * @param string $label Visible link label.
+	 * @return void
+	 */
+	private function render_external_http_link( $url, $label ) {
+		$safe = Sassh_Component_Key_Normalizer::sanitize_external_http_url( $url );
+		if ( '' === $safe ) {
+			echo esc_html( '' !== trim( (string) $label ) ? (string) $label : '—' );
+			return;
+		}
+
+		$label = '' !== trim( (string) $label ) ? (string) $label : $safe;
+		?>
+		<a href="<?php echo esc_url( $safe ); ?>" target="_blank" rel="noopener noreferrer">
+			<?php echo esc_html( $label ); ?>
+			<span class="screen-reader-text"><?php esc_html_e( ' (opens in a new tab)', 'choctaw-wp-security' ); ?></span>
+			<sup class="cws-external-link-icon" aria-hidden="true"><span class="dashicons dashicons-external" aria-hidden="true"></span></sup>
+		</a>
+		<?php
+	}
+
+	/**
+	 * Render the expandable detail panel for one component-scan finding (no-JS fallback).
+	 *
+	 * @param array<string, mixed> $finding Finding row (Sassh Findings DTO shape).
+	 * @return void
+	 */
+	private function render_component_scan_finding_detail( array $finding ) {
+		$meta        = isset( $finding['metadata'] ) && is_array( $finding['metadata'] ) ? $finding['metadata'] : array();
+		$categories  = isset( $finding['categories'] ) && is_array( $finding['categories'] ) ? $finding['categories'] : array();
+		$why         = isset( $finding['why_seeing_this'] ) && is_array( $finding['why_seeing_this'] ) ? $finding['why_seeing_this'] : array();
+		$how         = isset( $finding['how_to_proceed'] ) && is_array( $finding['how_to_proceed'] ) ? $finding['how_to_proceed'] : array();
+		$fingerprint = isset( $finding['content_fingerprint'] ) ? (string) $finding['content_fingerprint'] : ( isset( $finding['fingerprint'] ) ? (string) $finding['fingerprint'] : '' );
+		$finding_id  = isset( $finding['finding_id'] ) ? (string) $finding['finding_id'] : '';
+		$status      = isset( $finding['status'] ) ? (string) $finding['status'] : 'needs_review';
+		$kind        = isset( $meta['kind'] ) ? (string) $meta['kind'] : '';
+		?>
+		<div class="cws-report-detail-grid cws-component-scan-detail-grid">
+			<div class="cws-component-scan-detail-left">
+				<div class="cws-component-scan-info-panel">
+					<h4><?php esc_html_e( 'Info', 'choctaw-wp-security' ); ?></h4>
+					<?php if ( 'plugin' === $kind || 'theme' === $kind ) : ?>
+						<p class="description">
+							<?php esc_html_e( 'Header and path fields below are informational only. They help you review the component and are not used by themselves to recognize or whitelist it.', 'choctaw-wp-security' ); ?>
+						</p>
 					<?php endif; ?>
+					<dl>
+						<dt><?php esc_html_e( 'Kind', 'choctaw-wp-security' ); ?></dt>
+						<dd><?php echo esc_html( $this->component_scan_kind_label( $kind ) ); ?></dd>
+						<?php if ( isset( $meta['slug'] ) && '' !== (string) $meta['slug'] ) : ?>
+							<dt><?php esc_html_e( 'Slug', 'choctaw-wp-security' ); ?></dt>
+							<dd><code class="cws-file-path"><?php echo esc_html( (string) $meta['slug'] ); ?></code></dd>
+						<?php endif; ?>
+						<?php if ( isset( $meta['file'] ) && '' !== (string) $meta['file'] ) : ?>
+							<dt><?php esc_html_e( 'File', 'choctaw-wp-security' ); ?></dt>
+							<dd><code class="cws-file-path"><?php echo esc_html( (string) $meta['file'] ); ?></code></dd>
+						<?php endif; ?>
+						<?php if ( isset( $meta['stylesheet'] ) && '' !== (string) $meta['stylesheet'] ) : ?>
+							<dt><?php esc_html_e( 'Stylesheet', 'choctaw-wp-security' ); ?></dt>
+							<dd><code class="cws-file-path"><?php echo esc_html( (string) $meta['stylesheet'] ); ?></code></dd>
+						<?php endif; ?>
+						<dt><?php esc_html_e( 'Version', 'choctaw-wp-security' ); ?></dt>
+						<dd><?php echo esc_html( isset( $meta['version'] ) && '' !== (string) $meta['version'] ? (string) $meta['version'] : '—' ); ?></dd>
+						<?php $this->render_component_scan_identity_fields( $meta, $kind ); ?>
+					</dl>
+				</div>
 
-					<ul class="cws-core-checksum-list">
-						<?php if ( ! empty( $vulnerability['version_range'] ) ) : ?>
-							<li>
-								<strong><?php esc_html_e( 'Affected versions:', 'choctaw-wp-security' ); ?></strong>
-								<?php echo esc_html( (string) $vulnerability['version_range'] ); ?>
-							</li>
-						<?php endif; ?>
-						<?php if ( ! empty( $vulnerability['severity'] ) || ! empty( $vulnerability['score'] ) ) : ?>
-							<li>
-								<strong><?php esc_html_e( 'Severity:', 'choctaw-wp-security' ); ?></strong>
-								<?php
-								echo esc_html(
-									trim(
-										( ! empty( $vulnerability['severity'] ) ? (string) $vulnerability['severity'] : '' ) .
-										( ! empty( $vulnerability['score'] ) ? ' (' . (string) $vulnerability['score'] . '/10)' : '' )
-									)
-								);
-								?>
-							</li>
-						<?php endif; ?>
-						<?php if ( ! empty( $vulnerability['unfixed'] ) ) : ?>
-							<li><?php esc_html_e( 'This vulnerability appears to be unpatched.', 'choctaw-wp-security' ); ?></li>
-						<?php endif; ?>
-						<?php if ( ! empty( $vulnerability['closed'] ) ) : ?>
-							<li><?php esc_html_e( 'This plugin or theme may no longer be available (closed).', 'choctaw-wp-security' ); ?></li>
-						<?php endif; ?>
-					</ul>
-
-					<?php if ( ! empty( $vulnerability['cwes'] ) && is_array( $vulnerability['cwes'] ) ) : ?>
-						<p><strong><?php esc_html_e( 'Weakness classification:', 'choctaw-wp-security' ); ?></strong></p>
-						<ul class="cws-core-checksum-list">
-							<?php foreach ( $vulnerability['cwes'] as $cwe ) : ?>
-								<li>
-									<?php echo esc_html( isset( $cwe['name'] ) ? (string) $cwe['name'] : '' ); ?>
-									<?php if ( ! empty( $cwe['description'] ) ) : ?>
-										<?php echo esc_html( ' — ' . (string) $cwe['description'] ); ?>
-									<?php endif; ?>
-								</li>
-							<?php endforeach; ?>
-						</ul>
-					<?php endif; ?>
-
-					<?php if ( ! empty( $vulnerability['sources'] ) && is_array( $vulnerability['sources'] ) ) : ?>
-						<p><strong><?php esc_html_e( 'References:', 'choctaw-wp-security' ); ?></strong></p>
-						<ul class="cws-core-checksum-list">
-							<?php foreach ( $vulnerability['sources'] as $source ) : ?>
-								<li>
-									<a href="<?php echo esc_url( isset( $source['link'] ) ? (string) $source['link'] : '' ); ?>" target="_blank" rel="noopener noreferrer">
-										<?php echo esc_html( isset( $source['name'] ) ? (string) $source['name'] : __( 'Reference', 'choctaw-wp-security' ) ); ?>
-									</a>
-								</li>
+				<?php $this->render_component_scan_advisories( $categories ); ?>
+			</div>
+			<div class="cws-component-scan-detail-right">
+				<div>
+					<h4><?php esc_html_e( 'Why you are seeing this', 'choctaw-wp-security' ); ?></h4>
+					<?php if ( empty( $why ) ) : ?>
+						<p>—</p>
+					<?php else : ?>
+						<ul>
+							<?php foreach ( $why as $line ) : ?>
+								<li><?php echo esc_html( (string) $line ); ?></li>
 							<?php endforeach; ?>
 						</ul>
 					<?php endif; ?>
 				</div>
-			<?php endforeach; ?>
+				<div>
+					<h4><?php esc_html_e( 'How to proceed', 'choctaw-wp-security' ); ?></h4>
+					<?php if ( empty( $how ) ) : ?>
+						<p>—</p>
+					<?php else : ?>
+						<ul>
+							<?php foreach ( $how as $line ) : ?>
+								<li><?php echo esc_html( (string) $line ); ?></li>
+							<?php endforeach; ?>
+						</ul>
+					<?php endif; ?>
+					<?php if ( '' !== $fingerprint ) : ?>
+						<?php $this->render_dismiss_controls( 'component-scan', $fingerprint, $status, $finding_id, $finding ); ?>
+					<?php endif; ?>
+				</div>
+			</div>
 		</div>
 		<?php
 	}
 
 	/**
-	 * Render unrecognized components results (no-JS fallback).
+	 * Render known-vulnerability advisory details (and an unrecognized-component note) for one finding.
 	 *
-	 * @param array<string, mixed> $result Scan result payload.
+	 * @param array<int, array<string, mixed>> $categories Active Findings categories for one finding.
 	 * @return void
 	 */
-	private function render_component_scan_unrecognized_table( $result ) {
-		$findings = isset( $result['findings'] ) && is_array( $result['findings'] )
-			? $result['findings']
-			: Choctaw_Wp_Security_Component_Vulnerability_Scanner::build_unrecognized_findings( $result );
+	private function render_component_scan_advisories( array $categories ) {
+		$vuln_categories = array();
+		$unrecognized    = false;
 
-		if ( empty( $findings ) ) {
-			echo '<p>' . esc_html__( 'All installed plugins and themes were recognized by the API.', 'choctaw-wp-security' ) . '</p>';
+		foreach ( $categories as $category ) {
+			if ( ! is_array( $category ) ) {
+				continue;
+			}
+
+			$rule_id = isset( $category['rule_id'] ) ? (string) $category['rule_id'] : '';
+
+			if ( 0 === strpos( $rule_id, 'vuln:' ) ) {
+				$vuln_categories[] = $category;
+			} elseif ( Sassh_Findings_Service::RULE_UNRECOGNIZED_COMPONENT === $rule_id ) {
+				$unrecognized = true;
+			}
+		}
+
+		if ( empty( $vuln_categories ) && ! $unrecognized ) {
+			return;
+		}
+		?>
+		<div class="cws-component-scan-advisories">
+			<h4><?php esc_html_e( 'Advisories', 'choctaw-wp-security' ); ?></h4>
+
+			<?php if ( $unrecognized ) : ?>
+				<p class="description"><?php esc_html_e( 'This component was not recognized by the WPVulnerability API.', 'choctaw-wp-security' ); ?></p>
+			<?php endif; ?>
+
+			<?php foreach ( $vuln_categories as $category ) : ?>
+				<?php
+				$advisory_name = isset( $category['advisory_name'] ) ? (string) $category['advisory_name'] : ( isset( $category['title'] ) ? (string) $category['title'] : '' );
+				$severity      = isset( $category['cvss_severity_label'] ) ? (string) $category['cvss_severity_label'] : ( isset( $category['severity'] ) ? (string) $category['severity'] : '' );
+				$score         = isset( $category['score'] ) ? (string) $category['score'] : '';
+				$version_range = isset( $category['version_range'] ) ? (string) $category['version_range'] : '';
+				$description   = isset( $category['description'] ) ? (string) $category['description'] : '';
+				$unfixed       = ! empty( $category['unfixed'] );
+				$closed        = ! empty( $category['closed'] );
+				$sources       = isset( $category['sources'] ) && is_array( $category['sources'] ) ? $category['sources'] : array();
+				?>
+				<div class="cws-component-scan-advisory-item">
+					<p class="cws-component-scan-advisory-title">
+						<strong><?php echo esc_html( $advisory_name ); ?></strong>
+						<?php if ( '' !== $severity ) : ?>
+							<span class="cws-component-scan-cvss">
+								<?php
+								echo esc_html(
+									'' !== $score
+										? sprintf(
+											/* translators: 1: CVSS severity label, 2: CVSS score */
+											__( 'CVSS %1$s (%2$s)', 'choctaw-wp-security' ),
+											$severity,
+											$score
+										)
+										: sprintf(
+											/* translators: %s: CVSS severity label */
+											__( 'CVSS %s', 'choctaw-wp-security' ),
+											$severity
+										)
+								);
+								?>
+							</span>
+						<?php endif; ?>
+					</p>
+
+					<?php if ( '' !== $description ) : ?>
+						<p><?php echo esc_html( wp_strip_all_tags( $description ) ); ?></p>
+					<?php endif; ?>
+
+					<?php if ( '' !== $version_range || $unfixed || $closed ) : ?>
+						<ul class="cws-core-checksum-list">
+							<?php if ( '' !== $version_range ) : ?>
+								<li>
+									<?php
+									echo esc_html(
+										sprintf(
+											/* translators: %s: affected version range */
+											__( 'Affected versions: %s', 'choctaw-wp-security' ),
+											$version_range
+										)
+									);
+									?>
+								</li>
+							<?php endif; ?>
+							<?php if ( $unfixed ) : ?>
+								<li><?php esc_html_e( 'No fixed version has been published yet for this advisory.', 'choctaw-wp-security' ); ?></li>
+							<?php endif; ?>
+							<?php if ( $closed ) : ?>
+								<li><?php esc_html_e( 'This advisory record is marked closed by the provider.', 'choctaw-wp-security' ); ?></li>
+							<?php endif; ?>
+						</ul>
+					<?php endif; ?>
+
+					<?php if ( ! empty( $sources ) ) : ?>
+						<p class="cws-component-scan-advisory-sources">
+							<?php esc_html_e( 'Sources:', 'choctaw-wp-security' ); ?>
+							<?php
+							$links = array();
+							foreach ( $sources as $source ) {
+								if ( ! is_array( $source ) || empty( $source['link'] ) ) {
+									continue;
+								}
+								$safe_link = Sassh_Component_Key_Normalizer::sanitize_external_http_url( (string) $source['link'] );
+								if ( '' === $safe_link ) {
+									continue;
+								}
+								$link_label = isset( $source['name'] ) && '' !== trim( (string) $source['name'] )
+									? (string) $source['name']
+									: $safe_link;
+								ob_start();
+								$this->render_external_http_link( $safe_link, $link_label );
+								$links[] = (string) ob_get_clean();
+							}
+							echo wp_kses(
+								implode( ', ', $links ),
+								array(
+									'a'    => array(
+										'href'   => true,
+										'target' => true,
+										'rel'    => true,
+									),
+									'span' => array(
+										'class'       => true,
+										'aria-hidden' => true,
+									),
+									'sup'  => array(
+										'class'       => true,
+										'aria-hidden' => true,
+									),
+								)
+							);
+							?>
+						</p>
+					<?php endif; ?>
+				</div>
+			<?php endforeach; ?>
+
+			<?php if ( ! empty( $vuln_categories ) ) : ?>
+				<p class="description">
+					<?php esc_html_e( 'This reflects a known public vulnerability advisory for the installed version (exposure / unpatched risk) — it is not confirmation that this site has been compromised or that malware is present.', 'choctaw-wp-security' ); ?>
+				</p>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Render the recognized-and-clean component inventory (non-dismissible).
+	 *
+	 * @param array<string, mixed> $inventory Clean inventory (core/plugins/themes).
+	 * @return void
+	 */
+	private function render_component_scan_inventory( array $inventory ) {
+		$core    = isset( $inventory['core'] ) && is_array( $inventory['core'] ) ? $inventory['core'] : null;
+		$plugins = isset( $inventory['plugins'] ) && is_array( $inventory['plugins'] ) ? $inventory['plugins'] : array();
+		$themes  = isset( $inventory['themes'] ) && is_array( $inventory['themes'] ) ? $inventory['themes'] : array();
+
+		if ( null === $core && empty( $plugins ) && empty( $themes ) ) {
+			return;
+		}
+		?>
+		<div class="cws-report-section cws-component-scan-report cws-component-scan-inventory">
+			<h3><?php esc_html_e( 'Recognized, No Known Vulnerabilities', 'choctaw-wp-security' ); ?></h3>
+			<p class="description">
+				<?php esc_html_e( 'These components were recognized by the WPVulnerability API or the Sassh recognized-components registry and have no known vulnerability advisories for the installed version. Recognition is not a safety or integrity guarantee. This inventory is informational and cannot be dismissed.', 'choctaw-wp-security' ); ?>
+			</p>
+			<ul class="cws-component-scan-clean-list">
+				<?php if ( null !== $core ) : ?>
+					<li>
+						<?php
+						echo esc_html(
+							sprintf(
+								/* translators: %s: WordPress core version */
+								__( 'WordPress %s (core)', 'choctaw-wp-security' ),
+								isset( $core['version'] ) ? (string) $core['version'] : ''
+							)
+						);
+						?>
+					</li>
+				<?php endif; ?>
+				<?php foreach ( $themes as $theme ) : ?>
+					<li>
+						<?php
+						echo esc_html(
+							sprintf(
+								/* translators: 1: theme name, 2: version */
+								__( '%1$s %2$s (theme)', 'choctaw-wp-security' ),
+								isset( $theme['name'] ) ? (string) $theme['name'] : '',
+								isset( $theme['version'] ) ? (string) $theme['version'] : ''
+							)
+						);
+						$this->render_component_scan_inventory_recognition_note( is_array( $theme ) ? $theme : array() );
+						?>
+					</li>
+				<?php endforeach; ?>
+				<?php foreach ( $plugins as $plugin ) : ?>
+					<li>
+						<?php
+						echo esc_html(
+							sprintf(
+								/* translators: 1: plugin name, 2: version */
+								__( '%1$s %2$s (plugin)', 'choctaw-wp-security' ),
+								isset( $plugin['name'] ) ? (string) $plugin['name'] : '',
+								isset( $plugin['version'] ) ? (string) $plugin['version'] : ''
+							)
+						);
+						$this->render_component_scan_inventory_recognition_note( is_array( $plugin ) ? $plugin : array() );
+						?>
+					</li>
+				<?php endforeach; ?>
+			</ul>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Append recognition-source note for registry-recognized inventory rows.
+	 *
+	 * @param array<string, mixed> $entry Inventory entry.
+	 * @return void
+	 */
+	private function render_component_scan_inventory_recognition_note( array $entry ) {
+		if ( empty( $entry['recognition_source'] ) && empty( $entry['recognition_source_label'] ) ) {
 			return;
 		}
 
-		$pagination = $this->paginate_report_items( $findings, $this->get_report_page_number( 'cws_unrecognized' ) );
+		$label = ! empty( $entry['recognition_source_label'] )
+			? (string) $entry['recognition_source_label']
+			: (string) $entry['recognition_source'];
 		?>
-		<table class="widefat striped cws-core-checksum-table cws-unrecognized-components-table">
-			<thead>
-				<tr>
-					<th scope="col"><?php esc_html_e( 'Risk', 'choctaw-wp-security' ); ?></th>
-					<th scope="col"><?php esc_html_e( 'Status', 'choctaw-wp-security' ); ?></th>
-					<th scope="col"><?php esc_html_e( 'Category', 'choctaw-wp-security' ); ?></th>
-					<th scope="col"><?php esc_html_e( 'Name', 'choctaw-wp-security' ); ?></th>
-					<th scope="col"><?php esc_html_e( 'State', 'choctaw-wp-security' ); ?></th>
-					<th scope="col"><?php esc_html_e( 'Action', 'choctaw-wp-security' ); ?></th>
-				</tr>
-			</thead>
-			<tbody>
-				<?php foreach ( $pagination['items'] as $index => $finding ) : ?>
-					<?php
-					$row_id       = 'cws-unrecognized-fallback-' . (int) $index;
-					$risk         = isset( $finding['risk'] ) ? (string) $finding['risk'] : 'info';
-					$risk_label   = isset( $finding['risk_label'] ) ? (string) $finding['risk_label'] : __( 'Info', 'choctaw-wp-security' );
-					$status       = isset( $finding['status'] ) ? (string) $finding['status'] : Choctaw_Wp_Security_Finding_Status_Store::STATUS_NEEDS_REVIEW;
-					$status_label = isset( $finding['status_label'] ) ? (string) $finding['status_label'] : Choctaw_Wp_Security_Finding_Status_Store::status_label( $status );
-					$fingerprint  = isset( $finding['fingerprint'] ) ? (string) $finding['fingerprint'] : ( isset( $finding['id'] ) ? (string) $finding['id'] : '' );
-					?>
-					<tr>
-						<td><?php $this->render_risk_badge( $risk, $risk_label ); ?></td>
-						<td><?php $this->render_status_badge( $status, $status_label ); ?></td>
-						<td><span class="cws-report-pill"><?php echo esc_html( isset( $finding['category_label'] ) ? (string) $finding['category_label'] : '' ); ?></span></td>
-						<td><?php echo esc_html( isset( $finding['name'] ) ? (string) $finding['name'] : '' ); ?></td>
-						<td><?php echo esc_html( isset( $finding['state_label'] ) ? (string) $finding['state_label'] : '' ); ?></td>
-						<td>
-							<button type="button" class="cws-report-eye" data-expand-target="<?php echo esc_attr( $row_id ); ?>" aria-expanded="false" aria-label="<?php esc_attr_e( 'View details', 'choctaw-wp-security' ); ?>">
-								<span class="dashicons dashicons-visibility" aria-hidden="true"></span>
-							</button>
-						</td>
-					</tr>
-					<tr class="cws-report-detail-row" id="<?php echo esc_attr( $row_id ); ?>" hidden>
-						<td colspan="6">
-							<div class="cws-report-detail-grid cws-unrecognized-components-detail-grid">
-								<div class="cws-unrecognized-components-detail-left">
-									<div class="cws-unrecognized-components-info-panel">
-										<h4><?php esc_html_e( 'Info', 'choctaw-wp-security' ); ?></h4>
-										<dl>
-											<dt><?php esc_html_e( 'Slug', 'choctaw-wp-security' ); ?></dt>
-											<dd><code class="cws-file-path"><?php echo esc_html( isset( $finding['slug'] ) ? (string) $finding['slug'] : '' ); ?></code></dd>
-											<dt><?php esc_html_e( 'Version', 'choctaw-wp-security' ); ?></dt>
-											<dd><?php echo esc_html( isset( $finding['version'] ) && '' !== (string) $finding['version'] ? (string) $finding['version'] : '—' ); ?></dd>
-										</dl>
-									</div>
-									<div class="cws-unrecognized-components-contents">
-										<h4><?php esc_html_e( 'Contents', 'choctaw-wp-security' ); ?></h4>
-										<textarea class="cws-file-contents-textarea large-text code" rows="14" readonly><?php echo esc_textarea( isset( $finding['contents'] ) ? (string) $finding['contents'] : '' ); ?></textarea>
-									</div>
-								</div>
-								<div class="cws-unrecognized-components-detail-right">
-									<div>
-										<h4><?php esc_html_e( 'Why you are seeing this', 'choctaw-wp-security' ); ?></h4>
-										<p><?php echo esc_html( isset( $finding['why_seeing_this'] ) ? (string) $finding['why_seeing_this'] : '' ); ?></p>
-									</div>
-									<div>
-										<h4><?php esc_html_e( 'How to proceed', 'choctaw-wp-security' ); ?></h4>
-										<p><?php echo esc_html( isset( $finding['how_to_proceed'] ) ? (string) $finding['how_to_proceed'] : '' ); ?></p>
-										<?php
-										if ( '' !== $fingerprint ) {
-											$this->render_dismiss_controls( 'unrecognized-components', $fingerprint, $status );
-										}
-										?>
-									</div>
-								</div>
-							</div>
-						</td>
-					</tr>
-				<?php endforeach; ?>
-			</tbody>
-		</table>
+		<br />
+		<span class="description">
+			<?php
+			echo esc_html(
+				sprintf(
+					/* translators: %s: recognition source label */
+					__( 'Recognition Source: %s', 'choctaw-wp-security' ),
+					$label
+				)
+			);
+			if ( ! empty( $entry['registry_name'] ) ) {
+				echo ' — ' . esc_html(
+					sprintf(
+						/* translators: %s: registry display name */
+						__( 'Registry Name: %s', 'choctaw-wp-security' ),
+						(string) $entry['registry_name']
+					)
+				);
+			}
+			if ( ! empty( $entry['registry_vendor'] ) ) {
+				echo ' — ' . esc_html(
+					sprintf(
+						/* translators: %s: registry vendor */
+						__( 'Registry Vendor: %s', 'choctaw-wp-security' ),
+						(string) $entry['registry_vendor']
+					)
+				);
+			}
+			?>
+		</span>
 		<?php
-		$this->render_report_pagination( 'cws_unrecognized', $pagination, __( 'components', 'choctaw-wp-security' ) );
 	}
 
 	/**
@@ -6458,7 +6754,7 @@ class Choctaw_Wp_Security_Settings {
 														echo wp_kses_post( $this->get_checksum_how_to_proceed_html( $category ) );
 													}
 													?>
-													<?php $this->render_dismiss_controls( 'verify-checksums', $fingerprint, $status, $finding_id ); ?>
+													<?php $this->render_dismiss_controls( 'verify-checksums', $fingerprint, $status, $finding_id, $finding ); ?>
 												</div>
 											</div>
 										</div>
@@ -6651,9 +6947,10 @@ class Choctaw_Wp_Security_Settings {
 										<h4><?php esc_html_e( 'How to proceed', 'choctaw-wp-security' ); ?></h4>
 										<p><?php echo esc_html( isset( $finding['how_to_proceed'] ) ? (string) $finding['how_to_proceed'] : '' ); ?></p>
 										<?php
-										$fingerprint = isset( $finding['fingerprint'] ) ? (string) $finding['fingerprint'] : '';
-										if ( '' !== $fingerprint ) {
-											$this->render_dismiss_controls( 'directory-browsing', $fingerprint, $status );
+										$fingerprint = isset( $finding['fingerprint'] ) ? (string) $finding['fingerprint'] : ( isset( $finding['content_fingerprint'] ) ? (string) $finding['content_fingerprint'] : '' );
+										$finding_id  = isset( $finding['finding_id'] ) ? (string) $finding['finding_id'] : '';
+										if ( '' !== $fingerprint || '' !== $finding_id ) {
+											$this->render_dismiss_controls( 'directory-browsing', $fingerprint, $status, $finding_id, $finding );
 										}
 										?>
 									</div>
@@ -6669,7 +6966,7 @@ class Choctaw_Wp_Security_Settings {
 	}
 
 	/**
-	 * Render Directory Browsing Blocked / Not Blocked / Unknown cell.
+	 * Render Directory Browsing open / not observed / unknown cell.
 	 *
 	 * @param string $state Browsing state key.
 	 * @param string $label Display label.

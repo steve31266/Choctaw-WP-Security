@@ -2,13 +2,13 @@
 
 ## Project Requirements Document
 
-**Document status:** Finalized requirements — Phase 1/2, Phase **3.0**, **3.1**, **3.2**, **3.3**, and **3.4** (WP-Cron) complete (2026-07-20); Phase **3.5+** scanner migrations next; Phase 4/5 pending  
+**Document status:** Finalized requirements — Phase 1/2, Phase **3.0**–**3.6** complete (2026-07-21); Phase **3.7+** scanner migrations next; Phase 4/5 pending  
 **Product scope:** Sassh WordPress Plugin (historical “CoreGuard” docs filenames), Sassh CLI, and future Sassh Desktop  
 **Primary purpose:** Define a shared, persistent system for recording scan findings, presenting items for human review, preserving dismissals, and reopening findings when their relevant state changes.
 
 **Scope of this document:** The Findings System — persistence, dismissals, effective status, object correlation, audit retention, scan-run attribution needed by future consumers, and the contract used by WordPress reports and future Desktop via CLI/JSON.
 
-**Implementation status:** Phase 1, 2, **3.0**, **3.1**, **3.2**, **3.3**, and **3.4** are implemented in the plugin: persistence; Uploads + MU-Plugins + Verify Checksums + Exposed Files + Database options + WP-Cron Findings producers; Multisite Network Admin shell; centralized auth on all Sassh admin AJAX; network-option settings (Multisite fresh start); related-findings detail UI (hidden when empty); object types `option` and `cron_event`. Remaining Store-backed scanners migrate as Phase **3.5–3.7**; prototype store wind-down is Phase **3.8**.
+**Implementation status:** Phase 1, 2, **3.0**–**3.6** are implemented in the plugin: persistence; Uploads + MU-Plugins + Verify Checksums + Exposed Files + Database options + WP-Cron + Vulnerabilities/Unrecognized Components + Directory Browsing Findings producers; Multisite Network Admin shell; centralized auth on all Sassh admin AJAX; network-option settings (Multisite fresh start); related-findings detail UI (hidden when empty); object types `option`, `cron_event`, `component`, and `directory_exposure`. Remaining Store-backed scanners migrate as Phase **3.7**; prototype store wind-down is Phase **3.8**.
 
 **Future consumers (architecture must accommodate; not Phase 1/2/3.x delivery):** Scan Site aggregate runs, scheduled scans, email notifications, Home tab summary, Desktop orchestration, and new scanners such as Shell Scan. Early Findings phases must not expand into building those products.
 
@@ -347,7 +347,7 @@ Participating reports shall consistently support, as applicable:
 - An indication when a prior dismissal was invalidated and why.
 - Related-findings context in the detail panel when a second participating file scanner exists (see §5.7); not required during the Uploads-only reference phase.
 
-A finding classified as Review Not Needed shall normally have no Dismiss control because CoreGuard is not requesting human review.
+A finding classified as Review Not Needed shall have no active Dismiss control because CoreGuard is not requesting human review. Shared detail UI derives control state from the Findings capability `can_dismiss` / `dismissal_control_state` (`active` for Needs Review, muted explanatory text for Review Not Needed, established restore controls for Dismissed). Scanners must not independently decide whether to render dismissal UI. Server-side `dismiss()` continues to reject invalid transitions even if a forged request bypasses the UI.
 
 ### 4.4 Clear History, baselines, and audit retention
 
@@ -459,6 +459,10 @@ Each scanner integrated with the system shall document its object-key normalizat
 **Phase 3.4:** WP-Cron (`scheduled-tasks`) registers `object_type=cron_event`. Identity includes required registered-site `blog_id` (same options-table gate as 3.3). Recognized-only events are report inventory only. *(Historical note: Phase 3.4 originally emitted one Finding per problem-rule; Phase **3.4.5** superseded that with object-level Findings + categories.)*
 
 **Phase 3.4.5:** Object-level Findings across all migrated scanners. Admin Related Findings show **cross-scanner** peers only; same-scanner multi-rule reasons appear as categories (`+N` / detail). Structured guidance composition replaces concatenated per-rule paragraphs.
+
+**Phase 3.5:** Vulnerabilities / unrecognized components (`component-scan`) registers `object_type=component` (`blog_id=null`). Keys: `core:wordpress`, `plugin:{file}`, `theme:{stylesheet}`. Related-on-expand is wired; natural cross-scanner peers are uncommon until another scanner produces `component` objects. Same-component multi-advisory reasons are categories.
+
+**Phase 3.6:** Directory Browsing (`directory-browsing` / tab `exposed-folders`) registers `object_type=directory_exposure`. Kind keys: `htaccess:.htaccess`, `folder:plugins|themes|uploads`. Shared objects use `blog_id=null`; Multisite uploads under `uploads/sites/N` use that `blog_id`. HTTP non-listing is **directory listing not observed** (not definitive “blocked”). Determinative site-root Options `-Indexes` presents as **Disabled in .htaccess** (Unknown only when Options are missing/nondeterminative or Nginx ignores `.htaccess`). Folder How-to-proceed combines structured `.htaccess` Indexes posture with the folder HTTP band. Open listings map to Sassh `warning` as confirmed public **exposure / misconfiguration** (not malware/compromise evidence). Inconclusive HTTP and unreadable `.htaccess` finalize `partial` without weakening prior confirmed posture. Related-on-expand is wired; natural cross-scanner peers are not expected (type differs from `file` / `component`).
 
 **CLI/JSON (Phase 4):** Include related context on `findings get`. Do not include related findings in list responses by default. Public envelope uses object-level Findings with `categories[]`.
 
@@ -804,8 +808,8 @@ After the Uploads integration is proven, remaining existing scans migrate onto t
 3. **3.2:** Exposed sensitive-file findings (practical related-findings peer with Verify Checksums on ABSPATH-root files).
 4. **3.3 (done):** Database options findings (`object_type` registry: `option`).
 5. **3.4 (done):** WP-Cron findings (`cron_event`).
-6. **3.5:** Vulnerability / unrecognized-component findings.
-7. **3.6:** Directory Browsing — configuration/exposure object type (not forced `file`).
+6. **3.5 (done):** Vulnerability / unrecognized-component findings (`component`).
+7. **3.6 (done):** Directory Browsing — `object_type=directory_exposure` (not forced `file`).
 8. **3.7 (optional):** wp_posts (Store-backed; outside the original §11 list).
 9. **3.8:** Prototype `Finding_Status_Store` wind-down after the last migrated scan; leftover **Review Not Needed** string sweep.
 
@@ -1203,9 +1207,33 @@ Holistic Findings-system revision (not a cron-only fix):
 - Supersedes Phase 3.4 Q1 A (one Finding per problem-rule) and earlier rule-in-identity assumptions from Phases 1–3.4.
 - Next = Phase **3.5** (only after regression matrix + docs consistency).
 
-### Phase 3.5–3.8: Remaining scanner migrations and closeout — **pending**
+### Phase 3.5: Vulnerabilities / Unrecognized Components — **complete (2026-07-21)**
 
-Narrowly scoped plans, one phase at a time (same pattern as 3.0–3.4). Registry expansion travels with the first consumer. See §11. **Phase 3.5 must not begin until Phase 3.4.5 regression acceptance passes.**
+- Migrate `component-scan` onto `Sassh_Findings_Service`; register `object_type=component`.
+- Identity: `core:wordpress` / `plugin:{normalized file}` / `theme:{stylesheet}`; `blog_id=null`; version in fingerprints only.
+- One Finding per component; categories = `vuln:{stable_vuln_id}` per advisory or `unrecognized-component` (plugins/themes only, positively completed lookups).
+- CVSS Critical/High → Sassh `warning` with prominent CVSS labels; exposure ≠ infection wording; unrecognized → `suspicious` + `needs_review`.
+- Clean recognized components are non-Finding inventory; no Safe Findings for clean.
+- Inventory accounting (`intended_total`, `checked_total`, clean/vulnerable/unrecognized/unchecked); success requires all intended positively determined.
+- Recognition ≠ API failure; unrecognized core → incomplete (never silent clean / never unrecognized core Finding).
+- `confirmed_this_run` from execution provenance (`last_scanner_execution_id`); Multisite `active_sitewide_plugins` metadata.
+- AJAX Findings UI; Clear History removed; Store type `unrecognized-components` retired; fresh start; WPVulnerability provider unchanged.
+- Finding Info includes plugin/theme identity evidence (URI headers, update host, installed path, activation state) as escaped informational metadata only — never used alone to recognize/whitelist. Valid http(s) URIs render as `target="_blank"` / `rel="noopener noreferrer"` external links with an accessible “(opens in a new tab)” cue and decorative external-link icon (`aria-hidden`).
+- Bundled Sassh recognized-components registry (`coreguard/data/recognized-components.json`, `schema_version: 1`): exact `main_file` / `stylesheet` identity matching after conservative normalization. Consulted only after the provider positively determines unrecognized. Registry recognition ≠ audited/safe; never suppresses advisories or converts API failure into complete coverage. Registry-recognized clean components are non-Finding inventory with Recognition Source / Registry Name / Vendor display metadata (installed headers retained). Malformed/missing registry surfaces diagnostics and never invents recognition.
+
+### Phase 3.6: Directory Browsing — **complete (2026-07-21)**
+
+- Migrate `directory-browsing` (tab `exposed-folders`) onto `Sassh_Findings_Service`; register `object_type=directory_exposure`.
+- Kind keys: `htaccess:.htaccess`, `folder:plugins|themes|uploads`; `blog_id=null` except Multisite uploads `sites/N`.
+- Categories include `directory-listing-open` / `directory-listing-not-observed` / `directory-listing-unknown` and htaccess Indexes / compound folder-aggregate rules.
+- HTTP non-listing = **not observed** (not definitive “blocked”); open listing → Sassh `warning` as exposure/misconfiguration (not compromise).
+- Inconclusive/unclassifiable HTTP and unevaluable targets → `partial` (no absence/weakening). Unreadable existing `.htaccess` → `partial` without replacing prior confirmed htaccess posture.
+- Compound `htaccess-unprotected-folders-open` may strengthen on partial when ≥1 folder is confirmed open; `…-not-observed` requires every folder conclusive not-observed.
+- Sassh dismiss/undismiss; Clear History removed; Store type retired; related-on-expand wired (peers not expected); Review Not Needed labeling; fresh start.
+
+### Phase 3.7–3.8: Remaining scanner migrations and closeout — **pending**
+
+Narrowly scoped plans, one phase at a time (same pattern as 3.0–3.6). Registry expansion travels with the first consumer. See §11.
 
 | Phase | Scope | Status |
 | --- | --- | --- |
@@ -1214,8 +1242,8 @@ Narrowly scoped plans, one phase at a time (same pattern as 3.0–3.4). Registry
 | **3.3** | Database options (`database-scan`); register `option` | complete (2026-07-20); converted to object-level in 3.4.5 |
 | **3.4** | WP-Cron (`scheduled-tasks`); register `cron_event` | complete (2026-07-20); object-level supersession in 3.4.5 |
 | **3.4.5** | Object-level Findings + categories + guidance | complete (2026-07-20) |
-| **3.5** | Vulnerabilities / unrecognized components | pending |
-| **3.6** | Directory Browsing (`exposed-folders`); exposure/config object type | pending |
+| **3.5** | Vulnerabilities / unrecognized components (`component-scan`); register `component` | complete (2026-07-21) |
+| **3.6** | Directory Browsing (`directory-browsing`); register `directory_exposure` | complete (2026-07-21) |
 | **3.7** | wp_posts (`wp-posts`) — optional | pending |
 | **3.8** | Gut/remove `Finding_Status_Store` after last migration; leftover **Review Not Needed** string sweep | pending |
 
@@ -1240,7 +1268,7 @@ Prefer migrating at least **3.1** and **3.2** before freezing the public CLI sur
 
 - Scan Site aggregate orchestration, scheduled scans, email notifications, Home summary (§12).
 
-**Next deliverable:** Phase **3.5** implementation plan (Vulnerabilities / unrecognized components → Findings), then implementation after approval — **only after** Phase 3.4.5 acceptance.
+**Next deliverable:** Phase **3.7** (optional wp_posts) or **3.8** store wind-down per product priority.
 
 ---
 

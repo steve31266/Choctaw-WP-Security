@@ -19,6 +19,64 @@ Newest entries first.
 
 ---
 
+## 2026-07-21 19:40 CDT
+
+**Summary:** Findings system-wide dismiss UI: `can_dismiss` / `dismissal_control_state` drive shared detail controls so Review Not Needed never offers an active dismiss action; server-side dismiss rejection retained.
+
+**Documents:**
+- `docs/CoreGuard Findings System.md` — updated — §4.3 dismiss control capability rule
+- `CHANGELOG.md` — updated — `[1.9.3.6]` shared dismiss UI eligibility
+
+## 2026-07-21 19:00 CDT
+
+**Summary:** Phase **3.6** follow-up: `.htaccess` Options `-Indexes` column label **Disabled in .htaccess** (not Unknown); folder How-to-proceed derived from structured Indexes posture + HTTP probe band.
+
+**Documents:**
+- `docs/CoreGuard Findings System.md` — updated — §5.7 presentation + context-aware folder guidance
+- `CHANGELOG.md` — updated — `[1.9.3.6]` Directory Browsing presentation/guidance fixes
+
+## 2026-07-21 17:20 CDT
+
+**Summary:** Phase **3.6** Directory Browsing migrated to Sassh Findings (`object_type=directory_exposure`; kind keys; Warning = exposure not malware; `directory-listing-not-observed`; inconclusive HTTP / unreadable `.htaccess` → partial without weakening prior posture; compound folder-aggregate rules).
+
+**Documents:**
+- `docs/CoreGuard Findings System.md` — updated — §5.7 Phase 3.6, §11 order, §18 Phase 3.6 complete
+- `docs/README.md` — updated — Findings status through 3.6
+- `.cursor/plans/findings_phase_3_6_directory_browsing.plan.md` — updated — implemented
+- `.cursor/plans/findings_phase_3x_index.plan.md` — updated — 3.6 complete
+- `.cursor/plans/CoreGuard-Findings-System.md` — updated — align to canonical
+- `CHANGELOG.md` — updated — `[1.9.3.6]` Phase 3.6
+
+## 2026-07-21 16:55 CDT
+
+**Summary:** Phase **3.5** addition: bundled Sassh recognized-components registry (`coreguard/data/recognized-components.json`) with exact path/stylesheet identity matching. Provider remains primary; registry only after positive unrecognized; never converts incomplete coverage or suppresses advisories; inventory display shows Recognition Source without “safe/verified” claims.
+
+**Documents:**
+- `docs/CoreGuard Findings System.md` — updated — §18 Phase 3.5 registry
+- `.cursor/plans/findings_phase_3_5_vulnerabilities.plan.md` — updated — registry decisions, file list, acceptance
+- `CHANGELOG.md` — updated — `[1.9.3.6]` registry addition
+
+## 2026-07-21 14:40 CDT
+
+**Summary:** Phase **3.5** Finding Info UX: plugin/theme identity metadata (URI headers, update host, installed path, activation) shown as escaped informational evidence for unrecognized-component review; validated http(s) URIs as accessible external links (`target="_blank"`, `rel="noopener noreferrer"`, decorative icon + screen-reader “opens in a new tab”).
+
+**Documents:**
+- `docs/CoreGuard Findings System.md` — updated — §18 Phase 3.5 identity Info evidence
+- `.cursor/plans/findings_phase_3_5_vulnerabilities.plan.md` — updated — Info identity metadata note
+- `CHANGELOG.md` — updated — `[1.9.3.6]` Added identity Info UX
+
+## 2026-07-21 11:45 CDT
+
+**Summary:** Locked and shipped Findings Phase **3.5** (Vulnerabilities / Unrecognized Components → Sassh Findings): registered `object_type=component`; one Finding per component with `vuln:{id}` / `unrecognized-component` categories; CVSS→Warning mapping with exposure wording; incomplete≠absence; AJAX UI; Clear History removed; WPVulnerability unchanged.
+
+**Documents:**
+- `docs/CoreGuard Findings System.md` — updated — §5.7 / §11 / §18 Phase 3.5 complete; next = 3.6
+- `.cursor/plans/findings_phase_3_5_vulnerabilities.plan.md` — updated — approved + implemented
+- `.cursor/plans/findings_phase_3x_index.plan.md` — updated — 3.5 status
+- `docs/README.md` — updated — Findings status through Phase 3.5
+- `CHANGELOG.md` — updated — `[1.9.3.6]`
+- `coreguard/sassh.php` — updated — `Version` / `CHOCTAW_WP_SECURITY_VERSION` → `1.9.3.6`
+
 ## 2026-07-20 20:45 CDT
 
 **Summary:** Locked and shipped Findings Phase **3.4.5** (object-level Findings): Finding identity excludes `rule_id`; first-class `sassh_finding_categories`; directional dismissal + carry-forward; success-only negative reconcile with incomplete-run strengthening; structured guidance composer + subset recipes; schema v2 reset. Supersedes rule-identity assumptions from Phases 1–3.4 (including Phase 3.4 Q1 A).

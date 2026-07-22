@@ -129,10 +129,15 @@ class Sassh_Finding_Guidance_Composer {
 			return $cat['metadata']['guidance_contributions'];
 		}
 
-		// Built-in packs for cron reference recipe.
+		// Built-in packs for cron reference recipe + component-scan.
 		$builtin = self::builtin_packs();
 		if ( isset( $builtin[ $rule_id ] ) ) {
 			return $builtin[ $rule_id ];
+		}
+
+		// Shared pack for all known-vulnerability categories (vuln:{stable_id}).
+		if ( 0 === strpos( (string) $rule_id, 'vuln:' ) && isset( $builtin['vuln'] ) ) {
+			return $builtin['vuln'];
 		}
 
 		// Adapter from legacy why/how strings.
@@ -251,6 +256,56 @@ class Sassh_Finding_Guidance_Composer {
 					'text'             => 'Search installed (including inactive) plugins and mu-plugins for the hook name before cleanup.',
 					'tags'             => array( 'investigate', 'nondestructive' ),
 					'concern'          => 'cron.proceed',
+				),
+			),
+			// Shared pack for rule_id prefix vuln:{stable_id} (Phase 3.5).
+			'vuln' => array(
+				array(
+					'id'               => 'component.vuln.evidence.known_advisory',
+					'kind'             => 'evidence_fact',
+					'display_priority' => 10,
+					'text'             => 'A public advisory in the WPVulnerability database applies to the installed version of this component.',
+					'concern'          => 'component.vuln.evidence',
+				),
+				array(
+					'id'               => 'component.vuln.interpretation.exposure_not_infection',
+					'kind'             => 'warning_caveat',
+					'display_priority' => 10,
+					'text'             => 'A known vulnerability means exposure / unpatched risk. It is not evidence that this site is infected or that malware is present. Review the CVSS severity shown for the advisory; Sassh Warning here means review urgency, not a malware verdict.',
+					'concern'          => 'component.vuln.certainty',
+					'severity'        => 80,
+				),
+				array(
+					'id'               => 'component.vuln.action.update_or_mitigate',
+					'kind'             => 'recommended_action',
+					'display_priority' => 20,
+					'text'             => 'Update the component to a fixed version when available, or apply vendor mitigation guidance. Prefer official updates over deleting software until you understand the impact.',
+					'tags'             => array( 'investigate', 'nondestructive' ),
+					'concern'          => 'component.vuln.proceed',
+				),
+			),
+			'unrecognized-component' => array(
+				array(
+					'id'               => 'component.unrecognized.evidence.not_in_db',
+					'kind'             => 'evidence_fact',
+					'display_priority' => 10,
+					'text'             => 'The WPVulnerability API returned a valid response indicating this plugin or theme is not listed in popular public directories (or its slug may be custom/altered).',
+					'concern'          => 'component.unrecognized.evidence',
+				),
+				array(
+					'id'               => 'component.unrecognized.interpretation.not_malware',
+					'kind'             => 'interpretation',
+					'display_priority' => 20,
+					'text'             => 'Unrecognized does not mean unsafe. Premium, private, hosting-bundled, or custom components often appear here. It does mean Sassh cannot automatically evaluate known vulnerabilities for it.',
+					'concern'          => 'component.unrecognized.certainty',
+				),
+				array(
+					'id'               => 'component.unrecognized.action.review_source',
+					'kind'             => 'recommended_action',
+					'display_priority' => 30,
+					'text'             => 'Confirm you intentionally installed this component from a trusted source. If it is unused, uninstall it to reduce attack surface. Dismiss only after you have reviewed the current version.',
+					'tags'             => array( 'investigate', 'nondestructive' ),
+					'concern'          => 'component.unrecognized.proceed',
 				),
 			),
 		);

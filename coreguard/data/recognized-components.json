@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "main_file": "coreguard/sassh.php",
+      "name": "Sassh Security",
+      "vendor": "Sashtastic, LLC"
+    }
+  ],
+  "themes": [
+    {
+      "stylesheet": "generatepress_child",
+      "name": "GeneratePress Child",
+      "vendor": "Tom Usborne"
+    }
+  ]
+}

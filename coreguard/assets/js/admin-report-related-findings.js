@@ -67,6 +67,12 @@
 		if (id === 'scheduled-tasks') {
 			return 'Scheduled Tasks';
 		}
+		if (id === 'component-scan') {
+			return 'Vulnerabilities';
+		}
+		if (id === 'directory-browsing') {
+			return 'Directory Browsing';
+		}
 		return id || '—';
 	}
 

@@ -192,6 +192,93 @@ sassh_assert(
 	'Review Not Needed' === Sassh_Findings_Service::status_label( 'no_action_needed' )
 );
 
+// Canonical dismiss eligibility (Findings system-wide).
+sassh_assert( 'can_dismiss(needs_review)', Sassh_Findings_Service::can_dismiss( 'needs_review' ) );
+sassh_assert( 'cannot dismiss no_action_needed classification', ! Sassh_Findings_Service::can_dismiss( 'no_action_needed' ) );
+sassh_assert(
+	'can_dismiss finding with needs_review classification',
+	Sassh_Findings_Service::can_dismiss(
+		array(
+			'sassh_classification' => 'needs_review',
+			'effective_status'     => 'needs_review',
+		)
+	)
+);
+sassh_assert(
+	'cannot dismiss Review Not Needed finding',
+	! Sassh_Findings_Service::can_dismiss(
+		array(
+			'sassh_classification' => 'no_action_needed',
+			'effective_status'     => 'no_action_needed',
+			'status'               => 'no_action_needed',
+			'risk'                 => 'safe',
+		)
+	)
+);
+sassh_assert(
+	'dismissed finding remains classification-dismissible',
+	Sassh_Findings_Service::can_dismiss(
+		array(
+			'sassh_classification' => 'needs_review',
+			'effective_status'     => 'dismissed',
+		)
+	)
+);
+sassh_assert(
+	'dismissal_control_state active for Needs Review',
+	'active' === Sassh_Findings_Service::dismissal_control_state(
+		array(
+			'sassh_classification' => 'needs_review',
+			'effective_status'     => 'needs_review',
+		)
+	)
+);
+sassh_assert(
+	'dismissal_control_state not_dismissible for Review Not Needed',
+	'not_dismissible' === Sassh_Findings_Service::dismissal_control_state(
+		array(
+			'sassh_classification' => 'no_action_needed',
+			'effective_status'     => 'no_action_needed',
+		)
+	)
+);
+sassh_assert(
+	'dismissal_control_state dismissed for dismissed Needs Review',
+	'dismissed' === Sassh_Findings_Service::dismissal_control_state(
+		array(
+			'sassh_classification' => 'needs_review',
+			'effective_status'     => 'dismissed',
+		)
+	)
+);
+sassh_assert(
+	'Safe risk DTO is not_dismissible without explicit classification',
+	'not_dismissible' === Sassh_Findings_Service::dismissal_control_state(
+		array(
+			'risk'             => 'safe',
+			'effective_status' => 'no_action_needed',
+			'status'           => 'no_action_needed',
+		)
+	)
+);
+sassh_assert(
+	'Warning risk DTO is active without explicit classification',
+	'active' === Sassh_Findings_Service::dismissal_control_state(
+		array(
+			'risk'             => 'warning',
+			'effective_status' => 'needs_review',
+			'status'           => 'needs_review',
+		)
+	)
+);
+// Backend dismiss() rejects when ! can_dismiss (forged UI must still fail).
+sassh_assert(
+	'backend dismiss guard rejects no_action_needed',
+	! Sassh_Findings_Service::can_dismiss(
+		array( 'sassh_classification' => 'no_action_needed' )
+	)
+);
+
 sassh_assert(
 	'blog_id from sites path',
 	2 === Sassh_Findings_Service::blog_id_from_uploads_path( 'wp-content/uploads/sites/2/evil.php' )
@@ -642,6 +729,519 @@ foreach ( $guidance['how_to_proceed'] as $step ) {
 	$how_text .= is_array( $step ) ? (string) $step['text'] : (string) $step;
 }
 sassh_assert( 'destructive cron advice is conditional', false !== stripos( $how_text, 'if you confirm' ) );
+
+// --- Component key normalizer / Phase 3.5 ---
+sassh_assert(
+	'component type registered',
+	Sassh_Object_Type_Registry::is_registered( Sassh_Object_Type_Registry::TYPE_COMPONENT )
+);
+sassh_assert(
+	'component-scan scope key',
+	'component-scan:installation' === Sassh_Findings_Service::component_scan_scope_key()
+);
+sassh_assert(
+	'component-scan scanner id',
+	'component-scan' === Sassh_Findings_Service::SCANNER_COMPONENT_SCAN
+);
+sassh_assert(
+	'core object_key',
+	'core:wordpress' === Sassh_Component_Key_Normalizer::object_key( 'core' )
+);
+sassh_assert(
+	'plugin object_key normalizes file',
+	'plugin:akismet/akismet.php' === Sassh_Component_Key_Normalizer::object_key( 'plugin', '/akismet/akismet.php' )
+);
+sassh_assert(
+	'theme object_key',
+	'theme:twentytwentyfour' === Sassh_Component_Key_Normalizer::object_key( 'theme', 'twentytwentyfour' )
+);
+
+$fp_v1 = Sassh_Component_Key_Normalizer::object_fingerprint( 'plugin', 'plugin:akismet/akismet.php', '5.0' );
+$fp_v2 = Sassh_Component_Key_Normalizer::object_fingerprint( 'plugin', 'plugin:akismet/akismet.php', '5.1' );
+sassh_assert( 'component object fingerprint includes version', $fp_v1 !== $fp_v2 );
+
+$cve_id = Sassh_Component_Key_Normalizer::stable_vuln_identity(
+	array(
+		'name'          => 'CVE-2024-1234 Something',
+		'version_range' => '< 1.2.3',
+		'severity_code' => 'c',
+	)
+);
+sassh_assert( 'stable vuln prefers CVE', 'CVE-2024-1234' === $cve_id['stable_id'] );
+sassh_assert( 'vuln rule_id prefixed', 'vuln:CVE-2024-1234' === $cve_id['rule_id'] );
+
+$dup_a = Sassh_Component_Key_Normalizer::stable_vuln_identity(
+	array(
+		'name'          => 'Example Advisory',
+		'version_range' => '<= 2.0.0 - >= 1.0.0',
+		'severity_code' => 'h',
+	)
+);
+$dup_b = Sassh_Component_Key_Normalizer::stable_vuln_identity(
+	array(
+		'name'          => 'example   advisory',
+		'version_range' => '<=2.0.0 - >=1.0.0',
+		'severity'      => 'High',
+	)
+);
+sassh_assert( 'hash fallback dedupes casing/whitespace/range formatting', $dup_a['rule_id'] === $dup_b['rule_id'] );
+
+sassh_assert(
+	'CVSS critical maps to warning',
+	'warning' === Sassh_Findings_Service::component_scan_risk_level_for_vuln( 'c' )
+);
+sassh_assert(
+	'CVSS medium maps to suspicious',
+	'suspicious' === Sassh_Findings_Service::component_scan_risk_level_for_vuln( 'm' )
+);
+sassh_assert(
+	'unrecognized risk is suspicious',
+	'suspicious' === Sassh_Findings_Service::component_scan_risk_level_for_unrecognized()
+);
+
+$vuln_guidance = Sassh_Finding_Guidance_Composer::compose(
+	array(
+		array( 'rule_id' => 'vuln:CVE-2024-9999', 'detection_state' => 'active' ),
+	),
+	'component-scan'
+);
+$vuln_text = '';
+foreach ( array( 'why', 'how_to_proceed', 'caveats' ) as $bucket ) {
+	if ( empty( $vuln_guidance[ $bucket ] ) || ! is_array( $vuln_guidance[ $bucket ] ) ) {
+		continue;
+	}
+	foreach ( $vuln_guidance[ $bucket ] as $step ) {
+		$vuln_text .= is_array( $step ) ? (string) $step['text'] : (string) $step;
+	}
+}
+sassh_assert( 'vuln guidance pack applies via prefix', ! empty( $vuln_guidance['why'] ) || ! empty( $vuln_guidance['caveats'] ) );
+sassh_assert( 'vuln guidance mentions exposure not infection', false !== stripos( $vuln_text, 'not evidence' ) || false !== stripos( $vuln_text, 'infection' ) );
+
+$unrec_guidance = Sassh_Finding_Guidance_Composer::compose(
+	array(
+		array( 'rule_id' => 'unrecognized-component', 'detection_state' => 'active' ),
+	),
+	'component-scan'
+);
+sassh_assert( 'unrecognized guidance pack applies', ! empty( $unrec_guidance['why'] ) && ! empty( $unrec_guidance['how_to_proceed'] ) );
+
+sassh_assert(
+	'sanitize_external_http_url accepts https',
+	'https://example.com/plugin' === Sassh_Component_Key_Normalizer::sanitize_external_http_url( 'https://example.com/plugin' )
+);
+sassh_assert(
+	'sanitize_external_http_url rejects javascript',
+	'' === Sassh_Component_Key_Normalizer::sanitize_external_http_url( 'javascript:alert(1)' )
+);
+sassh_assert(
+	'sanitize_external_http_url rejects ftp',
+	'' === Sassh_Component_Key_Normalizer::sanitize_external_http_url( 'ftp://example.com/file' )
+);
+sassh_assert(
+	'hostname_from_http_url extracts host',
+	'updates.example.com' === Sassh_Component_Key_Normalizer::hostname_from_http_url( 'https://updates.example.com/channel' )
+);
+
+// --- Recognized-components registry (Phase 3.5) ---
+$fixtures = __DIR__ . '/fixtures';
+Sassh_Recognized_Components_Registry::reset_for_tests();
+Sassh_Recognized_Components_Registry::set_path_override_for_tests( $fixtures . '/recognized-components.valid.json' );
+$reg = Sassh_Recognized_Components_Registry::instance();
+
+$plugin_hit = $reg->lookup_plugin( 'coreguard/sassh.php' );
+sassh_assert( 'exact plugin main_file match', null !== $plugin_hit && 'Sassh Security' === $plugin_hit['name'] );
+sassh_assert( 'plugin vendor display metadata', null !== $plugin_hit && 'Sashtastic, LLC' === $plugin_hit['vendor'] );
+
+$theme_hit = $reg->lookup_theme( 'generatepress_child' );
+sassh_assert( 'exact theme stylesheet match', null !== $theme_hit && 'GeneratePress Child' === $theme_hit['name'] );
+
+sassh_assert( 'plugin non-match', null === $reg->lookup_plugin( 'other/plugin.php' ) );
+sassh_assert( 'theme non-match', null === $reg->lookup_theme( 'twentytwentyfour' ) );
+
+$v1 = $reg->lookup_plugin( 'coreguard/sassh.php' );
+$v2 = $reg->lookup_plugin( 'coreguard/sassh.php' );
+sassh_assert( 'versions do not affect recognition (same identity)', null !== $v1 && null !== $v2 && $v1['main_file'] === $v2['main_file'] );
+
+sassh_assert( 'display name alone cannot recognize', null === $reg->lookup_plugin( 'Sassh Security' ) );
+sassh_assert( 'vendor alone cannot recognize', null === $reg->lookup_plugin( 'Sashtastic, LLC' ) );
+
+$sep_hit = $reg->lookup_plugin( 'acme/widget/plugin.php' );
+sassh_assert( 'path separator normalization matches', null !== $sep_hit && 'Acme Widget' === $sep_hit['name'] );
+
+sassh_assert(
+	'reject traversal plugin identity',
+	'' === Sassh_Recognized_Components_Registry::normalize_plugin_main_file( '../evil.php' )
+);
+sassh_assert(
+	'reject theme path separators',
+	'' === Sassh_Recognized_Components_Registry::normalize_theme_stylesheet( 'bad/path' )
+);
+sassh_assert( 'traversal entry not indexed', null === $reg->lookup_plugin( '../evil.php' ) );
+sassh_assert( 'theme path entry not indexed', null === $reg->lookup_theme( 'bad/path' ) );
+
+$dup_plugin = $reg->lookup_plugin( 'dup/plugin.php' );
+sassh_assert( 'duplicate plugin keeps first entry', null !== $dup_plugin && 'First Dup' === $dup_plugin['name'] );
+$dup_theme = $reg->lookup_theme( 'dup-theme' );
+sassh_assert( 'duplicate theme keeps first entry', null !== $dup_theme && 'First Theme Dup' === $dup_theme['name'] );
+
+$diags = $reg->get_diagnostics();
+$diag_text = implode( ' ', $diags );
+sassh_assert( 'missing required fields produce diagnostic', false !== stripos( $diag_text, 'missing' ) );
+sassh_assert( 'duplicate identities produce diagnostic', false !== stripos( $diag_text, 'duplicate' ) );
+
+Sassh_Recognized_Components_Registry::reset_for_tests();
+Sassh_Recognized_Components_Registry::set_path_override_for_tests( $fixtures . '/recognized-components.missing.json' );
+$missing = Sassh_Recognized_Components_Registry::instance();
+sassh_assert( 'missing JSON does not invent recognition', null === $missing->lookup_plugin( 'coreguard/sassh.php' ) );
+sassh_assert( 'missing JSON diagnostic', ! empty( $missing->get_diagnostics() ) );
+
+Sassh_Recognized_Components_Registry::reset_for_tests();
+Sassh_Recognized_Components_Registry::set_path_override_for_tests( $fixtures . '/recognized-components.invalid-json.txt' );
+$bad_json = Sassh_Recognized_Components_Registry::instance();
+sassh_assert( 'invalid JSON does not invent recognition', null === $bad_json->lookup_plugin( 'coreguard/sassh.php' ) );
+sassh_assert( 'invalid JSON diagnostic', ! empty( $bad_json->get_diagnostics() ) );
+
+Sassh_Recognized_Components_Registry::reset_for_tests();
+Sassh_Recognized_Components_Registry::set_path_override_for_tests( $fixtures . '/recognized-components.unsupported-schema.json' );
+$bad_schema = Sassh_Recognized_Components_Registry::instance();
+sassh_assert( 'unsupported schema does not invent recognition', null === $bad_schema->lookup_theme( 'generatepress_child' ) );
+sassh_assert( 'unsupported schema diagnostic', ! empty( $bad_schema->get_diagnostics() ) );
+
+$unchecked = Sassh_Recognized_Components_Registry::decide_after_provider_lookup(
+	array( 'checked' => false, 'recognized' => false ),
+	array( 'name' => 'Sassh Security', 'vendor' => 'Sashtastic, LLC' ),
+	false
+);
+sassh_assert( 'provider timeout + registry match stays unchecked', 'unchecked' === $unchecked );
+
+$provider_clean = Sassh_Recognized_Components_Registry::decide_after_provider_lookup(
+	array( 'checked' => true, 'recognized' => true ),
+	null,
+	false
+);
+sassh_assert( 'provider-recognized clean', 'recognized_clean' === $provider_clean );
+
+$provider_vuln_and_registry = Sassh_Recognized_Components_Registry::decide_after_provider_lookup(
+	array( 'checked' => true, 'recognized' => true ),
+	array( 'name' => 'Sassh Security', 'vendor' => 'Sashtastic, LLC' ),
+	true
+);
+sassh_assert( 'provider-recognized vulnerable wins over registry', 'recognized_vulnerable' === $provider_vuln_and_registry );
+
+$reg_clean = Sassh_Recognized_Components_Registry::decide_after_provider_lookup(
+	array( 'checked' => true, 'recognized' => false ),
+	array( 'name' => 'Sassh Security', 'vendor' => 'Sashtastic, LLC' ),
+	false
+);
+sassh_assert( 'provider-unrecognized + registry match is recognized_clean', 'recognized_clean' === $reg_clean );
+
+$still_unrec = Sassh_Recognized_Components_Registry::decide_after_provider_lookup(
+	array( 'checked' => true, 'recognized' => false ),
+	null,
+	false
+);
+sassh_assert( 'provider-unrecognized without registry stays unrecognized', 'unrecognized' === $still_unrec );
+
+// Registry-recognized clean is inventory-only: no Safe Finding observation is created for that outcome.
+sassh_assert(
+	'registry-recognized clean is not a Safe Finding outcome label',
+	'recognized_clean' === $reg_clean && 'safe' !== $reg_clean
+);
+
+sassh_assert(
+	'component Findings remain blog_id null (network-wide)',
+	'component-scan:installation' === Sassh_Findings_Service::component_scan_scope_key()
+);
+sassh_assert(
+	'component object_key excludes blog id',
+	'plugin:coreguard/sassh.php' === Sassh_Component_Key_Normalizer::object_key( 'plugin', 'coreguard/sassh.php' )
+);
+
+// Absence reconciliation contract: only success clears unobserved categories; partial does not.
+$success_absence = array( 'completion_status' => 'success', 'absence_reconciled' => true );
+$partial_absence = array( 'completion_status' => 'partial', 'absence_reconciled' => false );
+sassh_assert( 'complete registry-recognized scan may reconcile prior unrecognized', true === $success_absence['absence_reconciled'] );
+sassh_assert( 'partial execution does not reconcile absence', false === $partial_absence['absence_reconciled'] );
+
+Sassh_Recognized_Components_Registry::reset_for_tests();
+
+// --- Phase 3.6 Directory Browsing / directory_exposure ---
+sassh_assert(
+	'directory_exposure object type registered',
+	Sassh_Object_Type_Registry::is_registered( Sassh_Object_Type_Registry::TYPE_DIRECTORY_EXPOSURE )
+);
+sassh_assert(
+	'directory-browsing scanner id',
+	'directory-browsing' === Sassh_Findings_Service::SCANNER_DIRECTORY_BROWSING
+);
+sassh_assert(
+	'directory-browsing scope key',
+	'directory-browsing:wordpress-root' === Sassh_Findings_Service::directory_browsing_scope_key()
+);
+sassh_assert(
+	'htaccess object_key',
+	'htaccess:.htaccess' === Sassh_Directory_Exposure_Key_Normalizer::htaccess_object_key()
+);
+sassh_assert(
+	'folder plugins object_key',
+	'folder:plugins' === Sassh_Directory_Exposure_Key_Normalizer::folder_object_key( 'plugins' )
+);
+sassh_assert(
+	'folder themes object_key',
+	'folder:themes' === Sassh_Directory_Exposure_Key_Normalizer::folder_object_key( 'themes' )
+);
+sassh_assert(
+	'folder uploads object_key',
+	'folder:uploads' === Sassh_Directory_Exposure_Key_Normalizer::folder_object_key( 'uploads' )
+);
+sassh_assert(
+	'uploads blog_id null for main uploads path',
+	null === Sassh_Directory_Exposure_Key_Normalizer::blog_id_for_folder( 'uploads', 'wp-content/uploads' )
+);
+sassh_assert(
+	'uploads blog_id for sites/N',
+	3 === Sassh_Directory_Exposure_Key_Normalizer::blog_id_for_folder( 'uploads', 'wp-content/uploads/sites/3/' )
+);
+sassh_assert(
+	'plugins blog_id always null',
+	null === Sassh_Directory_Exposure_Key_Normalizer::blog_id_for_folder( 'plugins', 'wp-content/plugins' )
+);
+
+sassh_assert(
+	'directory-listing-open → warning',
+	'warning' === Sassh_Findings_Service::directory_browsing_risk_level( 'directory-listing-open' )
+);
+sassh_assert(
+	'directory-listing-not-observed → safe',
+	'safe' === Sassh_Findings_Service::directory_browsing_risk_level( 'directory-listing-not-observed' )
+);
+sassh_assert(
+	'directory-listing-unknown → suspicious',
+	'suspicious' === Sassh_Findings_Service::directory_browsing_risk_level( 'directory-listing-unknown' )
+);
+sassh_assert(
+	'htaccess-indexes-disabled → safe',
+	'safe' === Sassh_Findings_Service::directory_browsing_risk_level( 'htaccess-indexes-disabled' )
+);
+sassh_assert(
+	'htaccess-unprotected-folders-open → warning',
+	'warning' === Sassh_Findings_Service::directory_browsing_risk_level( 'htaccess-unprotected-folders-open' )
+);
+sassh_assert(
+	'htaccess-unprotected-folders-not-observed → info',
+	'info' === Sassh_Findings_Service::directory_browsing_risk_level( 'htaccess-unprotected-folders-not-observed' )
+);
+sassh_assert(
+	'open listing defaults to needs_review',
+	'needs_review' === Sassh_Findings_Service::default_classification( 'warning' )
+);
+sassh_assert(
+	'not-observed defaults to no_action_needed',
+	'no_action_needed' === Sassh_Findings_Service::default_classification( 'safe' )
+);
+
+$agg_a = Sassh_Directory_Exposure_Key_Normalizer::aggregate_folder_posture_payload(
+	array(
+		'themes'  => 'not_observed',
+		'plugins' => 'open',
+		'uploads' => 'unknown',
+	)
+);
+$agg_b = Sassh_Directory_Exposure_Key_Normalizer::aggregate_folder_posture_payload(
+	array(
+		'uploads' => 'unknown',
+		'plugins' => 'open',
+		'themes'  => 'not_observed',
+	)
+);
+sassh_assert( 'folder aggregate posture is key-order independent', $agg_a === $agg_b );
+sassh_assert(
+	'folder aggregate includes all bands',
+	false !== strpos( $agg_a, 'plugins=open' )
+	&& false !== strpos( $agg_a, 'themes=not_observed' )
+	&& false !== strpos( $agg_a, 'uploads=unknown' )
+);
+
+$compound_open = Sassh_Directory_Exposure_Key_Normalizer::htaccess_compound_fingerprint(
+	'htaccess-unprotected-folders-open',
+	'apache',
+	false,
+	null,
+	'not_found',
+	array(
+		'plugins' => 'open',
+		'themes'  => 'unknown',
+		'uploads' => 'not_observed',
+	)
+);
+$compound_all_ok = Sassh_Directory_Exposure_Key_Normalizer::htaccess_compound_fingerprint(
+	'htaccess-unprotected-folders-not-observed',
+	'apache',
+	false,
+	null,
+	'not_found',
+	array(
+		'plugins' => 'not_observed',
+		'themes'  => 'not_observed',
+		'uploads' => 'not_observed',
+	)
+);
+sassh_assert( 'compound fingerprints differ by aggregate posture', $compound_open !== $compound_all_ok );
+
+// D3b policy fixtures (producer rules; pure assertions).
+$bands_with_open = array( 'plugins' => 'open', 'themes' => 'unknown', 'uploads' => 'not_observed' );
+$has_open        = in_array( 'open', $bands_with_open, true );
+$has_unknown     = in_array( 'unknown', $bands_with_open, true );
+$all_not_obs     = ! in_array( 'open', $bands_with_open, true )
+	&& ! in_array( 'unknown', $bands_with_open, true )
+	&& count(
+		array_filter(
+			$bands_with_open,
+			static function ( $b ) {
+				return 'not_observed' === $b;
+			}
+		)
+	) === count( $bands_with_open );
+sassh_assert( 'compound ...-open allowed when any folder open (even with unknown)', $has_open );
+sassh_assert( 'compound ...-not-observed blocked when any unknown', $has_unknown || ! $all_not_obs );
+
+$bands_all_ok = array( 'plugins' => 'not_observed', 'themes' => 'not_observed', 'uploads' => 'not_observed' );
+$all_ok       = ! in_array( 'open', $bands_all_ok, true )
+	&& ! in_array( 'unknown', $bands_all_ok, true );
+sassh_assert( 'compound ...-not-observed requires every folder not_observed', $all_ok );
+
+// D8 incomplete policy: inconclusive HTTP / unreadable htaccess → partial; no absence.
+$dir_partial = array( 'completion_status' => 'partial', 'absence_reconciled' => false );
+$dir_success = array( 'completion_status' => 'success', 'absence_reconciled' => true );
+sassh_assert( 'directory browsing partial does not reconcile absence', false === $dir_partial['absence_reconciled'] );
+sassh_assert( 'directory browsing success may reconcile absence', true === $dir_success['absence_reconciled'] );
+
+$fp_folder_a = Sassh_Directory_Exposure_Key_Normalizer::folder_object_fingerprint( 'plugins', 'open', 'listing', false );
+$fp_folder_b = Sassh_Directory_Exposure_Key_Normalizer::folder_object_fingerprint( 'plugins', 'not_observed', 'non_listing', false );
+sassh_assert( 'folder fingerprint changes with browsing posture', $fp_folder_a !== $fp_folder_b );
+
+// Presentation: Options -Indexes must not render as unknown.
+$htaccess_off_ui = Choctaw_Wp_Security_Directory_Browsing_Scanner::htaccess_browsing_presentation( 'off', 'apache' );
+sassh_assert(
+	'Options -Indexes presentation browsing=disabled',
+	'disabled' === $htaccess_off_ui['browsing']
+);
+sassh_assert(
+	'Options -Indexes presentation label Disabled in .htaccess',
+	'Disabled in .htaccess' === $htaccess_off_ui['browsing_label']
+);
+sassh_assert(
+	'Options -Indexes presentation is not unknown',
+	'unknown' !== $htaccess_off_ui['browsing']
+	&& false === stripos( $htaccess_off_ui['browsing_label'], 'unknown' )
+);
+$htaccess_on_ui = Choctaw_Wp_Security_Directory_Browsing_Scanner::htaccess_browsing_presentation( 'on', 'apache' );
+sassh_assert(
+	'Options +Indexes presentation browsing=enabled',
+	'enabled' === $htaccess_on_ui['browsing']
+	&& 'Enabled in .htaccess' === $htaccess_on_ui['browsing_label']
+);
+$htaccess_null_ui = Choctaw_Wp_Security_Directory_Browsing_Scanner::htaccess_browsing_presentation( null, 'apache' );
+sassh_assert(
+	'nondeterminative htaccess presentation is unknown',
+	'unknown' === $htaccess_null_ui['browsing']
+	&& 'Unknown' === $htaccess_null_ui['browsing_label']
+);
+$htaccess_nginx_ui = Choctaw_Wp_Security_Directory_Browsing_Scanner::htaccess_browsing_presentation( 'off', 'nginx' );
+sassh_assert(
+	'Nginx ignores Options -Indexes for column presentation',
+	'unknown' === $htaccess_nginx_ui['browsing']
+);
+
+/**
+ * Collect contribution texts (optionally filtered by kind) from folder guidance.
+ *
+ * @param string|null $indexes_state Indexes state.
+ * @param string      $http_browsing HTTP browsing band.
+ * @param string      $server_type   Server type.
+ * @param string|null $kind          Optional kind filter.
+ * @return array<int, string>
+ */
+$sassh_folder_texts = static function ( $indexes_state, $http_browsing, $server_type = 'apache', $kind = null ) {
+	$out = array();
+	foreach ( Choctaw_Wp_Security_Directory_Browsing_Scanner::folder_guidance_contributions( $indexes_state, $http_browsing, $server_type ) as $c ) {
+		if ( null !== $kind && ( ! isset( $c['kind'] ) || (string) $c['kind'] !== $kind ) ) {
+			continue;
+		}
+		if ( isset( $c['text'] ) ) {
+			$out[] = (string) $c['text'];
+		}
+	}
+	return $out;
+};
+
+$how_off_ok = $sassh_folder_texts( 'off', 'not_observed', 'apache', 'recommended_action' );
+sassh_assert( 'off+not_observed has how-to-proceed', ! empty( $how_off_ok ) );
+sassh_assert(
+	'off+not_observed exact no-action guidance',
+	in_array(
+		'No action is needed. The site-root .htaccess contains Options -Indexes, and no directory listing was observed at this URL during the scan.',
+		$how_off_ok,
+		true
+	)
+);
+sassh_assert(
+	'Safe off+not_observed does not push turn-off remediation',
+	false === stripos( implode( ' ', $how_off_ok ), 'How to Turn Directory Browsing Off' )
+);
+
+$all_off_open = $sassh_folder_texts( 'off', 'open' );
+sassh_assert(
+	'off+open warns about override',
+	! empty( $all_off_open )
+	&& false !== stripos( implode( ' ', $all_off_open ), 'may not be taking effect' )
+);
+
+$how_on_open = $sassh_folder_texts( 'on', 'open', 'apache', 'recommended_action' );
+sassh_assert( 'on+open instructs remove/override enabling directive', ! empty( $how_on_open ) && false !== stripos( implode( ' ', $how_on_open ), 'Remove or override' ) );
+
+$how_on_ok = $sassh_folder_texts( 'on', 'not_observed', 'apache', 'recommended_action' );
+sassh_assert(
+	'on+not_observed reviews enabling directive without claiming required remediation for HTTP alone',
+	! empty( $how_on_ok )
+	&& false !== stripos( implode( ' ', $how_on_ok ), 'explicit enabling' )
+	&& false !== stripos( implode( ' ', $how_on_ok ), 'normally removed' )
+);
+
+$how_null_open = $sassh_folder_texts( null, 'open', 'apache', 'recommended_action' );
+sassh_assert(
+	'null+open provides server-specific remediation',
+	! empty( $how_null_open ) && false !== stripos( implode( ' ', $how_null_open ), 'How to Turn Directory Browsing Off' )
+);
+
+$how_null_ok = $sassh_folder_texts( null, 'not_observed', 'apache', 'recommended_action' );
+sassh_assert( 'null+not_observed has how-to-proceed', ! empty( $how_null_ok ) );
+sassh_assert(
+	'null+not_observed presents hardening as optional',
+	false !== stripos( implode( ' ', $how_null_ok ), 'optional' )
+	&& false !== stripos( implode( ' ', $how_null_ok ), 'not required' )
+);
+sassh_assert(
+	'Safe null+not_observed does not claim remediation is required',
+	false === stripos( implode( ' ', $how_null_ok ), 'must' )
+);
+
+$all_unknown = $sassh_folder_texts( 'off', 'unknown' );
+$how_unknown = $sassh_folder_texts( 'off', 'unknown', 'apache', 'recommended_action' );
+sassh_assert( 'unknown HTTP has how-to-proceed', ! empty( $how_unknown ) );
+sassh_assert(
+	'unknown HTTP avoids definitive enabled/disabled language',
+	false !== stripos( implode( ' ', $all_unknown ), 'could not determine' )
+	&& false !== stripos( implode( ' ', $how_unknown ), 'avoid definitive enabled/disabled conclusions' )
+	&& 1 !== preg_match( '/\bdirectory browsing is (?:enabled|disabled)\b/i', implode( ' ', $how_unknown ) )
+);
+
+$how_unknown_null = $sassh_folder_texts( null, 'unknown', 'apache', 'recommended_action' );
+$all_unknown_null = $sassh_folder_texts( null, 'unknown' );
+sassh_assert(
+	'unknown HTTP with nondeterminative htaccess still inconclusive',
+	! empty( $how_unknown_null ) && false !== stripos( implode( ' ', $all_unknown_null ), 'could not determine' )
+);
 
 // --- Capabilities ---
 $GLOBALS['sassh_test_is_multisite'] = false;

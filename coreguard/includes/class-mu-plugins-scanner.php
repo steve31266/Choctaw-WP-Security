@@ -219,6 +219,8 @@ class Choctaw_Wp_Security_Mu_Plugins_Scanner {
 				'status'              => $row['effective_status'],
 				'status_label'        => $row['status_label'],
 				'effective_status'    => $row['effective_status'],
+				'can_dismiss'         => ! empty( $row['can_dismiss'] ),
+				'dismissal_control_state' => isset( $row['dismissal_control_state'] ) ? $row['dismissal_control_state'] : Sassh_Findings_Service::dismissal_control_state( $row ),
 				'category'            => isset( $row['category'] ) ? $row['category'] : self::CATEGORY_KEY,
 				'category_label'      => isset( $row['category_label'] ) ? $row['category_label'] : '',
 				'version'             => isset( $row['version'] ) ? $row['version'] : '',

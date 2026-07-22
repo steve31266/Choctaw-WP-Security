@@ -1,0 +1,164 @@
+.cws-component-scan-toolbar select,
+.cws-component-scan-toolbar input[type="search"] {
+	max-width: 220px;
+}
+
+.cws-component-scan-toolbar label {
+	align-items: center;
+	display: inline-flex;
+	gap: 0.35em;
+	margin: 0;
+}
+
+.cws-component-scan-table {
+	font-size: 13px;
+	table-layout: fixed;
+	width: 100%;
+}
+
+.cws-component-scan-table th,
+.cws-component-scan-table td {
+	vertical-align: top;
+}
+
+/* Risk | Status | Category | Component | Action */
+.cws-component-scan-table th:nth-child(1),
+.cws-component-scan-table td:nth-child(1) {
+	width: 9.5em;
+}
+
+.cws-component-scan-table th:nth-child(2),
+.cws-component-scan-table td:nth-child(2) {
+	width: 7.5em;
+}
+
+.cws-component-scan-table th:nth-child(3),
+.cws-component-scan-table td:nth-child(3) {
+	width: 9.5em;
+}
+
+.cws-component-scan-table th:nth-child(5),
+.cws-component-scan-table td:nth-child(5) {
+	width: 3em;
+	text-align: center;
+}
+
+.cws-component-scan-table td:nth-child(4) {
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+
+/* CVSS severity badge shown under the Sassh risk label — a distinct provider scale. */
+.cws-component-scan-cvss {
+	background: #f0f0f1;
+	border-radius: 3px;
+	color: #50575e;
+	display: inline-block;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1.4;
+	margin-top: 0.15em;
+	padding: 0.05em 0.4em;
+}
+
+/* Highlight active findings retained from an earlier (incomplete) scan run
+ * that were not reconfirmed by the most recent run. */
+.cws-component-scan-table tr.cws-finding-not-confirmed > td {
+	background-color: #fcf9e8 !important;
+}
+
+.cws-component-scan-detail-grid {
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.cws-component-scan-detail-left,
+.cws-component-scan-detail-right {
+	display: flex;
+	flex-direction: column;
+	gap: 1.25em;
+	min-width: 0;
+}
+
+.cws-component-scan-info-panel dl {
+	display: grid;
+	gap: 0.35em 0.75em;
+	grid-template-columns: auto 1fr;
+	margin: 0;
+}
+
+.cws-component-scan-info-panel dt {
+	color: #646970;
+	font-weight: 600;
+	margin: 0;
+}
+
+.cws-external-link-icon {
+	display: inline-block;
+	font-size: 0.75em;
+	line-height: 1;
+	margin-left: 0.15em;
+	vertical-align: super;
+}
+
+.cws-external-link-icon .dashicons {
+	font-size: 14px;
+	height: 14px;
+	line-height: 1;
+	width: 14px;
+}
+
+.cws-component-scan-info-panel dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+
+.cws-component-scan-advisories {
+	border-top: 1px solid #dcdcde;
+	padding-top: 1em;
+}
+
+.cws-component-scan-advisory-item {
+	border: 1px solid #dcdcde;
+	border-radius: 2px;
+	margin: 0 0 0.75em;
+	padding: 0.65em 0.75em;
+}
+
+.cws-component-scan-advisory-item:last-child {
+	margin-bottom: 0;
+}
+
+.cws-component-scan-advisory-title {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5em;
+	margin: 0 0 0.35em;
+}
+
+.cws-component-scan-advisory-sources {
+	color: #646970;
+	font-size: 12px;
+	margin: 0.35em 0 0;
+}
+
+.cws-component-scan-inventory .cws-component-scan-clean-list {
+	list-style: disc;
+	margin: 0.5em 0 0 1.2em;
+	padding: 0;
+}
+
+.cws-component-scan-inventory .cws-component-scan-clean-list li {
+	margin-bottom: 0.25em;
+}
+
+@media (max-width: 782px) {
+	.cws-component-scan-detail-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.cws-component-scan-table {
+		table-layout: auto;
+	}
+}

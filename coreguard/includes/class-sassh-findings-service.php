@@ -23,6 +23,9 @@ class Sassh_Findings_Service {
 	const SCANNER_EXPOSED_FILES      = 'exposed-files';
 	const SCANNER_DATABASE_SCAN      = 'database-scan';
 	const SCANNER_SCHEDULED_TASKS    = 'scheduled-tasks';
+	const SCANNER_COMPONENT_SCAN     = 'component-scan';
+	const SCANNER_DIRECTORY_BROWSING = 'directory-browsing';
+	const RULE_UNRECOGNIZED_COMPONENT = 'unrecognized-component';
 	const FINGERPRINT_MISSING        = 'sha256:missing';
 	const FINGERPRINT_DIRECTORY      = 'sha256:directory';
 
@@ -253,7 +256,7 @@ class Sassh_Findings_Service {
 			return new WP_Error( 'sassh_finding_not_found', __( 'Finding not found.', 'choctaw-wp-security' ) );
 		}
 
-		if ( 'needs_review' !== $finding['sassh_classification'] ) {
+		if ( ! self::can_dismiss( $finding ) ) {
 			return new WP_Error( 'sassh_not_dismissible', __( 'This finding cannot be dismissed.', 'choctaw-wp-security' ) );
 		}
 
@@ -532,6 +535,59 @@ class Sassh_Findings_Service {
 	 */
 	public static function scheduled_tasks_scope_key( $options_table ) {
 		return 'scheduled-tasks:' . (string) $options_table;
+	}
+
+	/**
+	 * Scope key for Vulnerabilities / component-scan (installation-wide).
+	 *
+	 * @return string
+	 */
+	public static function component_scan_scope_key() {
+		return 'component-scan:installation';
+	}
+
+	/**
+	 * Scope key for Directory Browsing (fixed wordpress-root target set).
+	 *
+	 * @return string
+	 */
+	public static function directory_browsing_scope_key() {
+		return 'directory-browsing:wordpress-root';
+	}
+
+	/**
+	 * Risk for a directory-browsing rule_id (Phase 3.6 D4).
+	 *
+	 * @param string $rule_id Rule id.
+	 * @return string
+	 */
+	public static function directory_browsing_risk_level( $rule_id ) {
+		return Sassh_Directory_Exposure_Key_Normalizer::risk_level_for_rule( $rule_id );
+	}
+
+	/**
+	 * Risk for a known-vulnerability category from CVSS severity code (Phase 3.5 Q4 A).
+	 *
+	 * @param string $severity_code n|l|m|h|c|unknown.
+	 * @return string
+	 */
+	public static function component_scan_risk_level_for_vuln( $severity_code ) {
+		$code = Sassh_Component_Key_Normalizer::normalize_severity_code( $severity_code );
+
+		if ( 'c' === $code || 'h' === $code ) {
+			return 'warning';
+		}
+
+		return 'suspicious';
+	}
+
+	/**
+	 * Risk for unrecognized-component (Phase 3.5 Q4b A).
+	 *
+	 * @return string
+	 */
+	public static function component_scan_risk_level_for_unrecognized() {
+		return 'suspicious';
 	}
 
 	/**
@@ -879,6 +935,76 @@ class Sassh_Findings_Service {
 		}
 
 		return 'needs_review';
+	}
+
+	/**
+	 * Whether a finding (or classification key) is eligible for dismissal.
+	 *
+	 * Canonical rule: only CoreGuard classification `needs_review` may be dismissed.
+	 * Review Not Needed (`no_action_needed`) is never dismissible.
+	 *
+	 * @param array<string, mixed>|string $finding_or_classification Finding row or classification key.
+	 * @return bool
+	 */
+	public static function can_dismiss( $finding_or_classification ) {
+		if ( is_array( $finding_or_classification ) ) {
+			if ( isset( $finding_or_classification['sassh_classification'] ) && '' !== (string) $finding_or_classification['sassh_classification'] ) {
+				return 'needs_review' === (string) $finding_or_classification['sassh_classification'];
+			}
+
+			// Fall back for report DTOs that expose only effective status / risk.
+			if ( isset( $finding_or_classification['effective_status'] ) && 'dismissed' === (string) $finding_or_classification['effective_status'] ) {
+				return true;
+			}
+			if ( isset( $finding_or_classification['status'] ) && 'dismissed' === (string) $finding_or_classification['status'] ) {
+				return true;
+			}
+			if ( isset( $finding_or_classification['effective_status'] ) ) {
+				return 'needs_review' === (string) $finding_or_classification['effective_status'];
+			}
+			if ( isset( $finding_or_classification['status'] ) ) {
+				return 'needs_review' === (string) $finding_or_classification['status'];
+			}
+			if ( isset( $finding_or_classification['risk_level'] ) || isset( $finding_or_classification['risk'] ) ) {
+				$risk = isset( $finding_or_classification['risk_level'] )
+					? (string) $finding_or_classification['risk_level']
+					: (string) $finding_or_classification['risk'];
+				return 'needs_review' === self::default_classification( $risk );
+			}
+
+			return false;
+		}
+
+		return 'needs_review' === (string) $finding_or_classification;
+	}
+
+	/**
+	 * Shared dismiss-control UI state for Findings detail panels.
+	 *
+	 * - active: Needs Review — show dismiss checkbox + Submit.
+	 * - dismissed: show checked dismiss control for restore/undismiss.
+	 * - not_dismissible: Review Not Needed — muted explanation only (no active controls).
+	 *
+	 * @param array<string, mixed> $finding Finding row or report DTO.
+	 * @return string active|dismissed|not_dismissible
+	 */
+	public static function dismissal_control_state( array $finding ) {
+		$effective = '';
+		if ( isset( $finding['effective_status'] ) && '' !== (string) $finding['effective_status'] ) {
+			$effective = (string) $finding['effective_status'];
+		} elseif ( isset( $finding['status'] ) && '' !== (string) $finding['status'] ) {
+			$effective = (string) $finding['status'];
+		}
+
+		if ( 'dismissed' === $effective ) {
+			return 'dismissed';
+		}
+
+		if ( self::can_dismiss( $finding ) && 'no_action_needed' !== $effective ) {
+			return 'active';
+		}
+
+		return 'not_dismissible';
 	}
 
 	/**
@@ -1967,6 +2093,8 @@ class Sassh_Findings_Service {
 		$row['effective_status'] = $effective;
 		$row['status']           = $effective;
 		$row['status_label']     = self::status_label( $effective );
+		$row['can_dismiss']      = self::can_dismiss( $row );
+		$row['dismissal_control_state'] = self::dismissal_control_state( $row );
 		$row['risk']             = $row['risk_level'];
 		$row['risk_label']       = $this->risk_label( (string) $row['risk_level'] );
 

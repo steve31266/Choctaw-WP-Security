@@ -12,9 +12,11 @@ defined( 'ABSPATH' ) || exit;
  */
 class Sassh_Object_Type_Registry {
 
-	const TYPE_FILE       = 'file';
-	const TYPE_OPTION     = 'option';
-	const TYPE_CRON_EVENT = 'cron_event';
+	const TYPE_FILE               = 'file';
+	const TYPE_OPTION             = 'option';
+	const TYPE_CRON_EVENT         = 'cron_event';
+	const TYPE_COMPONENT          = 'component';
+	const TYPE_DIRECTORY_EXPOSURE = 'directory_exposure';
 
 	/**
 	 * Whether an object type is registered.
@@ -33,6 +35,10 @@ class Sassh_Object_Type_Registry {
 	 * Sassh_Option_Key_Normalizer (option name; active_plugins#path; home+siteurl).
 	 * Cron event key normalization lives in Sassh_Cron_Event_Key_Normalizer
 	 * (hook#args_digest; typed args canonicalization).
+	 * Component key normalization lives in Sassh_Component_Key_Normalizer
+	 * (core:wordpress; plugin:{file}; theme:{stylesheet}).
+	 * Directory exposure key normalization lives in Sassh_Directory_Exposure_Key_Normalizer
+	 * (htaccess:.htaccess; folder:plugins|themes|uploads).
 	 *
 	 * @return array<int, string>
 	 */
@@ -41,6 +47,8 @@ class Sassh_Object_Type_Registry {
 			self::TYPE_FILE,
 			self::TYPE_OPTION,
 			self::TYPE_CRON_EVENT,
+			self::TYPE_COMPONENT,
+			self::TYPE_DIRECTORY_EXPOSURE,
 		);
 	}
 }

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.3.6] - 2026-07-21
+
+### Added
+
+- **Findings Phase 3.5:** Vulnerabilities / Unrecognized Components migrated to Sassh Findings (`object_type=component`; one Finding per component; `vuln:{stable_id}` categories; Multisite network-active metadata).
+- Component Finding Info shows plugin/theme identity evidence (Plugin/Theme URI, Author, Author URI, Update URI/host, installed path, activation) as escaped informational metadata; validated http(s) URIs open as accessible external links (`target="_blank"`, `rel="noopener noreferrer"`, decorative icon + “(opens in a new tab)” screen-reader text).
+- Bundled Sassh recognized-components registry (`coreguard/data/recognized-components.json`): exact plugin `main_file` / theme `stylesheet` matching for manually verified third-party identities; used only after WPVulnerability positively reports unrecognized; does not imply audit/safety and never suppresses advisories or incomplete coverage.
+- **Findings Phase 3.6:** Directory Browsing migrated to Sassh Findings (`object_type=directory_exposure`; kind keys `htaccess:.htaccess` / `folder:plugins|themes|uploads`; Multisite uploads `blog_id` for `sites/N`).
+
+### Changed
+
+- Vulnerabilities tab uses AJAX Findings UI with Sassh dismiss/undismiss, related-on-expand, prominent CVSS labels, and exposure≠infection wording. Clear History removed. Prototype `unrecognized-components` Store type retired. Incomplete runs and unrecognized-core / API failures do not reconcile absence. CVSS Critical/High map to Sassh Warning (not Critical).
+- Directory Browsing uses object-level Findings with categories. Open directory listings map to Sassh Warning as confirmed public exposure / misconfiguration (not malware or compromise evidence). HTTP non-listing is labeled **Directory listing not observed** (not definitive “blocked”). Inconclusive HTTP responses and unreadable existing `.htaccess` finalize as partial and do not weaken prior confirmed posture. Clear History removed; Sassh dismiss/undismiss and related-on-expand wired.
+- Findings dismiss UI derives from shared `can_dismiss` / `dismissal_control_state`: Needs Review shows active dismiss controls; Review Not Needed shows muted nondismissible text; Dismissed keeps restore/undismiss. Server-side dismiss rejection for non–Needs Review classifications is unchanged.
+- Directory Browsing: Options `-Indexes` `.htaccess` rows display **Disabled in .htaccess** (not Unknown). Folder **How to proceed** is context-aware from structured `.htaccess` Indexes posture + HTTP probe result.
+
 ## [1.9.3.5] - 2026-07-20
 
 ### Added

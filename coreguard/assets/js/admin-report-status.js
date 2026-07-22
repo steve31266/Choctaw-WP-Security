@@ -60,6 +60,8 @@
 			|| scanType === 'exposed-files'
 			|| scanType === 'database-scan'
 			|| scanType === 'scheduled-tasks'
+			|| scanType === 'component-scan'
+			|| scanType === 'directory-browsing'
 			|| (finding && finding.findings_backend === 'sassh');
 	}
 
@@ -92,6 +94,33 @@
 			return text(finding.status);
 		}
 		return openStatusForFinding(finding);
+	}
+
+	/**
+	 * Canonical dismiss-control state from Findings (or local fallback).
+	 *
+	 * @param {Object} finding
+	 * @return {'active'|'dismissed'|'not_dismissible'}
+	 */
+	function dismissalControlState(finding) {
+		var supplied = finding && finding.dismissal_control_state
+			? text(finding.dismissal_control_state)
+			: '';
+		if (supplied === 'active' || supplied === 'dismissed' || supplied === 'not_dismissible') {
+			return supplied;
+		}
+
+		var status = findingStatus(finding);
+		if (status === 'dismissed') {
+			return 'dismissed';
+		}
+		if (finding && typeof finding.can_dismiss !== 'undefined') {
+			return finding.can_dismiss ? 'active' : 'not_dismissible';
+		}
+		if (status === 'needs_review') {
+			return 'active';
+		}
+		return 'not_dismissible';
 	}
 
 	/**
@@ -205,7 +234,8 @@
 	}
 
 	/**
-	 * Append dismiss checkbox + Submit under How to proceed / Recommendations.
+	 * Append dismiss controls under How to proceed / Recommendations.
+	 * State comes from Findings can_dismiss / dismissal_control_state (not per-scanner rules).
 	 *
 	 * @param {HTMLElement} parent
 	 * @param {Object} finding
@@ -213,22 +243,40 @@
 	 * @param {Function} onUpdated function(updatedFinding)
 	 */
 	function appendDismissControls(parent, finding, scanType, onUpdated) {
+		var controlState = dismissalControlState(finding);
 		var block = createElement('div', 'cws-report-dismiss');
-		var label = createElement('label', 'cws-report-dismiss-label');
-		var checkbox = document.createElement('input');
-		var submit = createElement('button', 'button button-secondary cws-report-dismiss-submit', strings.submit || 'Submit');
 		var error = createElement('p', 'cws-report-dismiss-error');
-		var current = findingStatus(finding);
+		var label;
+		var checkbox;
+		var submit;
+
+		error.hidden = true;
+
+		if (controlState === 'not_dismissible') {
+			block.className = 'cws-report-dismiss is-not-dismissible';
+			block.appendChild(
+				createElement(
+					'p',
+					'cws-report-dismiss-note description',
+					strings.notDismissible || 'This finding does not require review and cannot be dismissed.'
+				)
+			);
+			parent.appendChild(block);
+			return block;
+		}
+
+		label = createElement('label', 'cws-report-dismiss-label');
+		checkbox = document.createElement('input');
+		submit = createElement('button', 'button button-secondary cws-report-dismiss-submit', strings.submit || 'Submit');
 
 		checkbox.type = 'checkbox';
 		checkbox.className = 'cws-report-dismiss-checkbox';
-		checkbox.checked = current === 'dismissed';
+		checkbox.checked = controlState === 'dismissed';
 
 		label.appendChild(checkbox);
 		label.appendChild(document.createTextNode(' ' + (strings.dismissThisItem || 'Dismiss this item')));
 
 		submit.type = 'button';
-		error.hidden = true;
 
 		submit.addEventListener('click', function () {
 			var fingerprint = findingFingerprint(finding);
@@ -272,6 +320,8 @@
 					finding.status_label = (data && data.status_label) ? text(data.status_label) : statusLabelFor(nextStatus);
 					finding.fingerprint = fingerprint;
 					finding.content_fingerprint = fingerprint;
+					finding.can_dismiss = nextStatus === 'needs_review' || nextStatus === 'dismissed';
+					finding.dismissal_control_state = nextStatus === 'dismissed' ? 'dismissed' : (finding.can_dismiss ? 'active' : 'not_dismissible');
 					if (id) {
 						finding.finding_id = id;
 					}
@@ -402,6 +452,7 @@
 		renderStatusCell: renderStatusCell,
 		appendStatusFilter: appendStatusFilter,
 		appendDismissControls: appendDismissControls,
+		dismissalControlState: dismissalControlState,
 		findingStatus: findingStatus,
 		findingFingerprint: findingFingerprint,
 		findingId: findingId,

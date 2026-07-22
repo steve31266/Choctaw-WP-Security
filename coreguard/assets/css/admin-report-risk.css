@@ -629,11 +629,23 @@ mark.cws-search-hit {
 	margin-top: 1em;
 }
 
+.cws-report-dismiss.is-not-dismissible {
+	align-items: flex-start;
+}
+
 .cws-report-dismiss-label {
 	align-items: center;
 	display: inline-flex;
 	gap: 0.35em;
 	font-weight: 600;
+}
+
+.cws-report-dismiss-note {
+	color: #646970;
+	flex-basis: 100%;
+	font-style: italic;
+	font-weight: 400;
+	margin: 0;
 }
 
 .cws-report-dismiss-error {
@@ -647,11 +659,15 @@ mark.cws-search-hit {
 	font-weight: 600;
 }
 
-.cws-browsing-status.is-blocked {
+.cws-browsing-status.is-blocked,
+.cws-browsing-status.is-not_observed,
+.cws-browsing-status.is-disabled {
 	color: #00a32a;
 }
 
-.cws-browsing-status.is-not-blocked {
+.cws-browsing-status.is-not-blocked,
+.cws-browsing-status.is-open,
+.cws-browsing-status.is-enabled {
 	color: #d63638;
 }
 

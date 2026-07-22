@@ -193,7 +193,7 @@ class Choctaw_Wp_Security_Admin_Help_Content {
 				'detail_html'  => self::core_checksum_detail_html(),
 			),
 			'exposed_folders'  => array(
-				'visible'     => __( 'Checks whether directory browsing is blocked via the site root .htaccess file (when applicable) and HTTP tests of the plugins, themes, and uploads folder roots.', 'choctaw-wp-security' ),
+				'visible'     => __( 'Checks site-root .htaccess Indexes posture (when applicable) and HTTP-tests the plugins, themes, and uploads folder roots for recognizable directory listings. Results persist in Sassh Findings.', 'choctaw-wp-security' ),
 				'detail_html' => self::exposed_folders_detail_html(),
 			),
 			'exposed_files'    => array(
@@ -703,6 +703,7 @@ class Choctaw_Wp_Security_Admin_Help_Content {
 			array(
 				__( 'Security vulnerabilities are software flaws that attackers can exploit to gain unauthorized access, execute malicious code, steal information, or disrupt the normal operation of your website. While WordPress core is generally well maintained, vulnerabilities are occasionally discovered in WordPress itself, themes, and—most commonly—plugins. Because newly disclosed vulnerabilities are quickly incorporated into automated attack tools, websites running outdated software are frequently targeted within days of a vulnerability becoming public.', 'choctaw-wp-security' ),
 				__( 'This scan compares your installed WordPress core version, themes (active and inactive), and plugins (active and inactive) against the public WPVulnerability database to identify components with known security vulnerabilities. Inactive themes and plugins are included because leftover software can still be exploited even when it is not currently in use. Components that cannot be matched to the database are listed separately because they cannot be evaluated automatically. This does not mean they are unsafe; they may simply be custom-developed, privately distributed, premium, or otherwise absent from the public database. Any reported vulnerabilities should be reviewed promptly, and affected software should be updated, replaced, or removed whenever possible.', 'choctaw-wp-security' ),
+				__( 'A finding here means the installed version has a publicly documented vulnerability advisory — it is an exposure or unpatched-risk signal, not confirmation that this site has actually been compromised or that malware is present. The CVSS severity shown for each advisory comes from the vulnerability provider and is separate from (and should not be confused with) the Sassh risk level shown for the finding itself.', 'choctaw-wp-security' ),
 			)
 		);
 	}
@@ -730,7 +731,7 @@ class Choctaw_Wp_Security_Admin_Help_Content {
 		return self::paragraphs_to_html(
 			array(
 				__( 'If directory browsing is enabled on your web server, visitors can sometimes view a list of files simply by navigating to a folder instead of a specific file. While this does not usually allow attackers to modify your website, it can reveal information about installed plugins, themes, file names, backup files, scripts, and other resources that may assist attackers during reconnaissance. The less information a website exposes unnecessarily, the more difficult it becomes for automated scanners and malicious users to identify potential weaknesses.', 'choctaw-wp-security' ),
-				__( 'This scan reviews the site root .htaccess file on Apache and LiteSpeed (and reports leftover .htaccess files on Nginx as informational). It also requests the public plugins, themes, and uploads folder URLs to see whether a directory listing is returned. The preferred solution is to disable directory browsing at the web server level. While directory browsing alone is not a vulnerability, reducing unnecessary information disclosure is considered a WordPress security best practice.', 'choctaw-wp-security' ),
+				__( 'This scan reviews the site root .htaccess file on Apache and LiteSpeed (and reports leftover .htaccess files on Nginx as informational). It also requests the public plugins, themes, and uploads folder URLs to see whether a recognizable directory listing is returned. A response without a listing only means a listing was not observed during that request—it is not definitive proof that browsing is disabled at the server. Open listings are treated as Warning exposures (misconfiguration / reconnaissance), not as evidence of compromise. Results use Sassh Findings; Clear History is not used on this tab.', 'choctaw-wp-security' ),
 			)
 		);
 	}
