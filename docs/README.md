@@ -47,4 +47,4 @@ Heuristic **engine/pack implementation** plans stay under `.cursor/plans/` (e.g.
 
 All files in this folder are **draft scaffolds** until `api_version` 1 is frozen for the first joint Plugin + Desktop release.
 
-**Findings System:** Phase 1, 2, **3.0**–**3.6** (Directory Browsing → `object_type=directory_exposure`) are implemented — see [CoreGuard Findings System.md](CoreGuard%20Findings%20System.md) §11 and §18. Remaining scanner migrations are Phase **3.7**; prototype store wind-down is **3.8**. CLI/JSON/Desktop remain Phase 4/5.
+**Findings System:** Phase 1, 2, **3.0**–**3.7** (wp_posts → `object_type=post`) are implemented — see [CoreGuard Findings System.md](CoreGuard%20Findings%20System.md) §11 and §18. Prototype store wind-down is Phase **3.8**. CLI/JSON/Desktop remain Phase 4/5.

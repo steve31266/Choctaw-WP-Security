@@ -19,6 +19,18 @@ Newest entries first.
 
 ---
 
+## 2026-07-21 20:15 CDT
+
+**Summary:** Phase **3.7** wp_posts migrated to Sassh Findings (`object_type=post`; registered-site `blog_id`; paginated large-content coverage; PHP-in-post inert wording; baseline/Clear History removed; Store emptied).
+
+**Documents:**
+- `docs/CoreGuard Findings System.md` — updated — §5.6 `post` identity, §5.7 Phase 3.7, §11 order, §18 Phase 3.7 complete
+- `docs/README.md` — updated — Findings status through 3.7
+- `.cursor/plans/findings_phase_3_7_wp_posts.plan.md` — updated — approved + implemented
+- `.cursor/plans/findings_phase_3x_index.plan.md` — updated — 3.7 complete
+- `CHANGELOG.md` — updated — `[1.9.3.7]` Phase 3.7
+- `coreguard/sassh.php` — updated — `Version` / `CHOCTAW_WP_SECURITY_VERSION` → `1.9.3.7`
+
 ## 2026-07-21 19:40 CDT
 
 **Summary:** Findings system-wide dismiss UI: `can_dismiss` / `dismissal_control_state` drive shared detail controls so Review Not Needed never offers an active dismiss action; server-side dismiss rejection retained.

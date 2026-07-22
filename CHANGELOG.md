@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.3.7] - 2026-07-21
+
+### Added
+
+- **Findings Phase 3.7:** wp_posts migrated to Sassh Findings (`object_type=post`; decimal post-ID object keys; required registered-site `blog_id`; one Finding per post with categories for PHP/execution, scripts, SEO spam titles, and large content).
+
+### Changed
+
+- wp_posts uses object-level Findings with Sassh dismiss/undismiss, related-on-expand, and Review Not Needed labeling. Clear History and Reset Baseline removed. Prototype Store type `wp-posts` retired (Store empty). Incomplete runs do not reconcile absence.
+- Large post-content coverage is paginated by post ID under the scan time budget (no fixed LIMIT on Findings coverage); report UI may still paginate for display.
+- PHP-in-post guidance states WordPress core does not ordinarily execute PHP stored in post content/excerpt. Tag alone maps to Suspicious; Critical requires documented high-confidence combinations that distinguish injected/obfuscated payloads from ordinary code examples.
+- Large post Matched Snippet uses the shared 16K contents cap (not the 60-character preview length), so detail panels show a useful content sample for oversized posts.
+
 ## [1.9.3.6] - 2026-07-21
 
 ### Added

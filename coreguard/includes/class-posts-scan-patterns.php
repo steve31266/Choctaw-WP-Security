@@ -15,7 +15,8 @@ class Choctaw_Wp_Security_Posts_Scan_Patterns {
 	const BASELINE_OPTION_KEY           = 'choctaw_wp_security_posts_baseline';
 	const SCAN_TIME_BUDGET              = 30;
 	const CONTENT_SIZE_THRESHOLD        = 102400;
-	const LARGE_CONTENT_TOP_LIMIT       = 20;
+	const LARGE_CONTENT_TOP_LIMIT       = 20; // Legacy display hint only; not used for Findings coverage.
+	const LARGE_CONTENT_BATCH_SIZE      = 50;
 	const EXCERPT_LENGTH                = 60;
 	const LARGE_CONTENT_PREVIEW_LENGTH  = 60;
 	const MATCHED_SNIPPET_LENGTH        = 16384;
@@ -30,7 +31,6 @@ class Choctaw_Wp_Security_Posts_Scan_Patterns {
 		'scripts',
 		'seo_spam_titles',
 		'large_post_content',
-		'baseline_diff',
 	);
 
 	/**
@@ -87,6 +87,38 @@ class Choctaw_Wp_Security_Posts_Scan_Patterns {
 	);
 
 	/**
+	 * High-specificity execution/obfuscation patterns (single hit → Warning for posts).
+	 *
+	 * @return array<int, string>
+	 */
+	public static function high_specificity_execution_patterns() {
+		return array(
+			'eval(',
+			'base64_decode(',
+			'gzinflate(',
+			'gzuncompress(',
+			'str_rot13(',
+			'create_function(',
+			'phar://',
+			'error_reporting(0)',
+		);
+	}
+
+	/**
+	 * Lower-specificity execution-like patterns (single hit → Suspicious for posts).
+	 *
+	 * @return array<int, string>
+	 */
+	public static function low_specificity_execution_patterns() {
+		return array(
+			'shell_exec(',
+			'passthru(',
+			'system(',
+			'assert(',
+		);
+	}
+
+	/**
 	 * Generic HTML injection patterns.
 	 *
 	 * @var array<int, string>
@@ -141,11 +173,7 @@ class Choctaw_Wp_Security_Posts_Scan_Patterns {
 			),
 			'large_post_content'       => array(
 				'title'    => __( 'Large Post Content', 'choctaw-wp-security' ),
-				'guidance' => __( 'Reports published posts with content of 100 KB or larger (up to 20 rows). Smaller posts are omitted because they are usually normal. Unusually large content can hide malicious payloads.', 'choctaw-wp-security' ),
-			),
-			'baseline_diff'            => array(
-				'title'    => __( 'Changed Posts Since Last Scan', 'choctaw-wp-security' ),
-				'guidance' => __( 'Compares the current wp_posts table against the snapshot from your previous scan. New or changed rows may be routine updates or signs of tampering.', 'choctaw-wp-security' ),
+				'guidance' => __( 'Reports posts with content of 100 KB or larger. Smaller posts are omitted because they are usually normal. Unusually large content can hide malicious payloads.', 'choctaw-wp-security' ),
 			),
 		);
 	}
@@ -161,7 +189,6 @@ class Choctaw_Wp_Security_Posts_Scan_Patterns {
 			'scripts'                => __( 'Scripts', 'choctaw-wp-security' ),
 			'seo_spam_titles'        => __( 'SEO Spam', 'choctaw-wp-security' ),
 			'large_post_content'     => __( 'Large', 'choctaw-wp-security' ),
-			'baseline_diff'          => __( 'Changed', 'choctaw-wp-security' ),
 		);
 	}
 

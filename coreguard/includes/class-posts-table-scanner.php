@@ -1,6 +1,6 @@
 <?php
 /**
- * wp_posts table scanner for potentially compromised records.
+ * wp_posts table scanner (Sassh Findings producer).
  *
  * @package Choctaw_Wp_Security
  */
@@ -8,7 +8,8 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Scans the WordPress posts table for high-risk compromise indicators.
+ * Scans a WordPress posts table for compromise indicators and records
+ * Sassh Findings observations for the mapped registered-site blog_id.
  */
 class Choctaw_Wp_Security_Posts_Table_Scanner {
 
@@ -25,6 +26,13 @@ class Choctaw_Wp_Security_Posts_Table_Scanner {
 	 * @var bool
 	 */
 	private $scan_incomplete = false;
+
+	/**
+	 * Count of candidate rows that could not be fingerprinted.
+	 *
+	 * @var int
+	 */
+	private $hash_failures = 0;
 
 	/**
 	 * Selected posts table name.
@@ -48,6 +56,13 @@ class Choctaw_Wp_Security_Posts_Table_Scanner {
 	private $user_display_names = array();
 
 	/**
+	 * Accumulator: post_id => draft observation (fields + categories by rule_id).
+	 *
+	 * @var array<int, array<string, mixed>>
+	 */
+	private $post_drafts = array();
+
+	/**
 	 * Table discovery helper.
 	 *
 	 * @var Choctaw_Wp_Security_Posts_Table_Discovery
@@ -61,57 +76,95 @@ class Choctaw_Wp_Security_Posts_Table_Scanner {
 	 */
 	public function __construct( $posts_table = '' ) {
 		$this->discovery   = new Choctaw_Wp_Security_Posts_Table_Discovery();
-		$this->posts_table  = $this->discovery->resolve_scan_table( $posts_table );
-		$this->users_table  = $this->resolve_users_table();
+		$this->posts_table = $this->discovery->resolve_scan_table( $posts_table );
+		$this->users_table = $this->resolve_users_table();
 	}
 
 	/**
-	 * Run the full wp_posts scan.
+	 * Run the wp_posts scan and persist observations via Sassh Findings.
 	 *
 	 * @return array<string, mixed>
 	 */
 	public function scan() {
+		Sassh_Findings_Schema::maybe_upgrade();
+
 		$this->start_time      = microtime( true );
 		$this->scan_incomplete = false;
+		$this->hash_failures   = 0;
+		$this->post_drafts     = array();
 
-		$sections = $this->empty_sections();
-		$baseline = $this->load_baseline();
+		$blog_id = Sassh_Post_Key_Normalizer::map_posts_table_to_registered_site_blog_id( $this->posts_table );
 
-		$this->scan_php_execution_patterns( $sections['php_execution_patterns']['findings'] );
-		$this->scan_scripts( $sections['scripts']['findings'] );
-		$this->scan_seo_spam_titles( $sections['seo_spam_titles']['findings'] );
-		$this->scan_large_post_content( $sections['large_post_content']['findings'] );
-		$this->scan_baseline_diff( $sections['baseline_diff'], $baseline );
+		if ( is_wp_error( $blog_id ) ) {
+			return $this->build_rejection_report( $blog_id );
+		}
 
-		$snapshot = $this->capture_baseline_snapshot();
-		$this->save_baseline( $snapshot );
+		$blog_id = (int) $blog_id;
 
-		$sections = $this->enrich_sections( $sections );
-		$summary  = $this->build_summary( $sections );
+		$scope_key    = Sassh_Findings_Service::wp_posts_scope_key( $this->posts_table );
+		$service      = new Sassh_Findings_Service();
+		$execution_id = $service->begin_scanner_execution(
+			Sassh_Findings_Service::SCANNER_WP_POSTS,
+			array(
+				'scope_key'  => $scope_key,
+				'run_type'   => 'individual',
+				'run_source' => 'wordpress_admin',
+				'meta'       => array(
+					'posts_table'                => $this->posts_table,
+					'wordpress_configured_table' => Choctaw_Wp_Security_Posts_Table_Discovery::get_wordpress_configured_table(),
+					'blog_id'                    => $blog_id,
+				),
+			)
+		);
 
-		return array(
-			'success'                    => 0 === ( $summary['critical'] + $summary['suspicious'] ),
-			'scan_incomplete'            => $this->scan_incomplete,
-			'baseline_established'       => $this->is_baseline_uninitialized( $baseline ),
-			'sections'                   => $sections,
-			'findings'                   => $this->flatten_findings( $sections ),
-			'summary'                    => $summary,
-			'posts_table'                => $this->posts_table,
-			'wordpress_configured_table' => Choctaw_Wp_Security_Posts_Table_Discovery::get_wordpress_configured_table(),
+		$this->scan_php_execution_patterns( $blog_id );
+		$this->scan_scripts( $blog_id );
+		$this->scan_seo_spam_titles( $blog_id );
+		$this->scan_large_post_content( $blog_id );
+
+		$observations = $this->build_observations_from_drafts( $blog_id );
+		$service->record_observations( $execution_id, $observations );
+
+		$errors            = array();
+		$completion_status = 'success';
+
+		if ( $this->scan_incomplete ) {
+			$completion_status = 'partial';
+			$errors[]          = __( 'Scan stopped before completing every check due to the time budget. Previously detected findings were not cleared.', 'choctaw-wp-security' );
+		}
+
+		if ( $this->hash_failures > 0 ) {
+			$completion_status = 'partial';
+			$errors[]          = __( 'One or more posts could not be fingerprinted.', 'choctaw-wp-security' );
+		}
+
+		$ok = $service->finalize_scanner_execution( $execution_id, $completion_status );
+
+		if ( 'success' === $completion_status && ! $ok ) {
+			$completion_status = 'failed';
+			$errors[]          = __( 'The scan could not be finalized.', 'choctaw-wp-security' );
+		}
+
+		return $this->build_report_from_findings(
+			$service,
+			$execution_id,
+			array(
+				'completion_status' => $completion_status,
+				'scan_incomplete'   => 'success' !== $completion_status,
+				'errors'            => $errors,
+			)
 		);
 	}
 
 	/**
-	 * Capture and save a baseline snapshot without running a full scan.
+	 * No-op. Baseline snapshots are no longer written by the Findings producer;
+	 * the legacy baseline option is left orphaned in place.
 	 *
-	 * @param string $posts_table Requested posts table name.
-	 * @return bool
+	 * @param string $posts_table Requested posts table name (unused).
+	 * @return bool Always false.
 	 */
 	public static function reset_baseline( $posts_table = '' ) {
-		$scanner  = new self( $posts_table );
-		$snapshot = $scanner->capture_baseline_snapshot();
-
-		return $scanner->save_baseline( $snapshot );
+		return false;
 	}
 
 	/**
@@ -121,22 +174,6 @@ class Choctaw_Wp_Security_Posts_Table_Scanner {
 	 */
 	public function get_posts_table() {
 		return $this->posts_table;
-	}
-
-	/**
-	 * Determine whether a baseline is uninitialized for the selected table.
-	 *
-	 * @param array<string, mixed>|null $baseline Stored baseline.
-	 * @return bool
-	 */
-	private function is_baseline_uninitialized( $baseline ) {
-		if ( empty( $baseline ) || ! is_array( $baseline ) ) {
-			return true;
-		}
-
-		$baseline_table = isset( $baseline['posts_table'] ) ? (string) $baseline['posts_table'] : '';
-
-		return $baseline_table !== $this->posts_table;
 	}
 
 	/**
@@ -164,92 +201,94 @@ class Choctaw_Wp_Security_Posts_Table_Scanner {
 	}
 
 	/**
-	 * Initialize empty section payloads.
+	 * Build the rejection payload for an unmappable posts table.
 	 *
-	 * @return array<string, array<string, mixed>>
+	 * @param WP_Error $error Mapping error.
+	 * @return array<string, mixed>
 	 */
-	private function empty_sections() {
-		$sections = array();
-		$meta     = Choctaw_Wp_Security_Posts_Scan_Patterns::get_section_meta();
+	private function build_rejection_report( WP_Error $error ) {
+		$message = $error->get_error_message();
 
-		foreach ( Choctaw_Wp_Security_Posts_Scan_Patterns::$section_keys as $section_key ) {
-			$sections[ $section_key ] = array(
-				'title'        => $meta[ $section_key ]['title'],
-				'guidance'     => $meta[ $section_key ]['guidance'],
-				'findings'     => array(),
-				'truncated'    => 0,
-				'info_message' => '',
-			);
+		if ( '' === $message ) {
+			$message = __( 'The selected posts table is not associated with a registered WordPress site.', 'choctaw-wp-security' );
 		}
 
-		return $sections;
+		return array(
+			'success'                    => false,
+			'rejected'                   => true,
+			'findings_backend'           => 'sassh',
+			'errors'                     => array( $message ),
+			'findings'                   => array(),
+			'summary'                    => array(
+				'critical'   => 0,
+				'warning'    => 0,
+				'suspicious' => 0,
+				'safe'       => 0,
+				'info'       => 0,
+				'total'      => 0,
+				'flagged'    => 0,
+			),
+			'posts_table'                => $this->posts_table,
+			'wordpress_configured_table' => Choctaw_Wp_Security_Posts_Table_Discovery::get_wordpress_configured_table(),
+			'scan_incomplete'            => false,
+			'coverage_complete'          => false,
+			'absence_reconciled'         => false,
+			'completion_status'          => 'rejected',
+			'confirmed_this_run'         => 0,
+			'scanned_at'                 => time(),
+		);
 	}
 
 	/**
 	 * Scan for PHP tags and execution patterns.
 	 *
-	 * @param array<int, array<string, mixed>> $findings Findings list.
+	 * @param int $blog_id Mapped blog id.
 	 * @return void
 	 */
-	private function scan_php_execution_patterns( array &$findings ) {
+	private function scan_php_execution_patterns( $blog_id ) {
 		$patterns = array_merge(
 			Choctaw_Wp_Security_Posts_Scan_Patterns::$php_tag_patterns,
 			Choctaw_Wp_Security_Posts_Scan_Patterns::$execution_patterns
 		);
 
-		$this->scan_content_patterns( $patterns, $findings, 'php_execution_patterns', 'critical' );
+		$this->scan_content_patterns(
+			$patterns,
+			$blog_id,
+			Sassh_Findings_Service::RULE_POST_PHP_EXECUTION_PATTERNS_MATCH,
+			'php_execution_patterns'
+		);
 	}
 
 	/**
-	 * Scan for script/iframe patterns, preferring high-confidence matches per post.
+	 * Scan for script/iframe patterns (high-confidence preferred over generic).
 	 *
-	 * @param array<int, array<string, mixed>> $findings Findings list.
+	 * @param int $blog_id Mapped blog id.
 	 * @return void
 	 */
-	private function scan_scripts( array &$findings ) {
-		$high_confidence = array();
-		$generic         = array();
-
+	private function scan_scripts( $blog_id ) {
 		$this->scan_content_patterns(
 			Choctaw_Wp_Security_Posts_Scan_Patterns::$high_confidence_script_patterns,
-			$high_confidence,
-			'scripts_high_confidence',
-			'warning'
+			$blog_id,
+			Sassh_Findings_Service::RULE_POST_SCRIPTS_HIGH_CONFIDENCE,
+			'scripts'
 		);
 
 		$this->scan_content_patterns(
 			Choctaw_Wp_Security_Posts_Scan_Patterns::$script_patterns,
-			$generic,
-			'scripts_generic',
-			'warning'
+			$blog_id,
+			Sassh_Findings_Service::RULE_POST_SCRIPTS_GENERIC,
+			'scripts',
+			true
 		);
-
-		$seen_post_ids = array();
-
-		foreach ( $high_confidence as $finding ) {
-			$post_id = isset( $finding['post_id'] ) ? (int) $finding['post_id'] : 0;
-			if ( $post_id > 0 ) {
-				$seen_post_ids[ $post_id ] = true;
-			}
-			$findings[] = $finding;
-		}
-
-		foreach ( $generic as $finding ) {
-			$post_id = isset( $finding['post_id'] ) ? (int) $finding['post_id'] : 0;
-			if ( $post_id > 0 && isset( $seen_post_ids[ $post_id ] ) ) {
-				continue;
-			}
-			$findings[] = $finding;
-		}
 	}
 
 	/**
 	 * Scan published post titles for SEO spam keywords.
 	 *
-	 * @param array<int, array<string, mixed>> $findings Findings list.
+	 * @param int $blog_id Mapped blog id.
 	 * @return void
 	 */
-	private function scan_seo_spam_titles( array &$findings ) {
+	private function scan_seo_spam_titles( $blog_id ) {
 		global $wpdb;
 
 		if ( $this->is_time_exceeded() ) {
@@ -272,7 +311,8 @@ class Choctaw_Wp_Security_Posts_Table_Scanner {
 			$where_values[]  = '%' . $wpdb->esc_like( $keyword ) . '%';
 		}
 
-		$sql = 'SELECT ID, post_author, post_title, post_type, post_status, LENGTH(post_content) AS content_size
+		$sql = 'SELECT ID, post_author, post_title, post_type, post_status, post_content, post_excerpt,
+				LENGTH(post_content) AS content_size
 			FROM ' . $table . '
 			WHERE post_status = %s
 			AND (' . implode( ' OR ', $where_clauses ) . ')';
@@ -291,164 +331,148 @@ class Choctaw_Wp_Security_Posts_Table_Scanner {
 			}
 
 			$post_title = isset( $row['post_title'] ) ? (string) $row['post_title'] : '';
-			$matched    = $this->find_matching_pattern( $post_title, $keywords );
+			$matched    = $this->find_all_matching_patterns( $post_title, $keywords );
 
-			if ( '' === $matched ) {
+			if ( empty( $matched ) ) {
 				continue;
 			}
 
-			$findings[] = $this->make_finding(
-				'seo_spam_title_match',
-				'warning',
+			$rule_id    = Sassh_Findings_Service::RULE_POST_SEO_SPAM_TITLE;
+			$risk_level = Sassh_Findings_Service::wp_posts_risk_level( $rule_id );
+			$category_fp = Sassh_Post_Key_Normalizer::seo_category_fingerprint( $post_title, $matched );
+
+			$this->add_category_to_draft(
 				$row,
-				isset( $row['content_size'] ) ? (int) $row['content_size'] : 0,
+				$blog_id,
+				$rule_id,
+				'seo_spam_titles',
+				$risk_level,
+				$category_fp,
 				sprintf(
-					/* translators: %s: matched keyword */
+					/* translators: %s: matched keyword list */
 					__( 'Matched spam keyword: %s', 'choctaw-wp-security' ),
-					$matched
+					implode( ', ', $matched )
 				),
-				$post_title
+				array(
+					'matched_field'    => 'post_title',
+					'matched_patterns' => $matched,
+					'matched_snippet'  => $post_title,
+					'excerpt'          => $this->trim_excerpt( $post_title ),
+					'contents_truncated' => false,
+				)
 			);
 		}
 	}
 
 	/**
-	 * Scan for unusually large post content rows.
+	 * Scan for unusually large post content in ID-ordered batches (full coverage).
 	 *
-	 * @param array<int, array<string, mixed>> $findings Findings list.
+	 * @param int $blog_id Mapped blog id.
 	 * @return void
 	 */
-	private function scan_large_post_content( array &$findings ) {
+	private function scan_large_post_content( $blog_id ) {
 		global $wpdb;
 
-		if ( $this->is_time_exceeded() ) {
-			$this->scan_incomplete = true;
-			return;
-		}
-
-		$table = $this->get_posts_table_sql();
 		$threshold = (int) Choctaw_Wp_Security_Posts_Scan_Patterns::CONTENT_SIZE_THRESHOLD;
-		$sql   = 'SELECT ID, post_author, post_title, post_type, post_status,
-				LENGTH(post_content) AS content_size,
-				LEFT(post_content, %d) AS content_excerpt
-			FROM ' . $table . '
-			WHERE ' . $this->get_content_scan_exclusion_sql() . '
-			AND post_content != %s
-			AND LENGTH(post_content) >= %d
-			ORDER BY content_size DESC
-			LIMIT %d';
+		$batch     = (int) Choctaw_Wp_Security_Posts_Scan_Patterns::LARGE_CONTENT_BATCH_SIZE;
+		$last_id   = 0;
+		$table     = $this->get_posts_table_sql();
 
-		$rows = $wpdb->get_results(
-			$wpdb->prepare(
-				$sql,
-				Choctaw_Wp_Security_Posts_Scan_Patterns::LARGE_CONTENT_PREVIEW_LENGTH,
-				'',
-				$threshold,
-				Choctaw_Wp_Security_Posts_Scan_Patterns::LARGE_CONTENT_TOP_LIMIT
-			),
-			ARRAY_A
-		);
-
-		if ( ! is_array( $rows ) ) {
-			return;
+		if ( $batch <= 0 ) {
+			$batch = 50;
 		}
 
-		foreach ( $rows as $row ) {
-			$content_size = isset( $row['content_size'] ) ? (int) $row['content_size'] : 0;
+		while ( true ) {
+			if ( $this->is_time_exceeded() ) {
+				$this->scan_incomplete = true;
+				return;
+			}
 
-			$findings[] = $this->make_finding(
-				'large_post_content',
-				'warning',
-				$row,
-				$content_size,
-				sprintf(
-					/* translators: %s: formatted content size */
-					__( 'Post content size: %s', 'choctaw-wp-security' ),
-					size_format( $content_size )
+			$sql = 'SELECT ID, post_author, post_title, post_type, post_status, post_content, post_excerpt,
+					LENGTH(post_content) AS content_size
+				FROM ' . $table . '
+				WHERE ' . $this->get_content_scan_exclusion_sql() . '
+				AND post_content != %s
+				AND LENGTH(post_content) >= %d
+				AND ID > %d
+				ORDER BY ID ASC
+				LIMIT %d';
+
+			$rows = $wpdb->get_results(
+				$wpdb->prepare(
+					$sql,
+					'',
+					$threshold,
+					$last_id,
+					$batch
 				),
-				isset( $row['content_excerpt'] ) ? (string) $row['content_excerpt'] : ''
+				ARRAY_A
 			);
-		}
-	}
 
-	/**
-	 * Compare current posts against a stored baseline snapshot.
-	 *
-	 * @param array<string, mixed>      $section  Section payload.
-	 * @param array<string, mixed>|null $baseline Prior baseline.
-	 * @return void
-	 */
-	private function scan_baseline_diff( array &$section, $baseline ) {
-		$baseline_table = ( is_array( $baseline ) && isset( $baseline['posts_table'] ) ) ? (string) $baseline['posts_table'] : '';
+			if ( ! is_array( $rows ) || empty( $rows ) ) {
+				return;
+			}
 
-		if ( $this->is_baseline_uninitialized( $baseline ) ) {
-			if ( '' !== $baseline_table && $baseline_table !== $this->posts_table ) {
-				$section['info_message'] = sprintf(
-					/* translators: 1: previous posts table, 2: selected posts table */
-					__( 'Baseline was captured for %1$s. Establishing a new baseline for %2$s.', 'choctaw-wp-security' ),
-					$baseline_table,
-					$this->posts_table
+			foreach ( $rows as $row ) {
+				if ( $this->is_time_exceeded() ) {
+					$this->scan_incomplete = true;
+					return;
+				}
+
+				$post_id = isset( $row['ID'] ) ? (int) $row['ID'] : 0;
+				if ( $post_id > $last_id ) {
+					$last_id = $post_id;
+				}
+
+				$content_size = isset( $row['content_size'] ) ? (int) $row['content_size'] : 0;
+				$post_content = isset( $row['post_content'] ) ? (string) $row['post_content'] : '';
+				$rule_id      = Sassh_Findings_Service::RULE_POST_LARGE_CONTENT;
+				$risk_level   = Sassh_Findings_Service::wp_posts_risk_level( $rule_id );
+				$category_fp  = Sassh_Post_Key_Normalizer::large_content_category_fingerprint( $content_size, $post_content );
+				$preview      = Choctaw_Wp_Security_Utils::truncate_report_contents_result(
+					$post_content,
+					Choctaw_Wp_Security_Posts_Scan_Patterns::MATCHED_SNIPPET_LENGTH
 				);
-			} else {
-				$section['info_message'] = __( 'Baseline established. Future scans will report posts that are new or changed since this scan.', 'choctaw-wp-security' );
-			}
-			return;
-		}
 
-		if ( empty( $baseline ) || ! isset( $baseline['posts'] ) || ! is_array( $baseline['posts'] ) ) {
-			$section['info_message'] = __( 'Baseline established. Future scans will report posts that are new or changed since this scan.', 'choctaw-wp-security' );
-			return;
-		}
-
-		$current  = $this->capture_baseline_snapshot();
-		$previous = $baseline['posts'];
-		$findings = array();
-
-		foreach ( $current['posts'] as $post_id => $meta ) {
-			if ( ! isset( $previous[ $post_id ] ) ) {
-				$findings[] = $this->make_baseline_finding( 'new', $post_id, $meta, 0, isset( $meta['size'] ) ? (int) $meta['size'] : 0 );
-				continue;
-			}
-
-			$old_hash = isset( $previous[ $post_id ]['hash'] ) ? (string) $previous[ $post_id ]['hash'] : '';
-			$new_hash = isset( $meta['hash'] ) ? (string) $meta['hash'] : '';
-
-			if ( $old_hash !== $new_hash ) {
-				$findings[] = $this->make_baseline_finding(
-					'changed',
-					$post_id,
-					$meta,
-					isset( $previous[ $post_id ]['size'] ) ? (int) $previous[ $post_id ]['size'] : 0,
-					isset( $meta['size'] ) ? (int) $meta['size'] : 0
+				$this->add_category_to_draft(
+					$row,
+					$blog_id,
+					$rule_id,
+					'large_post_content',
+					$risk_level,
+					$category_fp,
+					sprintf(
+						/* translators: %s: formatted content size */
+						__( 'Post content size: %s', 'choctaw-wp-security' ),
+						size_format( $content_size )
+					),
+					array(
+						'matched_field'      => 'post_content',
+						'matched_patterns'   => array(),
+						'matched_snippet'    => $preview['contents'],
+						'excerpt'            => $this->trim_excerpt( $preview['contents'] ),
+						'contents_truncated' => ! empty( $preview['truncated'] ),
+					)
 				);
 			}
-		}
 
-		foreach ( $previous as $post_id => $meta ) {
-			if ( ! isset( $current['posts'][ $post_id ] ) ) {
-				$findings[] = $this->make_baseline_finding(
-					'removed',
-					(int) $post_id,
-					$meta,
-					isset( $meta['size'] ) ? (int) $meta['size'] : 0,
-					0
-				);
+			if ( count( $rows ) < $batch ) {
+				return;
 			}
 		}
-
-		$section['findings'] = $findings;
 	}
 
 	/**
 	 * Run pattern scans against post content and excerpt fields.
 	 *
-	 * @param array<int, string>             $patterns          Patterns to search.
-	 * @param array<int, array<string, mixed>> $findings          Findings list.
-	 * @param string                         $finding_id_prefix Finding ID prefix.
-	 * @param string                         $severity          Default severity.
+	 * @param array<int, string> $patterns           Patterns to search.
+	 * @param int                $blog_id            Mapped blog id.
+	 * @param string             $rule_id            Rule id.
+	 * @param string             $section_key        UI section key.
+	 * @param bool               $skip_if_same_family When true, skip if a scripts high-confidence category already exists.
 	 * @return void
 	 */
-	private function scan_content_patterns( array $patterns, array &$findings, $finding_id_prefix, $severity ) {
+	private function scan_content_patterns( array $patterns, $blog_id, $rule_id, $section_key, $skip_if_same_family = false ) {
 		global $wpdb;
 
 		if ( empty( $patterns ) || $this->is_time_exceeded() ) {
@@ -483,8 +507,6 @@ class Choctaw_Wp_Security_Posts_Table_Scanner {
 			return;
 		}
 
-		$seen = array();
-
 		foreach ( $rows as $row ) {
 			if ( $this->is_time_exceeded() ) {
 				$this->scan_incomplete = true;
@@ -493,45 +515,486 @@ class Choctaw_Wp_Security_Posts_Table_Scanner {
 
 			$post_id = isset( $row['ID'] ) ? (int) $row['ID'] : 0;
 
-			if ( $post_id <= 0 || isset( $seen[ $post_id ] ) ) {
+			if ( $post_id <= 0 ) {
+				continue;
+			}
+
+			if ( $skip_if_same_family && isset( $this->post_drafts[ $post_id ]['categories'][ Sassh_Findings_Service::RULE_POST_SCRIPTS_HIGH_CONFIDENCE ] ) ) {
 				continue;
 			}
 
 			$post_content = isset( $row['post_content'] ) ? (string) $row['post_content'] : '';
 			$post_excerpt = isset( $row['post_excerpt'] ) ? (string) $row['post_excerpt'] : '';
-			$matched      = $this->find_matching_pattern( $post_content, $patterns );
-			$value        = $post_content;
-			$field_label  = 'post_content';
+			$content_hits = $this->find_all_matching_patterns( $post_content, $patterns );
+			$excerpt_hits = $this->find_all_matching_patterns( $post_excerpt, $patterns );
+			$matched      = array_values( array_unique( array_merge( $content_hits, $excerpt_hits ) ) );
 
-			if ( '' === $matched ) {
-				$matched     = $this->find_matching_pattern( $post_excerpt, $patterns );
-				$value       = $post_excerpt;
-				$field_label = 'post_excerpt';
-			}
-
-			if ( '' === $matched ) {
+			if ( empty( $matched ) ) {
 				continue;
 			}
 
-			$seen[ $post_id ] = true;
-			$snippet          = $this->extract_matched_snippet( $value, $matched );
+			$field_label = ! empty( $content_hits ) ? 'post_content' : 'post_excerpt';
+			$field_value = 'post_content' === $field_label ? $post_content : $post_excerpt;
+			// Fingerprint both fields when both contributed; otherwise the matched field.
+			$fp_value = ! empty( $content_hits ) && ! empty( $excerpt_hits )
+				? self::length_prefixed_pair( $post_content, $post_excerpt )
+				: $field_value;
 
-			$findings[] = $this->make_finding(
-				$finding_id_prefix . '_match',
-				$severity,
+			$evidence = array(
+				'matched_patterns' => $matched,
+			);
+
+			if ( Sassh_Findings_Service::RULE_POST_PHP_EXECUTION_PATTERNS_MATCH === $rule_id ) {
+				$evidence['php_tag_patterns']          = Choctaw_Wp_Security_Posts_Scan_Patterns::$php_tag_patterns;
+				$evidence['high_specificity_patterns'] = Choctaw_Wp_Security_Posts_Scan_Patterns::high_specificity_execution_patterns();
+				$evidence['low_specificity_patterns']  = Choctaw_Wp_Security_Posts_Scan_Patterns::low_specificity_execution_patterns();
+			}
+
+			$risk_level  = Sassh_Findings_Service::wp_posts_risk_level( $rule_id, $evidence );
+			$category_fp = Sassh_Post_Key_Normalizer::pattern_category_fingerprint( $fp_value, $matched );
+			$primary     = $matched[0];
+			$snippet     = $this->extract_matched_snippet( $field_value, $primary );
+
+			$this->add_category_to_draft(
 				$row,
-				isset( $row['content_size'] ) ? (int) $row['content_size'] : strlen( $post_content ),
+				$blog_id,
+				$rule_id,
+				$section_key,
+				$risk_level,
+				$category_fp,
 				sprintf(
-					/* translators: 1: matched pattern, 2: field name */
+					/* translators: 1: matched patterns, 2: field name */
 					__( 'Matched pattern: %1$s (%2$s)', 'choctaw-wp-security' ),
-					$matched,
+					implode( ', ', $matched ),
 					$field_label
 				),
-				$this->extract_excerpt( $value, $matched ),
-				$snippet['contents'],
-				! empty( $snippet['truncated'] )
+				array(
+					'matched_field'      => $field_label,
+					'matched_patterns'   => $matched,
+					'matched_snippet'    => $snippet['contents'],
+					'excerpt'            => $this->extract_excerpt( $field_value, $primary ),
+					'contents_truncated' => ! empty( $snippet['truncated'] ),
+				)
 			);
 		}
+	}
+
+	/**
+	 * Ensure a draft exists and attach a category.
+	 *
+	 * @param array<string, mixed> $row         Post row.
+	 * @param int                  $blog_id     Blog id.
+	 * @param string               $rule_id     Rule id.
+	 * @param string               $section_key Section key.
+	 * @param string               $risk_level  Risk.
+	 * @param string               $category_fp Category fingerprint.
+	 * @param string               $detail      Detail sentence.
+	 * @param array<string, mixed> $extra       Extra category metadata.
+	 * @return void
+	 */
+	private function add_category_to_draft( array $row, $blog_id, $rule_id, $section_key, $risk_level, $category_fp, $detail, array $extra ) {
+		$post_id = isset( $row['ID'] ) ? (int) $row['ID'] : 0;
+
+		if ( $post_id <= 0 || '' === $category_fp ) {
+			if ( $post_id > 0 && '' === $category_fp ) {
+				++$this->hash_failures;
+			}
+			return;
+		}
+
+		$object_key = Sassh_Post_Key_Normalizer::object_key_for_post_id( $post_id );
+
+		if ( is_wp_error( $object_key ) ) {
+			++$this->hash_failures;
+			return;
+		}
+
+		if ( ! isset( $this->post_drafts[ $post_id ] ) ) {
+			$user_id = isset( $row['post_author'] ) ? (int) $row['post_author'] : 0;
+
+			$this->post_drafts[ $post_id ] = array(
+				'object_key'        => $object_key,
+				'blog_id'           => (int) $blog_id,
+				'post_id'           => $post_id,
+				'user_id'           => $user_id,
+				'user_display_name' => $this->get_user_display_name( $user_id ),
+				'post_title'        => isset( $row['post_title'] ) ? (string) $row['post_title'] : '',
+				'post_type'         => isset( $row['post_type'] ) ? (string) $row['post_type'] : '',
+				'post_status'       => isset( $row['post_status'] ) ? (string) $row['post_status'] : '',
+				'post_content'      => isset( $row['post_content'] ) ? (string) $row['post_content'] : '',
+				'post_excerpt'      => isset( $row['post_excerpt'] ) ? (string) $row['post_excerpt'] : '',
+				'size'              => isset( $row['content_size'] ) ? (int) $row['content_size'] : ( isset( $row['post_content'] ) ? strlen( (string) $row['post_content'] ) : 0 ),
+				'categories'        => array(),
+			);
+		} else {
+			// Prefer fuller row data when later sections include content fields.
+			if ( isset( $row['post_content'] ) && '' === $this->post_drafts[ $post_id ]['post_content'] ) {
+				$this->post_drafts[ $post_id ]['post_content'] = (string) $row['post_content'];
+			}
+			if ( isset( $row['post_excerpt'] ) && '' === $this->post_drafts[ $post_id ]['post_excerpt'] ) {
+				$this->post_drafts[ $post_id ]['post_excerpt'] = (string) $row['post_excerpt'];
+			}
+			if ( isset( $row['content_size'] ) ) {
+				$this->post_drafts[ $post_id ]['size'] = (int) $row['content_size'];
+			}
+		}
+
+		$labels   = Choctaw_Wp_Security_Posts_Scan_Patterns::get_category_labels();
+		$guidance = $this->guidance_contributions_for_rule( $rule_id, $risk_level );
+
+		$this->post_drafts[ $post_id ]['categories'][ $rule_id ] = array(
+			'rule_id'                => $rule_id,
+			'risk_level'             => $risk_level,
+			'sassh_classification'   => Sassh_Findings_Service::default_classification( $risk_level ),
+			'category_fingerprint'   => $category_fp,
+			'title'                  => $rule_id,
+			'metadata'               => array_merge(
+				array(
+					'section_key'    => $section_key,
+					'category'       => $section_key,
+					'category_label' => isset( $labels[ $section_key ] ) ? $labels[ $section_key ] : $section_key,
+					'detail'         => $detail,
+					'posts_table'    => $this->posts_table,
+				),
+				$extra
+			),
+			'guidance_contributions' => $guidance,
+		);
+
+		// Keep primary detail/snippet at draft level from highest-risk category later.
+		if ( ! isset( $this->post_drafts[ $post_id ]['detail'] ) || $this->risk_rank( $risk_level ) >= $this->risk_rank( isset( $this->post_drafts[ $post_id ]['primary_risk'] ) ? $this->post_drafts[ $post_id ]['primary_risk'] : 'info' ) ) {
+			$this->post_drafts[ $post_id ]['detail']       = $detail;
+			$this->post_drafts[ $post_id ]['primary_risk'] = $risk_level;
+			if ( isset( $extra['matched_snippet'] ) ) {
+				$this->post_drafts[ $post_id ]['matched_snippet']    = $extra['matched_snippet'];
+				$this->post_drafts[ $post_id ]['contents_truncated'] = ! empty( $extra['contents_truncated'] );
+			}
+			if ( isset( $extra['excerpt'] ) ) {
+				$this->post_drafts[ $post_id ]['excerpt'] = $extra['excerpt'];
+			}
+		}
+	}
+
+	/**
+	 * Convert drafts into object-level observations.
+	 *
+	 * @param int $blog_id Blog id.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function build_observations_from_drafts( $blog_id ) {
+		$observations = array();
+
+		foreach ( $this->post_drafts as $draft ) {
+			if ( empty( $draft['categories'] ) || ! is_array( $draft['categories'] ) ) {
+				continue;
+			}
+
+			$object_fp = Sassh_Post_Key_Normalizer::object_fingerprint(
+				(int) $draft['post_id'],
+				(string) $draft['post_title'],
+				(string) $draft['post_content'],
+				(string) $draft['post_excerpt'],
+				(string) $draft['post_type'],
+				(string) $draft['post_status']
+			);
+
+			if ( '' === $object_fp ) {
+				++$this->hash_failures;
+				continue;
+			}
+
+			$title = '' !== (string) $draft['post_title']
+				? (string) $draft['post_title']
+				: sprintf(
+					/* translators: %d: post ID */
+					__( 'Post #%d', 'choctaw-wp-security' ),
+					(int) $draft['post_id']
+				);
+
+			$observations[] = array(
+				'scanner_id'         => Sassh_Findings_Service::SCANNER_WP_POSTS,
+				'object_type'        => Sassh_Object_Type_Registry::TYPE_POST,
+				'object_key'         => (string) $draft['object_key'],
+				'blog_id'            => (int) $blog_id,
+				'object_fingerprint' => $object_fp,
+				'title'              => $title,
+				'description'        => isset( $draft['detail'] ) ? (string) $draft['detail'] : '',
+				'metadata'           => array(
+					'post_id'            => (int) $draft['post_id'],
+					'user_id'            => (int) $draft['user_id'],
+					'user_display_name'  => (string) $draft['user_display_name'],
+					'post_title'         => (string) $draft['post_title'],
+					'post_type'          => (string) $draft['post_type'],
+					'post_status'        => (string) $draft['post_status'],
+					'size'               => (int) $draft['size'],
+					'detail'             => isset( $draft['detail'] ) ? (string) $draft['detail'] : '',
+					'excerpt'            => isset( $draft['excerpt'] ) ? (string) $draft['excerpt'] : '',
+					'matched_snippet'    => isset( $draft['matched_snippet'] ) ? (string) $draft['matched_snippet'] : '',
+					'contents_truncated'  => ! empty( $draft['contents_truncated'] ),
+					'posts_table'        => $this->posts_table,
+				),
+				'categories'         => array_values( $draft['categories'] ),
+			);
+		}
+
+		return $observations;
+	}
+
+	/**
+	 * Built-in guidance contribution packs per rule.
+	 *
+	 * @param string $rule_id    Rule id.
+	 * @param string $risk_level Risk level.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function guidance_contributions_for_rule( $rule_id, $risk_level ) {
+		unset( $risk_level );
+
+		switch ( (string) $rule_id ) {
+			case Sassh_Findings_Service::RULE_POST_PHP_EXECUTION_PATTERNS_MATCH:
+				return array(
+					array(
+						'id'               => 'post.php.evidence.patterns',
+						'kind'             => 'evidence_fact',
+						'display_priority' => 10,
+						'text'             => 'This post matched PHP tag and/or execution/obfuscation-related substrings in post content or excerpt.',
+						'concern'          => 'post.php.evidence',
+					),
+					array(
+						'id'               => 'post.php.interpretation.inert',
+						'kind'             => 'warning_caveat',
+						'display_priority' => 10,
+						'text'             => 'WordPress core does not ordinarily execute PHP stored in post_content or post_excerpt. Stored PHP is normally inert, but it may indicate injection or become dangerous when another plugin, shortcode, template, or vulnerability evaluates stored content.',
+						'concern'          => 'post.php.certainty',
+						'severity'        => 80,
+					),
+					array(
+						'id'               => 'post.php.action.review',
+						'kind'             => 'recommended_action',
+						'display_priority' => 20,
+						'text'             => 'Review the Matched Snippet in context. Remove unexpected markup, or trash/restore from a clean backup. Do not execute suspicious code. Check the author account and related posts when the content looks injected.',
+						'tags'             => array( 'investigate', 'nondestructive' ),
+						'concern'          => 'post.php.proceed',
+					),
+				);
+
+			case Sassh_Findings_Service::RULE_POST_SCRIPTS_HIGH_CONFIDENCE:
+				return array(
+					array(
+						'id'               => 'post.scripts_hc.evidence',
+						'kind'             => 'evidence_fact',
+						'display_priority' => 10,
+						'text'             => 'High-confidence script or iframe injection patterns were found (for example remote script/iframe sources, document.write, or eval/unescape).',
+						'concern'          => 'post.scripts.evidence',
+					),
+					array(
+						'id'               => 'post.scripts_hc.action',
+						'kind'             => 'recommended_action',
+						'display_priority' => 20,
+						'text'             => 'Review the Matched Snippet and remove unauthorized scripts/iframes. Prefer restoring from a clean revision when the post is heavily altered, then search other posts for the same injection.',
+						'tags'             => array( 'investigate' ),
+						'concern'          => 'post.scripts.proceed',
+					),
+				);
+
+			case Sassh_Findings_Service::RULE_POST_SCRIPTS_GENERIC:
+				return array(
+					array(
+						'id'               => 'post.scripts_generic.evidence',
+						'kind'             => 'evidence_fact',
+						'display_priority' => 10,
+						'text'             => 'Script or iframe markup appears in this post. Some embeds are legitimate, but unexpected scripts—especially from unknown hosts—are a common compromise indicator.',
+						'concern'          => 'post.scripts.evidence',
+					),
+					array(
+						'id'               => 'post.scripts_generic.action',
+						'kind'             => 'recommended_action',
+						'display_priority' => 20,
+						'text'             => 'Confirm the embed is intentional (trusted video/map/widget). Remove anything you do not recognize, update the post, and rescan.',
+						'tags'             => array( 'investigate', 'nondestructive' ),
+						'concern'          => 'post.scripts.proceed',
+					),
+				);
+
+			case Sassh_Findings_Service::RULE_POST_SEO_SPAM_TITLE:
+				return array(
+					array(
+						'id'               => 'post.seo.evidence',
+						'kind'             => 'evidence_fact',
+						'display_priority' => 10,
+						'text'             => 'This published post title contains terms associated with SEO spam injections (for example pharmaceutical, casino, or loan spam).',
+						'concern'          => 'post.seo.evidence',
+					),
+					array(
+						'id'               => 'post.seo.action',
+						'kind'             => 'recommended_action',
+						'display_priority' => 20,
+						'text'             => 'Verify authorship and intent. If the post is spam, trash it (prefer trash over permanent delete while investigating) and review other posts from the same author.',
+						'tags'             => array( 'investigate' ),
+						'concern'          => 'post.seo.proceed',
+					),
+				);
+
+			case Sassh_Findings_Service::RULE_POST_LARGE_CONTENT:
+				return array(
+					array(
+						'id'               => 'post.large.evidence',
+						'kind'             => 'evidence_fact',
+						'display_priority' => 10,
+						'text'             => 'This post meets the large-content size threshold used by this scan. Size alone is not proof of compromise, but large posts can hide injected payloads.',
+						'concern'          => 'post.large.evidence',
+					),
+					array(
+						'id'               => 'post.large.action',
+						'kind'             => 'recommended_action',
+						'display_priority' => 20,
+						'text'             => 'Confirm whether the size is expected (long guide, imported content). If not, search the content for hidden scripts or PHP and clean as needed.',
+						'tags'             => array( 'investigate', 'nondestructive' ),
+						'concern'          => 'post.large.proceed',
+					),
+				);
+
+			default:
+				return array();
+		}
+	}
+
+	/**
+	 * Build Findings report DTO for the admin UI.
+	 *
+	 * @param Sassh_Findings_Service   $service      Service.
+	 * @param int                      $execution_id Execution id.
+	 * @param array<string, mixed>     $run_meta     Run meta.
+	 * @return array<string, mixed>
+	 */
+	private function build_report_from_findings( Sassh_Findings_Service $service, $execution_id, array $run_meta ) {
+		$completion  = isset( $run_meta['completion_status'] ) ? (string) $run_meta['completion_status'] : 'failed';
+		$coverage_ok = ( 'success' === $completion );
+
+		$rows = $service->list_findings(
+			array(
+				'scanner_id'      => Sassh_Findings_Service::SCANNER_WP_POSTS,
+				'detection_state' => 'active',
+			)
+		);
+
+		$findings   = array();
+		$critical   = 0;
+		$warning    = 0;
+		$suspicious = 0;
+		$info       = 0;
+		$safe       = 0;
+		$confirmed  = 0;
+
+		foreach ( $rows as $row ) {
+			if ( isset( $row['posts_table'] ) && '' !== (string) $row['posts_table'] && (string) $row['posts_table'] !== $this->posts_table ) {
+				continue;
+			}
+
+			$confirmed_this_run = isset( $row['last_scanner_execution_id'] )
+				&& (int) $row['last_scanner_execution_id'] === (int) $execution_id;
+
+			if ( $confirmed_this_run ) {
+				++$confirmed;
+			}
+
+			$risk = isset( $row['risk_level'] ) ? (string) $row['risk_level'] : 'info';
+
+			switch ( $risk ) {
+				case 'critical':
+					++$critical;
+					break;
+				case 'warning':
+					++$warning;
+					break;
+				case 'suspicious':
+					++$suspicious;
+					break;
+				case 'safe':
+					++$safe;
+					break;
+				default:
+					++$info;
+					break;
+			}
+
+			$why = isset( $row['why_seeing_this'] ) ? $row['why_seeing_this'] : '';
+			$how = isset( $row['how_to_proceed'] ) ? $row['how_to_proceed'] : '';
+
+			$findings[] = array(
+				'id'                      => $row['finding_id'],
+				'finding_id'              => $row['finding_id'],
+				'fingerprint'             => $row['content_fingerprint'],
+				'content_fingerprint'     => $row['content_fingerprint'],
+				'object_fingerprint'      => $row['object_fingerprint'],
+				'rule_id'                 => isset( $row['primary_rule_id'] ) ? $row['primary_rule_id'] : ( isset( $row['rule_id'] ) ? $row['rule_id'] : '' ),
+				'post_id'                 => isset( $row['post_id'] ) ? (int) $row['post_id'] : (int) $row['object_key'],
+				'user_id'                 => isset( $row['user_id'] ) ? (int) $row['user_id'] : 0,
+				'user_display_name'       => isset( $row['user_display_name'] ) ? (string) $row['user_display_name'] : '',
+				'post_title'              => isset( $row['post_title'] ) ? (string) $row['post_title'] : ( isset( $row['title'] ) ? (string) $row['title'] : '' ),
+				'post_type'               => isset( $row['post_type'] ) ? (string) $row['post_type'] : '',
+				'post_status'             => isset( $row['post_status'] ) ? (string) $row['post_status'] : '',
+				'size'                    => isset( $row['size'] ) ? (int) $row['size'] : 0,
+				'detail'                  => isset( $row['detail'] ) ? (string) $row['detail'] : ( isset( $row['description'] ) ? (string) $row['description'] : '' ),
+				'description'             => isset( $row['description'] ) ? (string) $row['description'] : '',
+				'excerpt'                 => isset( $row['excerpt'] ) ? (string) $row['excerpt'] : '',
+				'matched_snippet'         => isset( $row['matched_snippet'] ) ? (string) $row['matched_snippet'] : '',
+				'contents_truncated'       => ! empty( $row['contents_truncated'] ),
+				'risk'                    => $risk,
+				'risk_level'              => $risk,
+				'risk_label'              => isset( $row['risk_label'] ) ? $row['risk_label'] : $risk,
+				'status'                  => $row['effective_status'],
+				'status_label'            => $row['status_label'],
+				'effective_status'        => $row['effective_status'],
+				'can_dismiss'             => ! empty( $row['can_dismiss'] ),
+				'dismissal_control_state' => isset( $row['dismissal_control_state'] ) ? $row['dismissal_control_state'] : Sassh_Findings_Service::dismissal_control_state( $row ),
+				'category'                => isset( $row['category'] ) ? $row['category'] : '',
+				'category_label'          => isset( $row['category_label_display'] ) ? $row['category_label_display'] : ( isset( $row['category_label'] ) ? $row['category_label'] : '' ),
+				'section_key'             => isset( $row['section_key'] ) ? $row['section_key'] : '',
+				'why_seeing_this'         => $why,
+				'how_to_proceed'          => $how,
+				'matched_patterns'        => ( isset( $row['matched_patterns'] ) && is_array( $row['matched_patterns'] ) ) ? $row['matched_patterns'] : array(),
+				'posts_table'             => isset( $row['posts_table'] ) ? $row['posts_table'] : $this->posts_table,
+				'blog_id'                 => isset( $row['blog_id'] ) ? (int) $row['blog_id'] : null,
+				'first_seen_at'           => $row['first_seen_at'],
+				'last_seen_at'            => $row['last_seen_at'],
+				'detection_state'         => $row['detection_state'],
+				'confirmed_this_run'      => $confirmed_this_run,
+				'findings_backend'        => 'sassh',
+				'categories'              => ( isset( $row['categories'] ) && is_array( $row['categories'] ) ) ? $row['categories'] : array(),
+				'extra_rule_count'        => isset( $row['extra_rule_count'] ) ? (int) $row['extra_rule_count'] : 0,
+				'guidance'                => ( isset( $row['guidance'] ) && is_array( $row['guidance'] ) ) ? $row['guidance'] : array(),
+			);
+		}
+
+		$count   = count( $findings );
+		$flagged = $critical + $warning + $suspicious;
+
+		return array(
+			'success'                    => $coverage_ok && 0 === $flagged,
+			'rejected'                   => false,
+			'coverage_complete'          => $coverage_ok,
+			'absence_reconciled'         => $coverage_ok,
+			'completion_status'          => $completion,
+			'scan_incomplete'            => ! empty( $run_meta['scan_incomplete'] ) || ! $coverage_ok,
+			'errors'                     => isset( $run_meta['errors'] ) && is_array( $run_meta['errors'] ) ? $run_meta['errors'] : array(),
+			'findings'                   => $findings,
+			'confirmed_this_run'         => $confirmed,
+			'prior_findings_only'        => ! $coverage_ok && $count > 0 && 0 === $confirmed,
+			'summary'                    => array(
+				'critical'   => $critical,
+				'warning'    => $warning,
+				'suspicious' => $suspicious,
+				'safe'       => $safe,
+				'info'       => $info,
+				'total'      => $count,
+				'flagged'    => $flagged,
+			),
+			'posts_table'                => $this->posts_table,
+			'wordpress_configured_table' => Choctaw_Wp_Security_Posts_Table_Discovery::get_wordpress_configured_table(),
+			'findings_backend'           => 'sassh',
+			'scanned_at'                 => time(),
+		);
 	}
 
 	/**
@@ -556,185 +1019,6 @@ class Choctaw_Wp_Security_Posts_Table_Scanner {
 	}
 
 	/**
-	 * Capture a baseline snapshot of wp_posts rows.
-	 *
-	 * @return array<string, mixed>
-	 */
-	private function capture_baseline_snapshot() {
-		global $wpdb;
-
-		$table = $this->get_posts_table_sql();
-		$rows  = $wpdb->get_results(
-			'SELECT ID, post_author, post_title, post_type, post_status, post_content
-			FROM ' . $table . '
-			WHERE ' . $this->get_content_scan_exclusion_sql(),
-			ARRAY_A
-		);
-
-		$posts = array();
-
-		if ( is_array( $rows ) ) {
-			foreach ( $rows as $row ) {
-				$post_id = isset( $row['ID'] ) ? (int) $row['ID'] : 0;
-
-				if ( $post_id <= 0 ) {
-					continue;
-				}
-
-				$content = isset( $row['post_content'] ) ? (string) $row['post_content'] : '';
-
-				$posts[ $post_id ] = array(
-					'hash'       => md5( $content ),
-					'size'       => strlen( $content ),
-					'post_title' => isset( $row['post_title'] ) ? (string) $row['post_title'] : '',
-					'post_type'  => isset( $row['post_type'] ) ? (string) $row['post_type'] : '',
-					'post_status'=> isset( $row['post_status'] ) ? (string) $row['post_status'] : '',
-					'user_id'    => isset( $row['post_author'] ) ? (int) $row['post_author'] : 0,
-				);
-			}
-		}
-
-		return array(
-			'posts_table' => $this->posts_table,
-			'captured_at' => gmdate( 'Y-m-d H:i:s' ),
-			'posts'       => $posts,
-		);
-	}
-
-	/**
-	 * Load a stored baseline snapshot.
-	 *
-	 * @return array<string, mixed>|null
-	 */
-	private function load_baseline() {
-		$baseline = get_option( Choctaw_Wp_Security_Posts_Scan_Patterns::BASELINE_OPTION_KEY, null );
-
-		return is_array( $baseline ) ? $baseline : null;
-	}
-
-	/**
-	 * Save a baseline snapshot.
-	 *
-	 * @param array<string, mixed> $snapshot Snapshot payload.
-	 * @return bool
-	 */
-	private function save_baseline( array $snapshot ) {
-		return update_option(
-			Choctaw_Wp_Security_Posts_Scan_Patterns::BASELINE_OPTION_KEY,
-			$snapshot,
-			false
-		);
-	}
-
-	/**
-	 * Enrich section findings with risk, category, and stable IDs.
-	 *
-	 * @param array<string, array<string, mixed>> $sections Section payloads.
-	 * @return array<string, array<string, mixed>>
-	 */
-	private function enrich_sections( array $sections ) {
-		$category_labels = Choctaw_Wp_Security_Posts_Scan_Patterns::get_category_labels();
-
-		foreach ( $sections as $section_key => &$section ) {
-			if ( empty( $section['findings'] ) || ! is_array( $section['findings'] ) ) {
-				continue;
-			}
-
-			foreach ( $section['findings'] as $index => &$finding ) {
-				$severity = isset( $finding['severity'] ) ? (string) $finding['severity'] : 'info';
-				$risk     = Choctaw_Wp_Security_Posts_Scan_Patterns::map_severity_to_risk( $severity, $section_key );
-				$guidance = Choctaw_Wp_Security_Posts_Scan_Patterns::resolve_detail_guidance( $section_key, $risk );
-
-				$finding['section_key']     = $section_key;
-				$finding['category']        = $section_key;
-				$finding['category_label']  = isset( $category_labels[ $section_key ] )
-					? $category_labels[ $section_key ]
-					: $section_key;
-				$finding['risk']            = $risk;
-				$finding['is_recognized']   = ( 'safe' === $risk );
-				$finding['why_seeing_this'] = $guidance['why'];
-				$finding['how_to_proceed']  = $guidance['how'];
-
-				if ( empty( $finding['matched_snippet'] ) ) {
-					$finding['matched_snippet'] = isset( $finding['excerpt'] ) ? (string) $finding['excerpt'] : '';
-				}
-				if ( ! isset( $finding['contents_truncated'] ) ) {
-					$finding['contents_truncated'] = false;
-				}
-
-				$fingerprint = Choctaw_Wp_Security_Finding_Status_Store::fingerprint_posts_finding( $section_key, $finding );
-				$finding['fingerprint'] = $fingerprint;
-				$finding['id']          = $fingerprint;
-			}
-			unset( $finding );
-		}
-		unset( $section );
-
-		return $sections;
-	}
-
-	/**
-	 * Flatten section findings into a single list for the unified report.
-	 *
-	 * @param array<string, array<string, mixed>> $sections Section payloads.
-	 * @return array<int, array<string, mixed>>
-	 */
-	private function flatten_findings( array $sections ) {
-		$findings = array();
-
-		foreach ( Choctaw_Wp_Security_Posts_Scan_Patterns::$section_keys as $section_key ) {
-			if ( empty( $sections[ $section_key ]['findings'] ) || ! is_array( $sections[ $section_key ]['findings'] ) ) {
-				continue;
-			}
-
-			foreach ( $sections[ $section_key ]['findings'] as $finding ) {
-				$findings[] = $finding;
-			}
-		}
-
-		return $findings;
-	}
-
-	/**
-	 * Build risk summary counts.
-	 *
-	 * @param array<string, array<string, mixed>> $sections Section payloads.
-	 * @return array<string, int>
-	 */
-	private function build_summary( array $sections ) {
-		$summary = array(
-			'critical'   => 0,
-			'suspicious' => 0,
-			'safe'       => 0,
-			'info'       => 0,
-			'warning'    => 0,
-		);
-
-		foreach ( $sections as $section ) {
-			if ( empty( $section['findings'] ) || ! is_array( $section['findings'] ) ) {
-				continue;
-			}
-
-			foreach ( $section['findings'] as $finding ) {
-				$risk = isset( $finding['risk'] ) ? (string) $finding['risk'] : 'info';
-
-				if ( ! isset( $summary[ $risk ] ) ) {
-					$summary['info']++;
-					continue;
-				}
-
-				$summary[ $risk ]++;
-
-				if ( 'suspicious' === $risk ) {
-					$summary['warning']++;
-				}
-			}
-		}
-
-		return $summary;
-	}
-
-	/**
 	 * Look up a user's display name with caching.
 	 *
 	 * @param int $user_id User ID.
@@ -753,7 +1037,7 @@ class Choctaw_Wp_Security_Posts_Table_Scanner {
 
 		global $wpdb;
 
-		$users_table = $this->discovery->quote_table_name( $this->users_table );
+		$users_table  = $this->discovery->quote_table_name( $this->users_table );
 		$display_name = $wpdb->get_var(
 			$wpdb->prepare(
 				"SELECT display_name FROM {$users_table} WHERE ID = %d LIMIT 1",
@@ -767,53 +1051,23 @@ class Choctaw_Wp_Security_Posts_Table_Scanner {
 	}
 
 	/**
-	 * Find the first matching pattern in a value.
+	 * Find all matching patterns in a value (case-insensitive).
 	 *
 	 * @param string             $value    Value to inspect.
 	 * @param array<int, string> $patterns Patterns to search.
-	 * @return string
+	 * @return array<int, string>
 	 */
-	private function find_matching_pattern( $value, array $patterns ) {
+	private function find_all_matching_patterns( $value, array $patterns ) {
+		$matched = array();
+
 		foreach ( $patterns as $pattern ) {
-			if ( false !== stripos( $value, $pattern ) ) {
-				return $pattern;
+			$pattern = (string) $pattern;
+			if ( '' !== $pattern && false !== stripos( (string) $value, $pattern ) ) {
+				$matched[] = $pattern;
 			}
 		}
 
-		return '';
-	}
-
-	/**
-	 * Build a standardized finding payload.
-	 *
-	 * @param string               $id               Finding ID.
-	 * @param string               $severity         Severity level.
-	 * @param array<string, mixed> $row              Post row data.
-	 * @param int                  $size             Content size.
-	 * @param string               $detail           Human-readable detail.
-	 * @param string               $excerpt          Value excerpt.
-	 * @param string               $matched_snippet  Longer snippet for the detail panel.
-	 * @return array<string, mixed>
-	 */
-	private function make_finding( $id, $severity, array $row, $size, $detail, $excerpt = '', $matched_snippet = '', $contents_truncated = false ) {
-		$user_id = isset( $row['post_author'] ) ? (int) $row['post_author'] : 0;
-		$snippet = '' !== $matched_snippet ? $matched_snippet : $this->trim_excerpt( $excerpt );
-
-		return array(
-			'id'                 => $id,
-			'severity'           => $severity,
-			'post_id'            => isset( $row['ID'] ) ? (int) $row['ID'] : 0,
-			'user_id'            => $user_id,
-			'user_display_name'  => $this->get_user_display_name( $user_id ),
-			'post_title'         => isset( $row['post_title'] ) ? (string) $row['post_title'] : '',
-			'post_type'          => isset( $row['post_type'] ) ? (string) $row['post_type'] : '',
-			'post_status'        => isset( $row['post_status'] ) ? (string) $row['post_status'] : '',
-			'size'               => (int) $size,
-			'detail'             => $detail,
-			'excerpt'            => $this->trim_excerpt( $excerpt ),
-			'matched_snippet'    => $snippet,
-			'contents_truncated'  => (bool) $contents_truncated,
-		);
+		return array_values( array_unique( $matched ) );
 	}
 
 	/**
@@ -833,59 +1087,6 @@ class Choctaw_Wp_Security_Posts_Table_Scanner {
 
 		$start = max( 0, $position - 80 );
 		return Choctaw_Wp_Security_Utils::truncate_report_contents_result( substr( (string) $value, $start ), $length );
-	}
-
-	/**
-	 * Build a baseline diff finding payload.
-	 *
-	 * @param string               $change_type Change type.
-	 * @param int                  $post_id     Post ID.
-	 * @param array<string, mixed> $meta        Post metadata.
-	 * @param int                  $old_size    Previous size.
-	 * @param int                  $new_size    Current size.
-	 * @return array<string, mixed>
-	 */
-	private function make_baseline_finding( $change_type, $post_id, array $meta, $old_size, $new_size ) {
-		$user_id = isset( $meta['user_id'] ) ? (int) $meta['user_id'] : 0;
-		$detail  = '';
-
-		if ( 'new' === $change_type ) {
-			$detail = sprintf(
-				/* translators: %s: formatted content size */
-				__( 'New post (size: %s)', 'choctaw-wp-security' ),
-				size_format( $new_size )
-			);
-		} elseif ( 'changed' === $change_type ) {
-			$detail = sprintf(
-				/* translators: 1: old size, 2: new size */
-				__( 'Changed post (was %1$s, now %2$s)', 'choctaw-wp-security' ),
-				size_format( $old_size ),
-				size_format( $new_size )
-			);
-		} else {
-			$detail = sprintf(
-				/* translators: %s: formatted content size */
-				__( 'Removed post (was %s)', 'choctaw-wp-security' ),
-				size_format( $old_size )
-			);
-		}
-
-		return array(
-			'id'                => 'baseline_' . $change_type,
-			'severity'          => 'info',
-			'post_id'           => (int) $post_id,
-			'user_id'           => $user_id,
-			'user_display_name' => $this->get_user_display_name( $user_id ),
-			'post_title'        => isset( $meta['post_title'] ) ? (string) $meta['post_title'] : '',
-			'post_type'         => isset( $meta['post_type'] ) ? (string) $meta['post_type'] : '',
-			'post_status'       => isset( $meta['post_status'] ) ? (string) $meta['post_status'] : '',
-			'size'              => (int) $new_size,
-			'detail'            => $detail,
-			'excerpt'           => ucfirst( $change_type ),
-			'change_type'       => $change_type,
-			'old_size'          => (int) $old_size,
-			'new_size'          => (int) $new_size,
-		);
 	}
 
 	/**
@@ -926,6 +1127,38 @@ class Choctaw_Wp_Security_Posts_Table_Scanner {
 		}
 
 		return trim( $excerpt );
+	}
+
+	/**
+	 * Length-prefixed pair for dual-field fingerprints.
+	 *
+	 * @param string $a First value.
+	 * @param string $b Second value.
+	 * @return string
+	 */
+	private static function length_prefixed_pair( $a, $b ) {
+		$a = (string) $a;
+		$b = (string) $b;
+
+		return strlen( $a ) . ':' . $a . "\n" . strlen( $b ) . ':' . $b . "\n";
+	}
+
+	/**
+	 * Risk rank for draft primary selection.
+	 *
+	 * @param string $risk Risk level.
+	 * @return int
+	 */
+	private function risk_rank( $risk ) {
+		$map = array(
+			'safe'       => 0,
+			'info'       => 1,
+			'suspicious' => 2,
+			'warning'    => 3,
+			'critical'   => 4,
+		);
+
+		return isset( $map[ $risk ] ) ? $map[ $risk ] : 1;
 	}
 
 	/**

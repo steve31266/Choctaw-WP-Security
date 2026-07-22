@@ -177,7 +177,7 @@ class Choctaw_Wp_Security_Admin_Help_Content {
 				'detail_html' => self::scheduled_tasks_why_html(),
 			),
 			'posts_scan'       => array(
-				'visible'     => __( 'wp_posts inspects the WordPress posts table for content that may indicate compromise. It looks for PHP or execution patterns, script and iframe injections, SEO spam titles, unusually large post content, and changes since your last scan.', 'choctaw-wp-security' ),
+				'visible'     => __( 'wp_posts inspects the WordPress posts table for content that may indicate compromise. It looks for PHP or execution patterns, script and iframe injections, SEO spam titles, and unusually large post content. Results persist in Sassh Findings.', 'choctaw-wp-security' ),
 				'detail_html' => self::posts_scan_about_html(),
 			),
 			'users_table'      => array(
@@ -654,9 +654,10 @@ class Choctaw_Wp_Security_Admin_Help_Content {
 	 */
 	private static function posts_scan_about_html() {
 		$paragraphs = array(
-			__( 'This scan uses the posts table for the WordPress Tables prefix chosen under Settings. By default that is the live WordPress-configured prefix from wp-config.php.', 'choctaw-wp-security' ),
+			__( 'This scan uses the posts table for the WordPress Tables prefix chosen under Settings. By default that is the live WordPress-configured prefix from wp-config.php. Only posts tables mapped to a registered site are scanned.', 'choctaw-wp-security' ),
 			__( 'This scan covers only that posts table. It does not scan options, users, comments, or post meta. Findings are reported for investigation — nothing is automatically deleted or modified.', 'choctaw-wp-security' ),
-			__( 'The first scan of a posts table establishes a baseline for change tracking. Subsequent scans of that same table report posts that are new or changed since the previous scan.', 'choctaw-wp-security' ),
+			__( 'WordPress core does not ordinarily execute PHP stored in post content or excerpts. Stored PHP is normally inert, but it may indicate injection or become dangerous when another plugin, shortcode, template, or vulnerability evaluates stored content.', 'choctaw-wp-security' ),
+			__( 'Results persist in Sassh Findings with dismiss/undismiss. Incomplete runs do not clear previously detected findings. There is no Clear History or baseline reset on this tab.', 'choctaw-wp-security' ),
 		);
 
 		return self::paragraphs_to_html( $paragraphs );

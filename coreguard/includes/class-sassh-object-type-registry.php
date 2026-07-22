@@ -17,6 +17,7 @@ class Sassh_Object_Type_Registry {
 	const TYPE_CRON_EVENT         = 'cron_event';
 	const TYPE_COMPONENT          = 'component';
 	const TYPE_DIRECTORY_EXPOSURE = 'directory_exposure';
+	const TYPE_POST               = 'post';
 
 	/**
 	 * Whether an object type is registered.
@@ -39,6 +40,8 @@ class Sassh_Object_Type_Registry {
 	 * (core:wordpress; plugin:{file}; theme:{stylesheet}).
 	 * Directory exposure key normalization lives in Sassh_Directory_Exposure_Key_Normalizer
 	 * (htaccess:.htaccess; folder:plugins|themes|uploads).
+	 * Post key normalization lives in Sassh_Post_Key_Normalizer
+	 * (decimal post ID; registered-site blog_id from posts table).
 	 *
 	 * @return array<int, string>
 	 */
@@ -49,6 +52,7 @@ class Sassh_Object_Type_Registry {
 			self::TYPE_CRON_EVENT,
 			self::TYPE_COMPONENT,
 			self::TYPE_DIRECTORY_EXPOSURE,
+			self::TYPE_POST,
 		);
 	}
 }

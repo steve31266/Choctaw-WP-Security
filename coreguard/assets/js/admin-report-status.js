@@ -62,6 +62,7 @@
 			|| scanType === 'scheduled-tasks'
 			|| scanType === 'component-scan'
 			|| scanType === 'directory-browsing'
+			|| scanType === 'wp-posts'
 			|| (finding && finding.findings_backend === 'sassh');
 	}
 

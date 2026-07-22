@@ -1243,6 +1243,191 @@ sassh_assert(
 	! empty( $how_unknown_null ) && false !== stripos( implode( ' ', $all_unknown_null ), 'could not determine' )
 );
 
+// --- Phase 3.7 post registry / keys / risk / site mapping ---
+sassh_assert(
+	'post object type registered',
+	Sassh_Object_Type_Registry::is_registered( Sassh_Object_Type_Registry::TYPE_POST )
+);
+sassh_assert(
+	'post object key decimal',
+	'42' === Sassh_Post_Key_Normalizer::object_key_for_post_id( 42 )
+);
+sassh_assert(
+	'post object key rejects zero',
+	is_wp_error( Sassh_Post_Key_Normalizer::object_key_for_post_id( 0 ) )
+);
+sassh_assert(
+	'wp-posts scope key',
+	'wp-posts:wp_2_posts' === Sassh_Findings_Service::wp_posts_scope_key( 'wp_2_posts' )
+);
+sassh_assert(
+	'wp-posts scanner id',
+	'wp-posts' === Sassh_Findings_Service::SCANNER_WP_POSTS
+);
+
+$tag_patterns  = Choctaw_Wp_Security_Posts_Scan_Patterns::$php_tag_patterns;
+$high_patterns = Choctaw_Wp_Security_Posts_Scan_Patterns::high_specificity_execution_patterns();
+$low_patterns  = Choctaw_Wp_Security_Posts_Scan_Patterns::low_specificity_execution_patterns();
+
+sassh_assert(
+	'posts php tag alone is suspicious',
+	'suspicious' === Sassh_Findings_Service::posts_php_execution_risk_from_matches(
+		array( '<?php' ),
+		$tag_patterns,
+		$high_patterns,
+		$low_patterns
+	)
+);
+sassh_assert(
+	'posts eval alone is warning (code-example friendly)',
+	'warning' === Sassh_Findings_Service::posts_php_execution_risk_from_matches(
+		array( 'eval(' ),
+		$tag_patterns,
+		$high_patterns,
+		$low_patterns
+	)
+);
+sassh_assert(
+	'posts system alone is suspicious',
+	'suspicious' === Sassh_Findings_Service::posts_php_execution_risk_from_matches(
+		array( 'system(' ),
+		$tag_patterns,
+		$high_patterns,
+		$low_patterns
+	)
+);
+sassh_assert(
+	'posts tutorial php+eval is warning not critical',
+	'warning' === Sassh_Findings_Service::posts_php_execution_risk_from_matches(
+		array( '<?php', 'eval(' ),
+		$tag_patterns,
+		$high_patterns,
+		$low_patterns
+	)
+);
+sassh_assert(
+	'posts malware eval+base64 is critical',
+	'critical' === Sassh_Findings_Service::posts_php_execution_risk_from_matches(
+		array( 'eval(', 'base64_decode(' ),
+		$tag_patterns,
+		$high_patterns,
+		$low_patterns
+	)
+);
+sassh_assert(
+	'posts tag+eval+base64 is critical',
+	'critical' === Sassh_Findings_Service::posts_php_execution_risk_from_matches(
+		array( '<?php', 'eval(', 'base64_decode(' ),
+		$tag_patterns,
+		$high_patterns,
+		$low_patterns
+	)
+);
+sassh_assert(
+	'posts scripts high-confidence risk warning',
+	'warning' === Sassh_Findings_Service::wp_posts_risk_level( 'scripts-high-confidence-match' )
+);
+sassh_assert(
+	'posts scripts generic risk suspicious',
+	'suspicious' === Sassh_Findings_Service::wp_posts_risk_level( 'scripts-generic-match' )
+);
+sassh_assert(
+	'posts seo risk suspicious',
+	'suspicious' === Sassh_Findings_Service::wp_posts_risk_level( 'seo-spam-title-match' )
+);
+sassh_assert(
+	'posts large risk suspicious',
+	'suspicious' === Sassh_Findings_Service::wp_posts_risk_level( 'large-post-content' )
+);
+
+$obj_fp_a = Sassh_Post_Key_Normalizer::object_fingerprint( 1, 'Title', 'Body', '', 'post', 'publish' );
+$obj_fp_b = Sassh_Post_Key_Normalizer::object_fingerprint( 1, 'Title', 'Body', '', 'post', 'publish' );
+$obj_fp_c = Sassh_Post_Key_Normalizer::object_fingerprint( 1, 'Title', 'Body changed', '', 'post', 'publish' );
+sassh_assert( 'post object fingerprint stable', $obj_fp_a === $obj_fp_b );
+sassh_assert( 'post object fingerprint changes with content', $obj_fp_a !== $obj_fp_c );
+sassh_assert( 'post object fingerprint sha256 prefix', 0 === strpos( $obj_fp_a, 'sha256:' ) );
+
+$cat_fp_a = Sassh_Post_Key_Normalizer::pattern_category_fingerprint( 'eval(1);', array( 'eval(' ) );
+$cat_fp_b = Sassh_Post_Key_Normalizer::pattern_category_fingerprint( 'eval(1);', array( 'eval(' ) );
+$cat_fp_c = Sassh_Post_Key_Normalizer::pattern_category_fingerprint( 'eval(2);', array( 'eval(' ) );
+sassh_assert( 'post category fingerprint stable', $cat_fp_a === $cat_fp_b );
+sassh_assert( 'post category fingerprint changes with field evidence', $cat_fp_a !== $cat_fp_c );
+
+// Single-site posts table mapping.
+$GLOBALS['sassh_test_is_multisite']    = false;
+$GLOBALS['sassh_test_current_blog_id'] = 1;
+$GLOBALS['wpdb']                       = (object) array(
+	'base_prefix' => 'wp_',
+	'posts'       => 'wp_posts',
+);
+sassh_assert(
+	'single-site configured posts table maps',
+	1 === Sassh_Post_Key_Normalizer::map_posts_table_to_registered_site_blog_id( 'wp_posts' )
+);
+sassh_assert(
+	'single-site foreign posts table rejected',
+	is_wp_error( Sassh_Post_Key_Normalizer::map_posts_table_to_registered_site_blog_id( 'wp_old_posts' ) )
+);
+
+// Multisite posts table mapping.
+$GLOBALS['sassh_test_is_multisite'] = true;
+$GLOBALS['sassh_test_main_site_id'] = 1;
+$GLOBALS['sassh_test_sites']        = array(
+	1 => (object) array(
+		'blog_id'  => 1,
+		'archived' => '0',
+	),
+	2 => (object) array(
+		'blog_id'  => 2,
+		'archived' => '1',
+		'public'   => '0',
+		'spam'     => '0',
+	),
+);
+$GLOBALS['wpdb'] = (object) array(
+	'base_prefix' => 'wp_',
+	'posts'       => 'wp_posts',
+);
+sassh_assert(
+	'multisite main posts maps',
+	1 === Sassh_Post_Key_Normalizer::map_posts_table_to_registered_site_blog_id( 'wp_posts' )
+);
+sassh_assert(
+	'multisite archived subsite posts maps',
+	2 === Sassh_Post_Key_Normalizer::map_posts_table_to_registered_site_blog_id( 'wp_2_posts' )
+);
+sassh_assert(
+	'multisite orphan posts table rejected',
+	is_wp_error( Sassh_Post_Key_Normalizer::map_posts_table_to_registered_site_blog_id( 'wp_27_posts' ) )
+);
+sassh_assert(
+	'multisite foreign posts prefix rejected',
+	is_wp_error( Sassh_Post_Key_Normalizer::map_posts_table_to_registered_site_blog_id( 'bak_posts' ) )
+);
+
+// Tutorial / code-example fixtures must not be unjustified Critical via wp_posts_risk_level.
+$tutorial_eval = Sassh_Findings_Service::wp_posts_risk_level(
+	'php-execution-patterns-match',
+	array(
+		'matched_patterns' => array( 'eval(' ),
+	)
+);
+$tutorial_php = Sassh_Findings_Service::wp_posts_risk_level(
+	'php-execution-patterns-match',
+	array(
+		'matched_patterns' => array( '<?php' ),
+	)
+);
+$tutorial_php_eval = Sassh_Findings_Service::wp_posts_risk_level(
+	'php-execution-patterns-match',
+	array(
+		'matched_patterns' => array( '<?php', 'eval(' ),
+	)
+);
+sassh_assert( 'tutorial eval() mention not critical', 'critical' !== $tutorial_eval );
+sassh_assert( 'tutorial php tag alone not critical', 'critical' !== $tutorial_php && 'suspicious' === $tutorial_php );
+sassh_assert( 'tutorial php+eval sample not critical', 'critical' !== $tutorial_php_eval && 'warning' === $tutorial_php_eval );
+
 // --- Capabilities ---
 $GLOBALS['sassh_test_is_multisite'] = false;
 $GLOBALS['sassh_test_caps']         = array( 'manage_options' => true );

@@ -2,13 +2,13 @@
 
 ## Project Requirements Document
 
-**Document status:** Finalized requirements — Phase 1/2, Phase **3.0**–**3.6** complete (2026-07-21); Phase **3.7+** scanner migrations next; Phase 4/5 pending  
+**Document status:** Finalized requirements — Phase 1/2, Phase **3.0**–**3.7** complete (2026-07-21); Phase **3.8** store wind-down next; Phase 4/5 pending  
 **Product scope:** Sassh WordPress Plugin (historical “CoreGuard” docs filenames), Sassh CLI, and future Sassh Desktop  
 **Primary purpose:** Define a shared, persistent system for recording scan findings, presenting items for human review, preserving dismissals, and reopening findings when their relevant state changes.
 
 **Scope of this document:** The Findings System — persistence, dismissals, effective status, object correlation, audit retention, scan-run attribution needed by future consumers, and the contract used by WordPress reports and future Desktop via CLI/JSON.
 
-**Implementation status:** Phase 1, 2, **3.0**–**3.6** are implemented in the plugin: persistence; Uploads + MU-Plugins + Verify Checksums + Exposed Files + Database options + WP-Cron + Vulnerabilities/Unrecognized Components + Directory Browsing Findings producers; Multisite Network Admin shell; centralized auth on all Sassh admin AJAX; network-option settings (Multisite fresh start); related-findings detail UI (hidden when empty); object types `option`, `cron_event`, `component`, and `directory_exposure`. Remaining Store-backed scanners migrate as Phase **3.7**; prototype store wind-down is Phase **3.8**.
+**Implementation status:** Phase 1, 2, **3.0**–**3.7** are implemented in the plugin: persistence; Uploads + MU-Plugins + Verify Checksums + Exposed Files + Database options + WP-Cron + Vulnerabilities/Unrecognized Components + Directory Browsing + wp_posts Findings producers; Multisite Network Admin shell; centralized auth on all Sassh admin AJAX; network-option settings (Multisite fresh start); related-findings detail UI (hidden when empty); object types `option`, `cron_event`, `component`, `directory_exposure`, and `post`. Prototype `Finding_Status_Store` has no remaining scan types; Phase **3.8** is store wind-down.
 
 **Future consumers (architecture must accommodate; not Phase 1/2/3.x delivery):** Scan Site aggregate runs, scheduled scans, email notifications, Home tab summary, Desktop orchestration, and new scanners such as Shell Scan. Early Findings phases must not expand into building those products.
 
@@ -439,7 +439,7 @@ Dismissal validity uses the rule-specific finding fingerprint. Related-finding c
 | --- | --- | --- | --- |
 | `file` | Root-relative normalized path | SHA-256 of entire file | Rule-specific (may equal whole-file hash for simple presence rules, or include matched evidence inputs) |
 | `option` | Option name (exact); `active_plugins#path` for list entries; synthetic `home+siteurl` for the composite mismatch rule | SHA-256 of raw option value(s) | Rule-specific value/state hash; pattern rules use full option value |
-| `post` | Post ID plus field or matched location per registry | Documented post/state hash | Relevant field content or fragment per rule |
+| `post` | Decimal post ID (`42`); field/match location in category metadata | SHA-256 of length-prefixed post ID + title + content + excerpt + type + status | Category fingerprints: rule-specific field bytes + matched patterns / size (not presentation) |
 | `cron_event` | `hook#` + digest of canonicalized args (no timestamp); typed canonicalization preserves PHP types and indexed-array order | SHA-256 of hook + canonical args + sorted unique schedule/interval pairs | Rule-specific (e.g. overdue boolean for `stale-task`; threshold-family sentinel for `duplicate-task`; full args + signals for `suspicious-arguments`) |
 
 Each scanner integrated with the system shall document its object-key normalization and finding-fingerprint inputs. Object-type registry entries document shared key rules.
@@ -463,6 +463,8 @@ Each scanner integrated with the system shall document its object-key normalizat
 **Phase 3.5:** Vulnerabilities / unrecognized components (`component-scan`) registers `object_type=component` (`blog_id=null`). Keys: `core:wordpress`, `plugin:{file}`, `theme:{stylesheet}`. Related-on-expand is wired; natural cross-scanner peers are uncommon until another scanner produces `component` objects. Same-component multi-advisory reasons are categories.
 
 **Phase 3.6:** Directory Browsing (`directory-browsing` / tab `exposed-folders`) registers `object_type=directory_exposure`. Kind keys: `htaccess:.htaccess`, `folder:plugins|themes|uploads`. Shared objects use `blog_id=null`; Multisite uploads under `uploads/sites/N` use that `blog_id`. HTTP non-listing is **directory listing not observed** (not definitive “blocked”). Determinative site-root Options `-Indexes` presents as **Disabled in .htaccess** (Unknown only when Options are missing/nondeterminative or Nginx ignores `.htaccess`). Folder How-to-proceed combines structured `.htaccess` Indexes posture with the folder HTTP band. Open listings map to Sassh `warning` as confirmed public **exposure / misconfiguration** (not malware/compromise evidence). Inconclusive HTTP and unreadable `.htaccess` finalize `partial` without weakening prior confirmed posture. Related-on-expand is wired; natural cross-scanner peers are not expected (type differs from `file` / `component`).
+
+**Phase 3.7:** wp_posts (`wp-posts`) registers `object_type=post`. Identity includes required registered-site `blog_id` (posts-table gate mirrors options 3.3). Object key is the decimal post ID; one Finding per post with categories for PHP/execution, scripts, SEO spam titles, and large content. Canonical object fingerprint covers complete post state (ID/title/content/excerpt/type/status); category fingerprints are rule-evidence only. WordPress core does not ordinarily execute PHP in post content/excerpt — guidance states stored PHP is normally inert. Baseline / Clear History removed; large-content coverage is paginated by post ID under the time budget (no fixed LIMIT on Findings coverage). Related-on-expand is wired; natural cross-scanner peers are not expected until another producer uses `post`.
 
 **CLI/JSON (Phase 4):** Include related context on `findings get`. Do not include related findings in list responses by default. Public envelope uses object-level Findings with `categories[]`.
 
@@ -810,8 +812,8 @@ After the Uploads integration is proven, remaining existing scans migrate onto t
 5. **3.4 (done):** WP-Cron findings (`cron_event`).
 6. **3.5 (done):** Vulnerability / unrecognized-component findings (`component`).
 7. **3.6 (done):** Directory Browsing — `object_type=directory_exposure` (not forced `file`).
-8. **3.7 (optional):** wp_posts (Store-backed; outside the original §11 list).
-9. **3.8:** Prototype `Finding_Status_Store` wind-down after the last migrated scan; leftover **Review Not Needed** string sweep.
+8. **3.7 (done):** wp_posts (`object_type=post`; outside the original §11 list).
+9. **3.8:** Prototype `Finding_Status_Store` wind-down (no remaining Store-backed scans after 3.7); leftover **Review Not Needed** string sweep.
 
 Object-type registry entries expand **inside** the phase that first needs them. Future heuristic scans remain separate projects once they exist.
 
@@ -1231,9 +1233,19 @@ Holistic Findings-system revision (not a cron-only fix):
 - Compound `htaccess-unprotected-folders-open` may strengthen on partial when ≥1 folder is confirmed open; `…-not-observed` requires every folder conclusive not-observed.
 - Sassh dismiss/undismiss; Clear History removed; Store type retired; related-on-expand wired (peers not expected); Review Not Needed labeling; fresh start.
 
-### Phase 3.7–3.8: Remaining scanner migrations and closeout — **pending**
+### Phase 3.7: wp_posts — **complete (2026-07-21)**
 
-Narrowly scoped plans, one phase at a time (same pattern as 3.0–3.6). Registry expansion travels with the first consumer. See §11.
+- Migrate `wp-posts` onto `Sassh_Findings_Service`; register `object_type=post`.
+- Required registered-site `blog_id` from posts table (reject foreign/orphaned); scope `wp-posts:{posts_table}`.
+- Object key = decimal post ID; one Finding per post with categories; drop baseline / Clear History / Reset Baseline.
+- Canonical post object fingerprint; per-category evidence fingerprints; incomplete ≠ absence.
+- Large-content: paginated by post ID under time budget (presentation limits must not limit coverage).
+- PHP-in-post guidance: core does not ordinarily execute stored PHP; Critical only for documented high-confidence combinations; tutorial/code-example fixtures must not be unjustified Critical.
+- Sassh dismiss/undismiss; related-on-expand; Store type `wp-posts` retired (Store empty → 3.8 unblocked).
+
+### Phase 3.8: Store wind-down — **pending**
+
+Narrowly scoped closeout after 3.7. See §11.
 
 | Phase | Scope | Status |
 | --- | --- | --- |
@@ -1244,7 +1256,7 @@ Narrowly scoped plans, one phase at a time (same pattern as 3.0–3.6). Registry
 | **3.4.5** | Object-level Findings + categories + guidance | complete (2026-07-20) |
 | **3.5** | Vulnerabilities / unrecognized components (`component-scan`); register `component` | complete (2026-07-21) |
 | **3.6** | Directory Browsing (`directory-browsing`); register `directory_exposure` | complete (2026-07-21) |
-| **3.7** | wp_posts (`wp-posts`) — optional | pending |
+| **3.7** | wp_posts (`wp-posts`); register `post` | complete (2026-07-21) |
 | **3.8** | Gut/remove `Finding_Status_Store` after last migration; leftover **Review Not Needed** string sweep | pending |
 
 ### Phase 4: CLI and JSON contract — **after 3.x progress (not blocked on 3.8)**
@@ -1268,7 +1280,7 @@ Prefer migrating at least **3.1** and **3.2** before freezing the public CLI sur
 
 - Scan Site aggregate orchestration, scheduled scans, email notifications, Home summary (§12).
 
-**Next deliverable:** Phase **3.7** (optional wp_posts) or **3.8** store wind-down per product priority.
+**Next deliverable:** Phase **3.8** store wind-down (Store has no remaining scan types after 3.7).
 
 ---
 

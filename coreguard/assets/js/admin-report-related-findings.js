@@ -73,6 +73,9 @@
 		if (id === 'directory-browsing') {
 			return 'Directory Browsing';
 		}
+		if (id === 'wp-posts') {
+			return 'wp_posts';
+		}
 		return id || '—';
 	}
 

@@ -18,10 +18,11 @@
 	};
 
 	var riskOrder = {
-		critical: 4,
+		critical: 5,
+		warning: 4,
 		suspicious: 3,
-		safe: 2,
-		info: 1
+		info: 2,
+		safe: 1
 	};
 
 	function ready(callback) {
@@ -176,6 +177,7 @@
 	function riskLabel(risk) {
 		var map = {
 			critical: strings.riskCritical || 'Critical',
+			warning: strings.riskWarning || 'Warning',
 			suspicious: strings.riskSuspicious || 'Suspicious',
 			safe: strings.riskSafe || 'Safe',
 			info: strings.riskInfo || 'Info'
@@ -336,6 +338,7 @@
 		[
 			{ value: '', label: strings.allRisks || 'All risks' },
 			{ value: 'critical', label: strings.riskCritical || 'Critical' },
+			{ value: 'warning', label: strings.riskWarning || 'Warning' },
 			{ value: 'suspicious', label: strings.riskSuspicious || 'Suspicious' },
 			{ value: 'safe', label: strings.riskSafe || 'Safe' },
 			{ value: 'info', label: strings.riskInfo || 'Info' }
@@ -449,26 +452,35 @@
 		return '';
 	}
 
-	function guidanceForFinding(finding) {
-		var category = text(finding.category || finding.section_key || '');
-		var risk = text(finding.risk || 'info');
-		var why = text(finding.why_seeing_this || '');
-		var how = text(finding.how_to_proceed || '');
-		var entry;
-
-		if (!why || !how) {
-			entry = (config.detailGuidance || {})[category] || {};
-			if (!why) {
-				why = pickGuidanceText(entry.why, risk);
+	function guidanceLines(value, fallback) {
+		var lines = [];
+		var i;
+		if (Array.isArray(value)) {
+			for (i = 0; i < value.length; i++) {
+				if (text(value[i])) {
+					lines.push(text(value[i]));
+				}
 			}
-			if (!how) {
-				how = pickGuidanceText(entry.how, risk);
-			}
+		} else if (text(value)) {
+			lines.push(text(value));
 		}
+		if (!lines.length && fallback) {
+			lines.push(text(fallback));
+		}
+		return lines;
+	}
 
+	function appendGuidanceParagraphs(parent, lines) {
+		var i;
+		for (i = 0; i < lines.length; i++) {
+			parent.appendChild(createElement('p', '', lines[i]));
+		}
+	}
+
+	function guidanceForFinding(finding) {
 		return {
-			why: why || text(strings.whySeeingThisFallback || ''),
-			how: how || text(strings.howToProceedFallback || '')
+			why: guidanceLines(finding.why_seeing_this, strings.whySeeingThisFallback || ''),
+			how: guidanceLines(finding.how_to_proceed, strings.howToProceedFallback || '')
 		};
 	}
 
@@ -491,6 +503,9 @@
 		appendInfoField(infoList, strings.status || 'Status', finding.post_status || '—');
 		appendInfoField(infoList, strings.size || 'Size', sizeFormat(finding.size || 0));
 		appendInfoField(infoList, strings.detail || 'Detail', finding.detail || '—');
+		if (finding.confirmed_this_run === false) {
+			appendInfoField(infoList, strings.status || 'Status', strings.notConfirmedThisRun || 'Not reconfirmed by this incomplete scan');
+		}
 		infoPanel.appendChild(infoList);
 
 		snippetBlock.appendChild(createElement('h4', '', strings.matchedSnippet || 'Matched Snippet'));
@@ -506,9 +521,9 @@
 		left.appendChild(snippetBlock);
 
 		whyBlock.appendChild(createElement('h4', '', strings.whySeeingThis || 'Why you are seeing this'));
-		whyBlock.appendChild(createElement('p', '', guidance.why));
+		appendGuidanceParagraphs(whyBlock, guidance.why);
 		howBlock.appendChild(createElement('h4', '', strings.howToProceed || 'How to proceed'));
-		howBlock.appendChild(createElement('p', '', guidance.how));
+		appendGuidanceParagraphs(howBlock, guidance.how);
 
 		right.appendChild(whyBlock);
 		right.appendChild(howBlock);
@@ -518,6 +533,10 @@
 				uiState.expandedId = '';
 				renderResult(resultState);
 			});
+		}
+
+		if (window.CwsReportRelatedFindings && typeof window.CwsReportRelatedFindings.appendRelatedFindings === 'function') {
+			window.CwsReportRelatedFindings.appendRelatedFindings(right, finding);
 		}
 
 		grid.appendChild(left);
@@ -534,7 +553,8 @@
 		var actionsTd = document.createElement('td');
 		var eye = createElement('button', 'cws-report-eye');
 		var eyeIcon = createElement('span', 'dashicons dashicons-visibility');
-		var isExpanded = uiState.expandedId === finding.id;
+		var findingKey = text(finding.finding_id || finding.id);
+		var isExpanded = uiState.expandedId === findingKey;
 
 		if (isExpanded) {
 			row.className = 'is-expanded';
@@ -559,7 +579,7 @@
 		eyeIcon.setAttribute('aria-hidden', 'true');
 		eye.appendChild(eyeIcon);
 		eye.addEventListener('click', function () {
-			uiState.expandedId = isExpanded ? '' : finding.id;
+			uiState.expandedId = isExpanded ? '' : findingKey;
 			renderResult(resultState);
 		});
 		actionsTd.appendChild(eye);
@@ -618,28 +638,58 @@
 	function renderSummary(resultsEl, result) {
 		var summary = result.summary || {};
 		var critical = parseInt(summary.critical, 10) || 0;
-		var suspicious = parseInt(summary.suspicious, 10) || parseInt(summary.warning, 10) || 0;
-		var safe = parseInt(summary.safe, 10) || 0;
-		var info = parseInt(summary.info, 10) || 0;
-		var hasProblems = critical + suspicious > 0;
-		var className = critical > 0 ? 'cws-core-checksum-results is-error' : (suspicious > 0 ? 'cws-core-checksum-results is-warning' : 'cws-core-checksum-results is-success');
-		var panel = createElement('div', className);
-		var message = hasProblems ?
-			format(strings.scanCompleteIssues, numberFormat(critical), numberFormat(suspicious), numberFormat(safe), numberFormat(info)) :
-			format(strings.scanCompleteClean, numberFormat(safe), numberFormat(info));
-		panel.appendChild(createElement('p', 'cws-core-checksum-summary', message));
-		if (result.scan_incomplete) {
-			panel.appendChild(createElement('p', '', strings.incomplete));
+		var warning = parseInt(summary.warning, 10) || 0;
+		var suspicious = parseInt(summary.suspicious, 10) || 0;
+		var incomplete = !result.rejected && (!!result.scan_incomplete || result.coverage_complete === false || (result.completion_status && result.completion_status !== 'success'));
+		var hasProblems = critical + warning + suspicious > 0;
+		var className;
+		var panel;
+		var message;
+		var i;
+
+		if (result.rejected) {
+			message = (Array.isArray(result.errors) && result.errors.length) ? result.errors[0] : (strings.scanRejected || 'This posts table cannot be scanned.');
+			panel = createElement('div', 'cws-core-checksum-results is-error');
+			panel.appendChild(createElement('p', 'cws-core-checksum-summary', message));
+			resultsEl.appendChild(panel);
+			return;
 		}
+
+		className = incomplete
+			? 'cws-core-checksum-results is-warning'
+			: (critical > 0
+				? 'cws-core-checksum-results is-error'
+				: ((warning + suspicious) > 0 ? 'cws-core-checksum-results is-warning' : 'cws-core-checksum-results is-success'));
+		panel = createElement('div', className);
+
+		if (incomplete) {
+			message = strings.scanIncomplete || strings.incomplete || 'Scan coverage was incomplete. Previously detected findings were not cleared.';
+		} else if (hasProblems) {
+			message = format(
+				strings.scanCompleteIssues || 'Scan complete. %1$s critical, %2$s warning, %3$s suspicious findings.',
+				numberFormat(critical),
+				numberFormat(warning),
+				numberFormat(suspicious)
+			);
+		} else {
+			message = strings.scanCompleteClean || 'Scan complete. No critical, warning, or suspicious findings.';
+		}
+
+		panel.appendChild(createElement('p', 'cws-core-checksum-summary', message));
+
+		if (incomplete && result.prior_findings_only) {
+			panel.appendChild(createElement('p', '', strings.priorFindingsOnly || 'Showing previously detected findings that were not reconfirmed by this incomplete run.'));
+		}
+
+		if (Array.isArray(result.errors) && result.errors.length) {
+			for (i = 0; i < result.errors.length; i++) {
+				panel.appendChild(createElement('p', '', result.errors[i]));
+			}
+		}
+
 		if (result.wordpress_configured_table && result.posts_table && result.wordpress_configured_table !== result.posts_table) {
 			panel.appendChild(createElement('p', '', format(strings.configuredTable, result.wordpress_configured_table)));
 		}
-		Object.keys(result.sections || {}).forEach(function (sectionKey) {
-			var section = result.sections[sectionKey];
-			if (section && section.info_message) {
-				panel.appendChild(createElement('p', '', section.info_message));
-			}
-		});
 		resultsEl.appendChild(panel);
 	}
 
@@ -676,29 +726,13 @@
 		});
 	}
 
-	function handleBaselineReset() {
-		setBusy(true, strings.resettingBaseline);
-		request('choctaw_wp_security_posts_scan_baseline_reset').then(function (data) {
-			showNotice(data.message || '', 'success');
-		}).catch(function (error) {
-			showNotice(error.message || strings.resetError, 'error');
-		}).finally(function () {
-			setBusy(false);
-		});
-	}
-
 	function init() {
 		var form = document.getElementById('cws-posts-scan-form');
 		if (!form || !config.ajaxUrl) {
 			return;
 		}
 		form.addEventListener('submit', function (event) {
-			var submitter = event.submitter || document.activeElement;
 			event.preventDefault();
-			if (submitter && submitter.name === 'choctaw_wp_security_posts_scan_baseline_reset') {
-				handleBaselineReset();
-				return;
-			}
 			handleScan();
 		});
 		if (config.initialResult && typeof config.initialResult === 'object') {

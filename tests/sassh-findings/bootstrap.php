@@ -74,10 +74,12 @@ require_once $root . '/coreguard/includes/class-sassh-finding-guidance-composer.
 require_once $root . '/coreguard/includes/class-sassh-cron-event-key-normalizer.php';
 require_once $root . '/coreguard/includes/class-sassh-component-key-normalizer.php';
 require_once $root . '/coreguard/includes/class-sassh-directory-exposure-key-normalizer.php';
+require_once $root . '/coreguard/includes/class-sassh-post-key-normalizer.php';
 require_once $root . '/coreguard/includes/class-sassh-recognized-components-registry.php';
 require_once $root . '/coreguard/includes/class-directory-browsing-scanner.php';
 require_once $root . '/coreguard/includes/class-exposed-files-patterns.php';
 require_once $root . '/coreguard/includes/class-options-scan-patterns.php';
+require_once $root . '/coreguard/includes/class-posts-scan-patterns.php';
 
 if ( ! function_exists( 'wp_json_encode' ) ) {
 	/**

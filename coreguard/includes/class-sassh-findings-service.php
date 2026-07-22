@@ -25,9 +25,16 @@ class Sassh_Findings_Service {
 	const SCANNER_SCHEDULED_TASKS    = 'scheduled-tasks';
 	const SCANNER_COMPONENT_SCAN     = 'component-scan';
 	const SCANNER_DIRECTORY_BROWSING = 'directory-browsing';
+	const SCANNER_WP_POSTS           = 'wp-posts';
 	const RULE_UNRECOGNIZED_COMPONENT = 'unrecognized-component';
 	const FINGERPRINT_MISSING        = 'sha256:missing';
 	const FINGERPRINT_DIRECTORY      = 'sha256:directory';
+
+	const RULE_POST_PHP_EXECUTION_PATTERNS_MATCH = 'php-execution-patterns-match';
+	const RULE_POST_SCRIPTS_HIGH_CONFIDENCE      = 'scripts-high-confidence-match';
+	const RULE_POST_SCRIPTS_GENERIC              = 'scripts-generic-match';
+	const RULE_POST_SEO_SPAM_TITLE               = 'seo-spam-title-match';
+	const RULE_POST_LARGE_CONTENT                = 'large-post-content';
 
 	const RULE_UNKNOWN_HOOK            = 'unknown-hook';
 	const RULE_UNREGISTERED_HANDLER    = 'unregistered-handler';
@@ -553,6 +560,160 @@ class Sassh_Findings_Service {
 	 */
 	public static function directory_browsing_scope_key() {
 		return 'directory-browsing:wordpress-root';
+	}
+
+	/**
+	 * Scope key for a wp-posts posts table.
+	 *
+	 * @param string $posts_table Posts table name.
+	 * @return string
+	 */
+	public static function wp_posts_scope_key( $posts_table ) {
+		return 'wp-posts:' . (string) $posts_table;
+	}
+
+	/**
+	 * Rule-based risk_level for wp-posts (Phase 3.7). No legacy warning→suspicious collapse.
+	 *
+	 * @param string               $rule_id  Rule id.
+	 * @param array<string, mixed> $evidence Optional evidence (matched_patterns, …).
+	 * @return string
+	 */
+	public static function wp_posts_risk_level( $rule_id, array $evidence = array() ) {
+		$rule_id = (string) $rule_id;
+
+		switch ( $rule_id ) {
+			case self::RULE_POST_SCRIPTS_HIGH_CONFIDENCE:
+				return 'warning';
+
+			case self::RULE_POST_SCRIPTS_GENERIC:
+			case self::RULE_POST_SEO_SPAM_TITLE:
+			case self::RULE_POST_LARGE_CONTENT:
+				return 'suspicious';
+
+			case self::RULE_POST_PHP_EXECUTION_PATTERNS_MATCH:
+				$matched = isset( $evidence['matched_patterns'] ) && is_array( $evidence['matched_patterns'] )
+					? $evidence['matched_patterns']
+					: array();
+				$tag_patterns = isset( $evidence['php_tag_patterns'] ) && is_array( $evidence['php_tag_patterns'] )
+					? $evidence['php_tag_patterns']
+					: ( class_exists( 'Choctaw_Wp_Security_Posts_Scan_Patterns' )
+						? Choctaw_Wp_Security_Posts_Scan_Patterns::$php_tag_patterns
+						: array() );
+				$high_specificity = isset( $evidence['high_specificity_patterns'] ) && is_array( $evidence['high_specificity_patterns'] )
+					? $evidence['high_specificity_patterns']
+					: ( class_exists( 'Choctaw_Wp_Security_Posts_Scan_Patterns' )
+						? Choctaw_Wp_Security_Posts_Scan_Patterns::high_specificity_execution_patterns()
+						: array() );
+				$low_specificity = isset( $evidence['low_specificity_patterns'] ) && is_array( $evidence['low_specificity_patterns'] )
+					? $evidence['low_specificity_patterns']
+					: ( class_exists( 'Choctaw_Wp_Security_Posts_Scan_Patterns' )
+						? Choctaw_Wp_Security_Posts_Scan_Patterns::low_specificity_execution_patterns()
+						: array() );
+
+				return self::posts_php_execution_risk_from_matches( $matched, $tag_patterns, $high_specificity, $low_specificity );
+
+			default:
+				return 'suspicious';
+		}
+	}
+
+	/**
+	 * Posts PHP/execution risk from the complete matched evidence set (Phase 3.7 D7).
+	 *
+	 * Tag alone → suspicious. Single low-specificity alone → suspicious.
+	 * Single high-specificity alone → warning. Tag + one high-specificity → warning.
+	 * Critical only for documented high-confidence combinations (see plan D7).
+	 *
+	 * @param array<int, string> $matched_patterns       All patterns matched.
+	 * @param array<int, string> $php_tag_patterns       PHP tag patterns.
+	 * @param array<int, string> $high_specificity       High-specificity exec/obfuscation.
+	 * @param array<int, string> $low_specificity        Lower-specificity exec-like.
+	 * @return string
+	 */
+	public static function posts_php_execution_risk_from_matches( array $matched_patterns, array $php_tag_patterns, array $high_specificity, array $low_specificity ) {
+		$matched = array();
+
+		foreach ( $matched_patterns as $pattern ) {
+			$pattern = (string) $pattern;
+			if ( '' !== $pattern ) {
+				$matched[ strtolower( $pattern ) ] = $pattern;
+			}
+		}
+
+		$matched = array_values( $matched );
+
+		if ( empty( $matched ) ) {
+			return 'suspicious';
+		}
+
+		$tag_hits  = array();
+		$high_hits = array();
+		$low_hits  = array();
+
+		foreach ( $matched as $pattern ) {
+			foreach ( $php_tag_patterns as $tag ) {
+				if ( 0 === strcasecmp( (string) $tag, $pattern ) ) {
+					$tag_hits[ strtolower( $pattern ) ] = $pattern;
+				}
+			}
+			foreach ( $high_specificity as $exec ) {
+				if ( 0 === strcasecmp( (string) $exec, $pattern ) ) {
+					$high_hits[ strtolower( $pattern ) ] = $pattern;
+				}
+			}
+			foreach ( $low_specificity as $exec ) {
+				if ( 0 === strcasecmp( (string) $exec, $pattern ) ) {
+					$low_hits[ strtolower( $pattern ) ] = $pattern;
+				}
+			}
+		}
+
+		$tag_count    = count( $tag_hits );
+		$high_count   = count( $high_hits );
+		$low_count    = count( $low_hits );
+		$exec_count   = $high_count + $low_count;
+		$all_exec_keys = array_unique( array_merge( array_keys( $high_hits ), array_keys( $low_hits ) ) );
+
+		// Classic malware pairs (no PHP tag required).
+		$classic_pairs = array(
+			array( 'eval(', 'base64_decode(' ),
+			array( 'base64_decode(', 'gzinflate(' ),
+			array( 'base64_decode(', 'gzuncompress(' ),
+			array( 'eval(', 'gzinflate(' ),
+			array( 'eval(', 'str_rot13(' ),
+		);
+
+		$exec_lookup = array();
+		foreach ( array_merge( $high_hits, $low_hits ) as $pattern ) {
+			$exec_lookup[ strtolower( (string) $pattern ) ] = true;
+		}
+
+		foreach ( $classic_pairs as $pair ) {
+			$a = strtolower( $pair[0] );
+			$b = strtolower( $pair[1] );
+			if ( isset( $exec_lookup[ $a ] ) && isset( $exec_lookup[ $b ] ) ) {
+				return 'critical';
+			}
+		}
+
+		// PHP tag + ≥2 distinct execution/obfuscation patterns.
+		if ( $tag_count > 0 && count( $all_exec_keys ) >= 2 ) {
+			return 'critical';
+		}
+
+		// Tag alone.
+		if ( $tag_count > 0 && 0 === $exec_count ) {
+			return 'suspicious';
+		}
+
+		// Single low-specificity alone (no tag).
+		if ( 0 === $tag_count && 0 === $high_count && $low_count >= 1 ) {
+			return 'suspicious';
+		}
+
+		// Single high-specificity alone, or tag + exactly one exec pattern, or tag + only low-specificity.
+		return 'warning';
 	}
 
 	/**
